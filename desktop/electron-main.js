@@ -13,10 +13,28 @@ const projectRoot = path.resolve(__dirname, '..');
 let serverContext = null;
 let mainWindow = null;
 
+function resolveDesktopRuntimeRoot() {
+  if (process.env.LEME_RUNTIME_ROOT) {
+    return path.resolve(process.env.LEME_RUNTIME_ROOT);
+  }
+
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    return path.resolve(process.env.PORTABLE_EXECUTABLE_DIR);
+  }
+
+  if (process.env.PORTABLE_EXECUTABLE_FILE) {
+    return path.dirname(path.resolve(process.env.PORTABLE_EXECUTABLE_FILE));
+  }
+
+  if (app.isPackaged) {
+    return path.dirname(process.execPath);
+  }
+
+  return projectRoot;
+}
+
 async function startBackend() {
-  const runtimeRoot = process.env.LEME_RUNTIME_ROOT
-    ? path.resolve(process.env.LEME_RUNTIME_ROOT)
-    : (app.isPackaged ? path.dirname(process.execPath) : projectRoot);
+  const runtimeRoot = resolveDesktopRuntimeRoot();
   const paths = resolveProjectPaths(projectRoot, { runtimeRoot });
   const server = createAppServer(paths, {
     ...process.env,
