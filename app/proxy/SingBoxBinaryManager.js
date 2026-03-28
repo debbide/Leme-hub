@@ -12,6 +12,7 @@ import {
 } from '../shared/constants.js';
 
 const RELEASES_BASE_URL = `https://api.github.com/repos/${SINGBOX_REPOSITORY.owner}/${SINGBOX_REPOSITORY.repo}/releases`;
+const RELEASE_DOWNLOAD_BASE_URL = `https://github.com/${SINGBOX_REPOSITORY.owner}/${SINGBOX_REPOSITORY.repo}/releases/download`;
 
 const archMap = {
   arm64: 'arm64',
@@ -135,28 +136,44 @@ export class SingBoxBinaryManager {
     return response.json();
   }
 
+  buildReleaseDownloadUrl(version, assetName) {
+    const tag = version.startsWith('v') ? version : `v${version}`;
+    return `${RELEASE_DOWNLOAD_BASE_URL}/${tag}/${assetName}`;
+  }
+
   async installManagedBinary() {
     ensureDir(this.paths.binDir);
 
     const target = this.getPlatformTarget();
-    const release = await this.fetchRelease();
-    const version = String(release.tag_name || '').replace(/^v/, '');
-    const assetName = this.buildAssetName(version, target);
-    const asset = (release.assets || []).find((item) => item.name === assetName);
+    const pinnedVersion = this.version === 'latest' ? null : String(this.version).replace(/^v/, '');
+    let version = pinnedVersion;
+    let assetName = pinnedVersion ? this.buildAssetName(pinnedVersion, target) : null;
+    let downloadUrl = pinnedVersion ? this.buildReleaseDownloadUrl(pinnedVersion, assetName) : null;
+    let expectedDigest = null;
 
-    if (!asset) {
-      throw new Error(`Unable to find a matching sing-box release asset for ${target.platform}/${target.arch}`);
+    if (!pinnedVersion) {
+      const release = await this.fetchRelease();
+      version = String(release.tag_name || '').replace(/^v/, '');
+      assetName = this.buildAssetName(version, target);
+      const asset = (release.assets || []).find((item) => item.name === assetName);
+
+      if (!asset) {
+        throw new Error(`Unable to find a matching sing-box release asset for ${target.platform}/${target.arch}`);
+      }
+
+      downloadUrl = asset.browser_download_url;
+      expectedDigest = asset.digest || null;
     }
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-singbox-'));
-    const archivePath = path.join(tempRoot, asset.name);
+    const archivePath = path.join(tempRoot, assetName);
     const extractDir = path.join(tempRoot, 'extract');
 
     try {
-      await this.downloadAsset(asset.browser_download_url, archivePath);
+      await this.downloadAsset(downloadUrl, archivePath);
 
-      if (asset.digest) {
-        await this.verifyDigest(archivePath, asset.digest);
+      if (expectedDigest) {
+        await this.verifyDigest(archivePath, expectedDigest);
       }
 
       ensureDir(extractDir);

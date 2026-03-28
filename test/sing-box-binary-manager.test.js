@@ -50,7 +50,7 @@ const createArchiveFile = async (archivePath, version) => {
 };
 
 const createFetchStub = ({ release, archivePath }) => async (url) => {
-  if (url.includes('/releases/')) {
+  if (url.includes('/releases/latest') || url.includes('/releases/tags/')) {
     return {
       ok: true,
       json: async () => release,
@@ -142,6 +142,34 @@ test('fails on checksum mismatch and leaves no managed binary', async () => {
 
   await assert.rejects(() => manager.ensureAvailable(path.join(paths.binDir, 'missing.exe')), /checksum/i);
   assert.equal(fs.existsSync(manager.getManagedBinaryPath()), false);
+});
+
+test('downloads pinned version without fetching release metadata first', async () => {
+  const projectRoot = createProjectRoot();
+  const paths = resolveProjectPaths(projectRoot);
+  const version = DEFAULT_MANAGED_SINGBOX_VERSION;
+  const archivePath = createArchivePath(projectRoot, version);
+  await createArchiveFile(archivePath, version);
+  const calls = [];
+
+  const manager = new SingBoxBinaryManager(paths, {
+    fetch: async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        body: true,
+        arrayBuffer: async () => fs.readFileSync(archivePath),
+        status: 200,
+        statusText: 'OK'
+      };
+    }
+  });
+
+  const result = await manager.ensureAvailable(path.join(paths.binDir, 'missing.exe'));
+
+  assert.equal(result.installed, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].includes(`/releases/download/v${version}/`), true);
 });
 
 test('pins managed downloads to the default sing-box version', async () => {
