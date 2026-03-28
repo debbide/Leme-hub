@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Leme Proxy Client</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <!-- Tauri Window Drag Region Custom Titlebar -->
+    <div data-tauri-drag-region class="titlebar">
+      <div class="titlebar-logo">LEME PROXY</div>
+      <div class="titlebar-controls">
+        <button class="titlebar-btn" id="titlebar-minimize">&#8211;</button>
+        <button class="titlebar-btn" id="titlebar-maximize">&#9744;</button>
+        <button class="titlebar-btn" id="titlebar-close">&#10005;</button>
+      </div>
+    </div>
+
+    <div class="app-layout">
+      <!-- SIDEBAR -->
+      <aside class="sidebar">
+        <nav class="nav-menu">
+          <button class="nav-item active" data-target="dashboard-view">
+            <i class="ph ph-squares-four nav-icon"></i> 仪表盘
+          </button>
+          <button class="nav-item" data-target="proxies-view">
+            <i class="ph ph-globe-hemisphere-west nav-icon"></i> 节点代理
+          </button>
+          <button class="nav-item" data-target="routing-view">
+            <i class="ph ph-git-branch nav-icon"></i> 分流路由
+          </button>
+          <button class="nav-item" data-target="settings-view">
+            <i class="ph ph-gear nav-icon"></i> 全局设置
+          </button>
+        </nav>
+        
+        <div class="sidebar-footer">
+          <label>系统代理模式</label>
+          <select class="system-proxy-mode">
+            <option value="rule">规则分流 (推荐)</option>
+            <option value="global">全局接管</option>
+            <option value="direct">直连退出</option>
+          </select>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT -->
+      <main class="main-content">
+        
+        <!-- DASHBOARD VIEW -->
+        <section id="dashboard-view" class="view active">
+          <div class="dashboard-hero">
+            <div class="power-ring">
+              <button id="master-switch" class="master-switch off">
+                <span class="switch-icon">⏻</span>
+              </button>
+            </div>
+            <h2 id="master-status-text">系统代理已关闭</h2>
+            <div class="dashboard-stats">
+              <div class="stat-box">
+                <span class="stat-label">当前运作节点</span>
+                <select id="dash-active-node-select" class="dash-node-select">
+                  <option value="">载入中...</option>
+                </select>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">运行时间</span>
+                <span class="stat-value" id="dash-uptime">00:00:00</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PROXIES VIEW (Our existing UI) -->
+        <section id="proxies-view" class="view">
+          <div class="proxy-card full-card">
+            <!-- Header Section -->
+            <header class="card-header">
+              <div class="header-titles">
+                <h1 style="display:flex; align-items:center;">代理节点管理 <span id="core-status-indicator" class="status-dot tooltip" title="引擎状态查询中..."></span></h1>
+                <p>管理您的接入分发节点 (支持 WS/TLS、 Reality、 VMess 等)</p>
+              </div>
+            </header>
+
+            <!-- Hidden Legacy Status Section -->
+            <div id="legacy-status" class="hidden"></div>
+            
+            <!-- Hidden Action Forms -->
+            <div class="action-forms-container">
+              <form id="import-form" class="hidden action-form">
+                <input type="text" id="import-url" placeholder="vmess://... 或 vless://..." required class="text-input">
+                <button type="submit">确定导入</button>
+                <button type="button" class="cancel-btn">取消</button>
+              </form>
+              <form id="sync-form" class="hidden action-form">
+                <input type="url" id="sync-url" placeholder="https://example.com/sub" required class="text-input">
+                <button type="submit">开始同步</button>
+                <button type="button" class="cancel-btn">取消</button>
+              </form>
+            </div>
+
+            <!-- Toolbar Section -->
+            <div class="toolbar">
+              <div class="node-count" id="node-count-label">节点数: 0</div>
+              <div class="btn-group">
+                <button id="show-import" type="button">导入链接</button>
+                <button id="show-sync" type="button">同步订阅</button>
+                <button id="manual-add" type="button">手动添加</button>
+              </div>
+            </div>
+
+            <div id="nodes-state" class="state-container">
+              <p id="nodes-loading" class="state-msg">正在加载节点...</p>
+              <p id="nodes-empty" class="state-msg hidden">暂无节点。请导入链接或同步订阅。</p>
+              <p id="nodes-error" class="state-msg error hidden"></p>
+            </div>
+
+            <!-- Table Section -->
+            <div id="nodes-list" class="table-wrapper hidden flex-fill">
+              <table>
+                <thead>
+                  <tr>
+                    <th>协议</th>
+                    <th>别名 / 地址</th>
+                    <th>传输 / 安全</th>
+                    <th>延时</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="nodes-tbody">
+                  <!-- JS rendered rows will go here -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Footer Section -->
+            <footer class="card-footer">
+              <button id="save-restart-core" type="button" class="btn-primary">应用节点并重启核心</button>
+            </footer>
+          </div>
+        </section>
+
+        <!-- ROUTING VIEW -->
+        <section id="routing-view" class="view">
+          <div class="proxy-card full-card">
+            <div class="card-header">
+              <div class="header-titles">
+                <h1>路由分流规则配置</h1>
+                <p>为主流域名和地域划分出口网络</p>
+              </div>
+            </div>
+            <div class="routing-list flex-fill">
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name"><i class="ph ph-shield-warning" style="margin-right:0.4rem; color:var(--btn-red-text);"></i> 广告拦截 (Ad-Block)</div>
+                  <div class="route-desc">基于 GEOSITE 拦截大量广告追踪域名</div>
+                </div>
+                <select class="route-select"><option>REJECT (拦截)</option></select>
+              </div>
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name"><i class="ph ph-map-pin" style="margin-right:0.4rem; color:var(--text-muted);"></i> 大陆内网 (GeoIP:CN)</div>
+                  <div class="route-desc">识别来自中国大陆的直连网络请求</div>
+                </div>
+                <select class="route-select"><option>DIRECT (直连)</option></select>
+              </div>
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name"><i class="ph ph-globe" style="margin-right:0.4rem; color:var(--accent-base);"></i> 默认全域请求 (Final)</div>
+                  <div class="route-desc">其他所有未命中规则的海外公网流量转交</div>
+                </div>
+                <select class="route-select"><option>Proxy (走默认代理群)</option></select>
+              </div>
+            </div>
+            <footer class="card-footer">
+              <button type="button" class="btn-primary">保存路由表</button>
+            </footer>
+          </div>
+        </section>
+
+        <!-- SETTINGS VIEW -->
+        <section id="settings-view" class="view">
+          <div class="proxy-card full-card">
+            <div class="card-header">
+              <div class="header-titles">
+                <h1>客户端高级设置</h1>
+                <p>本地系统环境变量的调校</p>
+              </div>
+            </div>
+            <div class="settings-list flex-fill">
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name">开机静默启动</div>
+                  <div class="route-desc">随系统加载并在后台托盘常驻守护</div>
+                </div>
+                <button class="toggle-btn active">已开启</button>
+              </div>
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name">Tun 虚拟网卡模式</div>
+                  <div class="route-desc">截获由于应用不遵守代理环境变量产生的底层流量</div>
+                </div>
+                <button class="toggle-btn">未启用</button>
+              </div>
+              <div class="route-item">
+                <div class="route-info">
+                  <div class="route-name">内置 Sing-Box 核心更新</div>
+                  <div class="route-desc">当前使用的本地核心版本为 v1.8.11</div>
+                </div>
+                <button class="btn-outline">检查更新</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- Edit Node Modal -->
+    <div id="edit-modal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 style="margin:0; font-size:1.125rem; font-weight:600;">编辑高级节点 (JSON)</h2>
+          <button type="button" class="btn-icon" id="close-modal-top" style="background:transparent; border:none; color:var(--text-muted); padding:0; width:24px; height:24px; font-size:1.25rem; display:flex; align-items:center; justify-content:center;">&times;</button>
+        </div>
+        <div class="modal-body">
+          <textarea id="edit-json-input" class="json-editor" spellcheck="false"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn">取消</button>
+          <button type="button" class="btn-primary" id="save-node-btn">保存设置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bubble Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+    
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
