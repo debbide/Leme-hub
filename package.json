@@ -1,10 +1,13 @@
 {
   "name": "leme-hub",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.6",
   "productName": "Leme Hub",
   "description": "Multi-port proxy splitting for desktop and server workflows.",
-  "author": "debbide",
+  "author": {
+    "name": "debbide",
+    "email": "debbide@users.noreply.github.com"
+  },
   "type": "module",
   "main": "desktop/electron-main.js",
   "scripts": {
@@ -67,6 +70,7 @@
     },
     "linux": {
       "icon": "desktop/resources/icon.png",
+      "maintainer": "debbide <debbide@users.noreply.github.com>",
       "target": [
         "deb"
       ],
