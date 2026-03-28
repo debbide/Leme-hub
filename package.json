@@ -17,7 +17,7 @@
     "desktop:dev": "electron .",
     "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win portable",
     "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
-    "build:server:bundle": "esbuild ./scripts/server.js --bundle --platform=node --format=cjs --target=node20 --outfile=dist/server/server-bundle.cjs",
+    "build:server:bundle": "node scripts/build-server-bundle.mjs",
     "build:server": "npm run build:server:bundle && pkg ./dist/server/server-bundle.cjs --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
     "test": "node --test"
