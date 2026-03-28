@@ -499,7 +499,7 @@ export class CoreManager {
     }
 
     return {
-      settings: saved,
+      settings: { ...saved },
       proxy: this.getProxyProfile(),
       restartRequired: shouldAutoRestart ? false : this.getRestartRequired(),
       autoRestarted: shouldAutoRestart,
