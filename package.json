@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^6.6.0",
+    "encoding": "^0.1.13",
     "electron": "^36.3.2",
     "electron-builder": "^26.0.12",
     "jimp": "^1.6.0",
