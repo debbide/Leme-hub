@@ -21,7 +21,8 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
   const root = path.resolve(projectRoot);
   const runtimeRoot = path.resolve(options.runtimeRoot || root);
   const appRoot = path.join(root, 'app');
-  const publicDir = path.join(root, 'public');
+  const snapshotRoot = isPackagedBinary ? path.resolve(__dirname, '../..') : null;
+  const publicDir = snapshotRoot ? path.join(snapshotRoot, 'public') : path.join(root, 'public');
   const dataDir = path.join(runtimeRoot, 'data');
   const logsDir = path.join(runtimeRoot, 'logs');
   const binDir = path.join(runtimeRoot, 'bin');
