@@ -15,7 +15,7 @@
     "start:server": "node scripts/server.js",
     "prepare:icons": "node scripts/prepare-icons.js",
     "desktop:dev": "electron .",
-    "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win nsis portable",
+    "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win portable",
     "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
     "build:server": "pkg ./scripts/server.js --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
@@ -65,7 +65,7 @@
     "win": {
       "icon": "desktop/resources/icon.ico",
       "target": [
-        "nsis"
+        "portable"
       ]
     },
     "linux": {
