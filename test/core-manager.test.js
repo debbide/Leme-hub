@@ -482,12 +482,14 @@ test('updateSettings applies auto start registration state', async () => {
   };
 
   const enabledResult = await manager.updateSettings({ autoStart: true });
+  const enabledStatus = manager.getStatus();
   const disabledResult = await manager.updateSettings({ autoStart: false });
+  const disabledStatus = manager.getStatus();
 
   assert.equal(enabledResult.settings.autoStart, true);
-  assert.equal(enabledResult.core.autoStart.enabled, true);
+  assert.equal(enabledStatus.autoStart.enabled, true);
   assert.equal(disabledResult.settings.autoStart, false);
-  assert.equal(disabledResult.core.autoStart.enabled, false);
+  assert.equal(disabledStatus.autoStart.enabled, false);
   assert.equal(enabled, false);
 });
 
