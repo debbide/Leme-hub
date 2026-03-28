@@ -34,10 +34,13 @@ function resolveDesktopRuntimeRoot() {
 }
 
 async function startBackend() {
+  const autoStartExecutable = process.env.PORTABLE_EXECUTABLE_FILE
+    || process.execPath;
   const runtimeRoot = resolveDesktopRuntimeRoot();
   const paths = resolveProjectPaths(projectRoot, { runtimeRoot });
   const server = createAppServer(paths, {
     ...process.env,
+    LEME_AUTOSTART_EXECUTABLE: autoStartExecutable,
     LEME_MODE: 'desktop',
     LEME_UI_HOST: '127.0.0.1'
   });

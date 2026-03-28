@@ -3,6 +3,7 @@ import fs from 'fs';
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
 import { CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES } from '../../shared/constants.js';
+import { AutoStartManager } from './AutoStartManager.js';
 import { SystemProxyManager } from './SystemProxyManager.js';
 
 const createHttpError = (message, status) => Object.assign(new Error(message), { status });
@@ -155,6 +156,13 @@ export class CoreManager {
         lastError: null,
         supported: false,
         desiredEnabled: false
+      },
+      autoStart: {
+        enabled: false,
+        provider: 'uninitialized',
+        supported: false,
+        command: null,
+        desiredEnabled: false
       }
     };
 
@@ -165,6 +173,8 @@ export class CoreManager {
     this.state.binary = this.buildBinaryState();
     this.systemProxyManager = new SystemProxyManager();
     this.state.systemProxy = this.buildSystemProxyState();
+    this.autoStartManager = new AutoStartManager();
+    this.state.autoStart = this.buildAutoStartState();
 
     this.proxyService = new ProxyService({
       configDir: this.paths.dataDir,
@@ -264,6 +274,20 @@ export class CoreManager {
     };
   }
 
+  buildAutoStartState(overrides = {}) {
+    const settings = this.getSettingsSnapshot();
+    const capabilities = this.autoStartManager.getCapabilities();
+
+    return {
+      enabled: false,
+      provider: capabilities.provider,
+      supported: capabilities.supported,
+      command: null,
+      desiredEnabled: !!settings.autoStart,
+      ...overrides
+    };
+  }
+
   resolveActiveNodeId(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
     if (settings.activeNodeId && nodes.some((node) => node.id === settings.activeNodeId)) {
       return settings.activeNodeId;
@@ -288,6 +312,21 @@ export class CoreManager {
       customRules: settings.customRules,
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
     };
+  }
+
+  async refreshAutoStartState() {
+    try {
+      const status = await this.autoStartManager.getStatus();
+      this.state.autoStart = this.buildAutoStartState(status);
+    } catch (error) {
+      this.state.autoStart = this.buildAutoStartState({
+        enabled: false,
+        command: null,
+        error: error.message
+      });
+    }
+
+    return this.state.autoStart;
   }
 
   updateSubscriptionRecord(url, importedCount, nodes) {
@@ -428,14 +467,23 @@ export class CoreManager {
     }
 
     const activeNodeId = this.resolveActiveNodeId(next, nodes);
+    let autoStart = this.state.autoStart;
+    if (Object.prototype.hasOwnProperty.call(patch, 'autoStart')) {
+      autoStart = patch.autoStart
+        ? await this.autoStartManager.enable()
+        : await this.autoStartManager.disable();
+    }
+
     const saved = this.store.saveSettings({
       ...next,
       proxyBasePort,
       systemProxySocksPort,
       systemProxyHttpPort,
       customRules,
-      activeNodeId
+      activeNodeId,
+      autoStart: !!next.autoStart
     });
+    this.state.autoStart = this.buildAutoStartState(autoStart);
 
     const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules'];
     const shouldAutoRestart = this.state.status === 'running'
@@ -460,9 +508,11 @@ export class CoreManager {
 
     return {
       ...this.state,
-      binary,
+      binary: { ...binary },
       proxy: this.getProxyProfile(),
-      systemProxy: this.state.systemProxy,
+      systemProxy: { ...this.state.systemProxy },
+      autoStart: { ...this.state.autoStart },
+      settings: this.getSettingsSnapshot(),
       hasConfig: fs.existsSync(this.paths.configPath),
       nodeCount: this.store.getNodes().length,
       nodes: this.getNodeRecords(),

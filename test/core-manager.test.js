@@ -466,6 +466,31 @@ test('updateSettings auto restarts when active node changes while core is runnin
   assert.equal(result.proxy.activeNodeId, 'n2');
 });
 
+test('updateSettings applies auto start registration state', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  let enabled = false;
+  manager.autoStartManager = {
+    getCapabilities: () => ({ supported: true, provider: 'mock' }),
+    enable: async () => {
+      enabled = true;
+      return { enabled: true, supported: true, provider: 'mock', command: 'mock-enable' };
+    },
+    disable: async () => {
+      enabled = false;
+      return { enabled: false, supported: true, provider: 'mock', command: null };
+    }
+  };
+
+  const enabledResult = await manager.updateSettings({ autoStart: true });
+  const disabledResult = await manager.updateSettings({ autoStart: false });
+
+  assert.equal(enabledResult.settings.autoStart, true);
+  assert.equal(enabledResult.core.autoStart.enabled, true);
+  assert.equal(disabledResult.settings.autoStart, false);
+  assert.equal(disabledResult.core.autoStart.enabled, false);
+  assert.equal(enabled, false);
+});
+
 test('importRawNode auto restarts when core is already running', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.state.status = 'running';

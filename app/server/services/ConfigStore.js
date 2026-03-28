@@ -15,6 +15,7 @@ const defaultSettings = (paths) => ({
   proxyListenHost: DEFAULT_PROXY_LISTEN_HOST,
   proxyBasePort: DEFAULT_PROXY_BASE_PORT,
   systemProxyEnabled: false,
+  autoStart: false,
   systemProxySocksPort: DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
   systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
   activeNodeId: null,
