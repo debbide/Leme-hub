@@ -1,0 +1,17 @@
+{
+  "name": "local-proxy-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node app/server/index.js",
+    "start:server": "node scripts/server.js",
+    "dev": "node scripts/dev.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.6.7",
+    "socks-proxy-agent": "^8.0.3",
+    "tar": "^7.5.13"
+  }
+}
