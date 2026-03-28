@@ -14,7 +14,9 @@ let serverContext = null;
 let mainWindow = null;
 
 async function startBackend() {
-  const runtimeRoot = path.join(app.getPath('userData'), 'runtime');
+  const runtimeRoot = process.env.LEME_RUNTIME_ROOT
+    ? path.resolve(process.env.LEME_RUNTIME_ROOT)
+    : (app.isPackaged ? path.dirname(process.execPath) : projectRoot);
   const paths = resolveProjectPaths(projectRoot, { runtimeRoot });
   const server = createAppServer(paths, {
     ...process.env,

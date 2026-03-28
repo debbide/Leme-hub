@@ -6,6 +6,7 @@ This project now exposes one backend core that can serve two release lines.
 
 - Purpose: local workstation usage, multi-port traffic splitting for browsers/apps
 - Default runtime: `LEME_MODE=desktop`
+- Default runtime root: executable directory in packaged builds, project root in unpackaged runs
 - Default bind: use persisted `uiHost` / `uiPort`
 - Typical start command: `npm start`
 
