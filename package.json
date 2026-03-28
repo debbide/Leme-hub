@@ -1,10 +1,16 @@
 {
-  "name": "local-proxy-client",
+  "name": "leme-hub",
   "private": true,
+  "productName": "Leme Hub",
   "type": "module",
+  "main": "desktop/electron-main.js",
   "scripts": {
     "start": "node app/server/index.js",
     "start:server": "node scripts/server.js",
+    "desktop:dev": "electron .",
+    "build:desktop:win": "electron-builder --win nsis",
+    "build:desktop:deb": "electron-builder --linux deb",
+    "build:server": "pkg ./scripts/server.js --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
     "test": "node --test"
   },
@@ -13,5 +19,51 @@
     "axios": "^1.6.7",
     "socks-proxy-agent": "^8.0.3",
     "tar": "^7.5.13"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.6.0",
+    "electron": "^36.3.2",
+    "electron-builder": "^26.0.12"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "docs/**/*"
+    ],
+    "scripts": [
+      "app/**/*.js",
+      "scripts/**/*.js"
+    ],
+    "outputPath": "dist/server"
+  },
+  "build": {
+    "appId": "com.leme.hub",
+    "productName": "Leme Hub",
+    "asar": true,
+    "directories": {
+      "output": "dist/desktop",
+      "buildResources": "desktop/resources"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "app/**/*",
+      "desktop/**/*",
+      "public/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "desktop/resources/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "desktop/resources/icon.png",
+      "target": [
+        "deb"
+      ],
+      "category": "Network"
+    }
   }
 }
