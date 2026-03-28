@@ -6,12 +6,17 @@ import os from 'os';
 import path from 'path';
 
 import AdmZip from 'adm-zip';
+import { c as createTar } from 'tar';
 
 import { SingBoxBinaryManager } from '../app/proxy/SingBoxBinaryManager.js';
 import { DEFAULT_MANAGED_SINGBOX_VERSION } from '../app/shared/constants.js';
 import { resolveProjectPaths } from '../app/shared/paths.js';
 
 const createProjectRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-project-'));
+const platform = process.platform === 'win32' ? 'windows' : process.platform;
+const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'ia32' ? '386' : process.arch;
+const archiveExtension = platform === 'windows' ? '.zip' : '.tar.gz';
+const executableName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
 
 const createZipBuffer = (files) => {
   const zip = new AdmZip();
@@ -19,6 +24,29 @@ const createZipBuffer = (files) => {
     zip.addFile(name, Buffer.from(content));
   }
   return zip.toBuffer();
+};
+
+const createArchivePath = (projectRoot, version) => path.join(projectRoot, `sing-box-${version}-${platform}-${arch}${archiveExtension}`);
+
+const createExecutablePath = (version) => `sing-box-${version}-${platform}-${arch}/${executableName}`;
+
+const createArchiveFile = async (archivePath, version) => {
+  const executablePath = createExecutablePath(version);
+
+  if (archiveExtension === '.zip') {
+    const zipBuffer = createZipBuffer({ [executablePath]: 'downloaded-binary' });
+    fs.writeFileSync(archivePath, zipBuffer);
+    return zipBuffer;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'leme-hub-singbox-archive-'));
+  const fullExecutablePath = path.join(tempDir, executablePath);
+  fs.mkdirSync(path.dirname(fullExecutablePath), { recursive: true });
+  fs.writeFileSync(fullExecutablePath, 'downloaded-binary');
+  await createTar({ gzip: true, cwd: tempDir, file: archivePath }, [path.dirname(executablePath)]);
+  const buffer = fs.readFileSync(archivePath);
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  return buffer;
 };
 
 const createFetchStub = ({ release, archivePath }) => async (url) => {
@@ -63,12 +91,10 @@ test('downloads managed binary when no binary exists', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
   const version = '1.13.4';
-  const archiveName = `sing-box-${version}-windows-amd64.zip`;
-  const executablePath = `sing-box-${version}-windows-amd64/sing-box.exe`;
-  const zipBuffer = createZipBuffer({ [executablePath]: 'downloaded-binary' });
-  const archivePath = path.join(projectRoot, archiveName);
-  fs.writeFileSync(archivePath, zipBuffer);
-  const digest = crypto.createHash('sha256').update(zipBuffer).digest('hex');
+  const archivePath = createArchivePath(projectRoot, version);
+  const archiveName = path.basename(archivePath);
+  const archiveBuffer = await createArchiveFile(archivePath, version);
+  const digest = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
 
   const manager = new SingBoxBinaryManager(paths, {
     fetch: createFetchStub({
@@ -96,11 +122,9 @@ test('fails on checksum mismatch and leaves no managed binary', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
   const version = '1.13.4';
-  const archiveName = `sing-box-${version}-windows-amd64.zip`;
-  const executablePath = `sing-box-${version}-windows-amd64/sing-box.exe`;
-  const zipBuffer = createZipBuffer({ [executablePath]: 'downloaded-binary' });
-  const archivePath = path.join(projectRoot, archiveName);
-  fs.writeFileSync(archivePath, zipBuffer);
+  const archivePath = createArchivePath(projectRoot, version);
+  const archiveName = path.basename(archivePath);
+  await createArchiveFile(archivePath, version);
 
   const manager = new SingBoxBinaryManager(paths, {
     fetch: createFetchStub({
