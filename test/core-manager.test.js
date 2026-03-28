@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 import { CoreManager } from '../app/server/services/CoreManager.js';
 
@@ -33,15 +36,26 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
   };
 };
 
-const createPaths = () => ({
-  root: 'E:\\repo\\local-proxy-client',
-  dataDir: 'E:\\repo\\local-proxy-client\\data',
-  binDir: 'E:\\repo\\local-proxy-client\\bin',
-  configPath: 'E:\\repo\\local-proxy-client\\data\\singbox_config.json',
-  nodesPath: 'E:\\repo\\local-proxy-client\\data\\proxy_nodes.json',
-  settingsPath: 'E:\\repo\\local-proxy-client\\data\\settings.json',
-  logPath: 'E:\\repo\\local-proxy-client\\logs\\singbox.log'
-});
+const createPaths = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'leme-hub-core-manager-'));
+  const dataDir = path.join(root, 'data');
+  const binDir = path.join(root, 'bin');
+  const logsDir = path.join(root, 'logs');
+
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(logsDir, { recursive: true });
+
+  return {
+    root,
+    dataDir,
+    binDir,
+    configPath: path.join(dataDir, 'singbox_config.json'),
+    nodesPath: path.join(dataDir, 'proxy_nodes.json'),
+    settingsPath: path.join(dataDir, 'settings.json'),
+    logPath: path.join(logsDir, 'singbox.log')
+  };
+};
 
 test('start bootstraps binary before starting proxy', async () => {
   const manager = new CoreManager(createPaths(), createStore());
