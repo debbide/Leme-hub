@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 import {
   DEFAULT_CONFIG_FILE,
@@ -9,9 +8,7 @@ import {
   DEFAULT_SETTINGS_FILE
 } from './constants.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const defaultProjectRoot = path.resolve(__dirname, '..', '..');
+const defaultProjectRoot = path.resolve(process.cwd());
 const isPackagedBinary = Boolean(process.pkg);
 
 const ensureDir = (dirPath) => {
