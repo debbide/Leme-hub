@@ -21,6 +21,11 @@ Recommended environment:
 - Run the server binary build on Linux CI/runner (for example GitHub Actions Ubuntu).
 - Cross-building the Linux targets from a Windows workstation is not guaranteed to work with `pkg`.
 
+Build pipeline detail:
+
+- The server release first bundles the Node entrypoint with `esbuild`.
+- `pkg` then packages the bundled server entry into Linux binaries.
+
 The server build packages the shared backend core as standalone Linux executables.
 
 ## Runtime Notes
