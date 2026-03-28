@@ -18,7 +18,7 @@
     "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win portable",
     "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
     "build:server:bundle": "node scripts/build-server-bundle.mjs",
-    "build:server": "npm run build:server:bundle && pkg ./dist/server/server-bundle.cjs --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
+    "build:server": "npm run build:server:bundle && pkg ./dist/server/package.json --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
     "test": "node --test"
   },
@@ -36,16 +36,6 @@
     "electron-builder": "^26.0.12",
     "jimp": "^1.6.0",
     "png-to-ico": "^2.1.8"
-  },
-  "pkg": {
-    "assets": [
-      "dist/server/public/**/*"
-    ],
-    "scripts": [
-      "app/**/*.js",
-      "scripts/**/*.js"
-    ],
-    "outputPath": "dist/server"
   },
   "build": {
     "appId": "com.leme.hub",
