@@ -54,3 +54,40 @@ jobs:
         with:
           name: leme-hub-server-linux
           path: dist/server/**
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - desktop-windows
+      - desktop-linux-deb
+      - server-linux-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: leme-hub-desktop-windows
+          path: release-assets/windows
+
+      - name: Download Linux deb artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: leme-hub-desktop-deb
+          path: release-assets/linux-desktop
+
+      - name: Download server binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: leme-hub-server-linux
+          path: release-assets/server
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/windows/**
+            release-assets/linux-desktop/**
+            release-assets/server/**
+          generate_release_notes: true

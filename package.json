@@ -7,9 +7,10 @@
   "scripts": {
     "start": "node app/server/index.js",
     "start:server": "node scripts/server.js",
+    "prepare:icons": "node scripts/prepare-icons.js",
     "desktop:dev": "electron .",
-    "build:desktop:win": "electron-builder --win nsis",
-    "build:desktop:deb": "electron-builder --linux deb",
+    "build:desktop:win": "npm run prepare:icons && electron-builder --win nsis portable",
+    "build:desktop:deb": "npm run prepare:icons && electron-builder --linux deb",
     "build:server": "pkg ./scripts/server.js --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
     "test": "node --test"
@@ -23,7 +24,9 @@
   "devDependencies": {
     "@yao-pkg/pkg": "^6.6.0",
     "electron": "^36.3.2",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "jimp": "^1.6.0",
+    "png-to-ico": "^2.1.8"
   },
   "pkg": {
     "assets": [
