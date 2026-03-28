@@ -39,8 +39,7 @@
   },
   "pkg": {
     "assets": [
-      "public/**/*",
-      "docs/**/*"
+      "dist/server/public/**/*"
     ],
     "scripts": [
       "app/**/*.js",
