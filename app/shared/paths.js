@@ -12,6 +12,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const defaultProjectRoot = path.resolve(__dirname, '..', '..');
+const isPackagedBinary = Boolean(process.pkg);
 
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
@@ -19,18 +20,20 @@ const ensureDir = (dirPath) => {
   }
 };
 
-export function resolveProjectPaths(projectRoot = defaultProjectRoot) {
+export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = {}) {
   const root = path.resolve(projectRoot);
+  const runtimeRoot = path.resolve(options.runtimeRoot || root);
   const appRoot = path.join(root, 'app');
   const publicDir = path.join(root, 'public');
-  const dataDir = path.join(root, 'data');
-  const logsDir = path.join(root, 'logs');
-  const binDir = path.join(root, 'bin');
+  const dataDir = path.join(runtimeRoot, 'data');
+  const logsDir = path.join(runtimeRoot, 'logs');
+  const binDir = path.join(runtimeRoot, 'bin');
 
-  [appRoot, publicDir, dataDir, logsDir, binDir].forEach(ensureDir);
+  [dataDir, logsDir, binDir].forEach(ensureDir);
 
   return {
     root,
+    runtimeRoot,
     appRoot,
     publicDir,
     dataDir,
@@ -43,6 +46,18 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot) {
   };
 }
 
+export function resolveDefaultRuntimeRoot(projectRoot = defaultProjectRoot, env = process.env) {
+  if (env.LEME_RUNTIME_ROOT) {
+    return path.resolve(env.LEME_RUNTIME_ROOT);
+  }
+
+  if (isPackagedBinary) {
+    return path.dirname(process.execPath);
+  }
+
+  return path.resolve(projectRoot);
+}
+
 export function ensureRuntimeDirs(paths) {
-  [paths.dataDir, paths.logsDir, paths.publicDir, paths.binDir].forEach(ensureDir);
+  [paths.dataDir, paths.logsDir, paths.binDir].forEach(ensureDir);
 }
