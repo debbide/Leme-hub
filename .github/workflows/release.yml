@@ -126,7 +126,17 @@ jobs:
       - name: Collect Linux server binaries
         run: |
           mkdir -p release-assets/server
-          find dist/server -maxdepth 1 -type f -exec cp {} release-assets/server/ \;
+          find dist/server -maxdepth 1 -type f ! -name '*.cjs' | while read -r file; do
+            name="$(basename "$file")"
+            case "$name" in
+              *arm64)
+                cp "$file" "release-assets/server/leme-hub-server-linux-arm64"
+                ;;
+              *x64)
+                cp "$file" "release-assets/server/leme-hub-server-linux-amd64"
+                ;;
+            esac
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: leme-hub-server-linux
@@ -169,6 +179,16 @@ jobs:
         with:
           name: leme-hub-server-linux
           path: release-assets/server
+
+      - name: Remove old uploaded release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | while read -r asset; do
+            if [[ -n "$asset" ]]; then
+              gh release delete-asset "$RELEASE_TAG" "$asset" -y || true
+            fi
+          done
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
