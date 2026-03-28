@@ -497,6 +497,9 @@ tr.active-row {
   font-weight: 500;
   font-size: 0.875rem;
 }
+.latency.good { color: var(--pill-green-text); }
+.latency.warn { color: #facc15; }
+.latency.bad { color: var(--btn-red-text); }
 .latency.success { color: var(--pill-green-text); }
 .latency.error { color: var(--btn-red-text); }
 
@@ -551,16 +554,58 @@ tr.active-row {
   min-width: 180px;
 }
 
-.toggle-btn {
-  background: var(--bg-main);
-  border: 1px solid var(--border-strong);
-  color: var(--text-muted);
-  width: 100px;
+/* CYBER NEON TOGGLE */
+.cyber-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
 }
-.toggle-btn.active {
-  background: var(--pill-green-bg);
-  color: var(--pill-green-text);
-  border-color: var(--accent-green);
+
+.cyber-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.cyber-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-strong);
+  transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 4px; /* More hardware look than pill */
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.cyber-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: linear-gradient(135deg, #e0e0e0 0%, #888 100%);
+  transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+input:checked + .cyber-slider {
+  background-color: rgba(168, 85, 247, 0.1);
+  border-color: #a855f7;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4), inset 0 1px 2px rgba(0,0,0,0.5);
+}
+
+input:checked + .cyber-slider:before {
+  transform: translateX(24px);
+  background: linear-gradient(135deg, #fff 0%, #a855f7 100%);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
+}
+
+input:focus + .cyber-slider {
+  border-color: var(--accent-base);
 }
 
 .action-form {
