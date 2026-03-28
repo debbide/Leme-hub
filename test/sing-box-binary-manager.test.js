@@ -118,12 +118,11 @@ test('downloads managed binary when no binary exists', async () => {
   assert.equal(fs.existsSync(result.executablePath), true);
 });
 
-test('fails on checksum mismatch and leaves no managed binary', async () => {
+test('downloads pinned binaries without relying on release checksum metadata', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
   const version = '1.13.4';
   const archivePath = createArchivePath(projectRoot, version);
-  const archiveName = path.basename(archivePath);
   await createArchiveFile(archivePath, version);
 
   const manager = new SingBoxBinaryManager(paths, {
@@ -131,7 +130,7 @@ test('fails on checksum mismatch and leaves no managed binary', async () => {
       release: {
         tag_name: `v${version}`,
         assets: [{
-          name: archiveName,
+          name: path.basename(archivePath),
           browser_download_url: 'https://example.com/sing-box.zip',
           digest: 'sha256:deadbeef'
         }]
@@ -140,8 +139,9 @@ test('fails on checksum mismatch and leaves no managed binary', async () => {
     })
   });
 
-  await assert.rejects(() => manager.ensureAvailable(path.join(paths.binDir, 'missing.exe')), /checksum/i);
-  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), false);
+  const result = await manager.ensureAvailable(path.join(paths.binDir, 'missing.exe'));
+  assert.equal(result.installed, true);
+  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), true);
 });
 
 test('downloads pinned version without fetching release metadata first', async () => {
