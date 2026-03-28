@@ -15,7 +15,7 @@ export function resolveServerRuntime(settings, env = process.env) {
   const mode = env.LEME_MODE === 'server' ? 'server' : 'desktop';
   const allowRemote = toBool(env.LEME_ALLOW_REMOTE);
   const host = mode === 'server'
-    ? (env.LEME_UI_HOST || (allowRemote ? '0.0.0.0' : '127.0.0.1'))
+    ? (env.LEME_UI_HOST || '0.0.0.0')
     : (env.LEME_UI_HOST || settings.uiHost);
   const port = mode === 'server'
     ? toPort(env.LEME_UI_PORT, DEFAULT_UI_PORT)

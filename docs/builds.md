@@ -32,7 +32,7 @@ The server build packages the shared backend core as standalone Linux executable
 
 - Desktop edition keeps the web panel embedded while still serving the same local HTTP control surface.
 - Desktop edition stores `data/`, `logs/`, and `bin/` beside the packaged executable by default.
-- Server edition starts in `LEME_MODE=server` and can be exposed remotely with `LEME_ALLOW_REMOTE=true`.
+- Server edition starts in `LEME_MODE=server` and listens on `0.0.0.0:51888` by default.
 
 ## CI / Release
 

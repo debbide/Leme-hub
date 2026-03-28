@@ -15,9 +15,8 @@ This project now exposes one backend core that can serve two release lines.
 - Purpose: headless host service with browser-based control panel
 - Runtime: `LEME_MODE=server`
 - Typical start command: `npm run start:server`
-- Default bind: `127.0.0.1:51888`
+- Default bind: `0.0.0.0:51888`
 - Optional env:
-  - `LEME_ALLOW_REMOTE=true` -> bind to `0.0.0.0` unless `LEME_UI_HOST` is set
   - `LEME_UI_HOST=<host>` -> explicit bind host
   - `LEME_UI_PORT=<port>` -> explicit bind port
 
