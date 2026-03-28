@@ -1,0 +1,754 @@
+import fs from 'fs';
+
+import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
+import { ProxyService } from '../../proxy/ProxyService.js';
+import { CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES } from '../../shared/constants.js';
+import { SystemProxyManager } from './SystemProxyManager.js';
+
+const createHttpError = (message, status) => Object.assign(new Error(message), { status });
+
+const createNodeId = () => Math.random().toString(36).slice(2, 10);
+
+const getNodeSignature = (node) => [
+  node.type || '',
+  node.server || '',
+  node.port || '',
+  node.uuid || '',
+  node.password || '',
+  node.method || ''
+].join('|');
+
+const validatePort = (value, fieldName) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    throw createHttpError(`${fieldName} must be a valid TCP port`, 400);
+  }
+
+  return parsed;
+};
+
+const normalizeCustomRule = (rule, index) => {
+  if (!rule || typeof rule !== 'object') {
+    throw createHttpError(`customRules[${index}] must be an object`, 400);
+  }
+
+  const type = String(rule.type || '').trim();
+  const action = String(rule.action || '').trim();
+  const value = String(rule.value || '').trim();
+
+  if (!CUSTOM_RULE_TYPES.includes(type)) {
+    throw createHttpError(`customRules[${index}] has invalid type`, 400);
+  }
+
+  if (!CUSTOM_RULE_ACTIONS.includes(action)) {
+    throw createHttpError(`customRules[${index}] has invalid action`, 400);
+  }
+
+  if (!value) {
+    throw createHttpError(`customRules[${index}] must include a value`, 400);
+  }
+
+  return {
+    id: rule.id || `rule-${index + 1}`,
+    type,
+    action,
+    value,
+    note: typeof rule.note === 'string' ? rule.note.trim() : ''
+  };
+};
+
+const normalizeSubscriptionRecord = (record, index) => {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+
+  const url = String(record.url || '').trim();
+  if (!url) {
+    return null;
+  }
+
+  return {
+    id: record.id || `subscription-${index + 1}`,
+    url,
+    name: String(record.name || '').trim() || url,
+    importedCount: Number.parseInt(record.importedCount, 10) || 0,
+    lastSyncedAt: record.lastSyncedAt || null,
+    lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0
+  };
+};
+
+export const assignStableLocalPorts = (nodes, basePort) => {
+  const occupied = new Set();
+  let nextPort = basePort;
+
+  for (const node of nodes) {
+    const parsed = Number.parseInt(node.local_port, 10);
+    if (Number.isInteger(parsed) && parsed > 0 && !occupied.has(parsed)) {
+      occupied.add(parsed);
+    }
+  }
+
+  return nodes.map((node) => {
+    const parsed = Number.parseInt(node.local_port, 10);
+    if (Number.isInteger(parsed) && parsed > 0 && !occupied.has(parsed)) {
+      occupied.add(parsed);
+      return { ...node, local_port: parsed };
+    }
+
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return { ...node, local_port: parsed };
+    }
+
+    while (occupied.has(nextPort)) {
+      nextPort += 1;
+    }
+
+    const assigned = nextPort;
+    occupied.add(assigned);
+    nextPort += 1;
+    return { ...node, local_port: assigned };
+  });
+};
+
+const mergeUniqueNodes = (existingNodes, incomingNodes) => {
+  const seen = new Set(existingNodes.map((node) => node.id));
+  const seenSignatures = new Set(existingNodes.map(getNodeSignature));
+  const merged = [...existingNodes];
+
+  for (const node of incomingNodes) {
+    const withId = node.id ? node : { ...node, id: createNodeId() };
+    const signature = getNodeSignature(withId);
+    if (!seen.has(withId.id) && !seenSignatures.has(signature)) {
+      merged.push(withId);
+      seen.add(withId.id);
+      seenSignatures.add(signature);
+    }
+  }
+
+  return merged;
+};
+
+export class CoreManager {
+  constructor(paths, store) {
+    this.paths = paths;
+    this.store = store;
+    this.state = {
+      status: 'stopped',
+      startedAt: null,
+      lastError: null,
+      executablePath: null,
+      configPath: this.paths.configPath,
+      binary: {
+        status: 'missing',
+        configuredPath: this.store.getSettings().singBoxBinaryPath,
+        managedPath: this.paths.binDir,
+        source: 'missing',
+        lastError: null,
+        version: null
+      },
+      systemProxy: {
+        enabled: false,
+        mode: 'unknown',
+        provider: 'uninitialized',
+        http: null,
+        socks: null,
+        lastError: null,
+        supported: false,
+        desiredEnabled: false
+      }
+    };
+
+    this.binaryManager = new SingBoxBinaryManager(this.paths, {
+      log: this.createLogger()
+    });
+
+    this.state.binary = this.buildBinaryState();
+    this.systemProxyManager = new SystemProxyManager();
+    this.state.systemProxy = this.buildSystemProxyState();
+
+    this.proxyService = new ProxyService({
+      configDir: this.paths.dataDir,
+      projectRoot: this.paths.root,
+      proxyListen: this.store.getSettings().proxyListenHost,
+      basePort: this.store.getSettings().proxyBasePort,
+      configFileName: this.paths.configPath.split(/[/\\]/).pop(),
+      log: this.createLogger()
+    });
+  }
+
+  createLogger() {
+    return {
+      log: (message) => this.store.appendLog(message),
+      error: (message) => this.store.appendLog(message),
+      warn: (message) => this.store.appendLog(message)
+    };
+  }
+
+  getSettingsSnapshot() {
+    const settings = this.store.getSettings();
+    const normalizedSubscriptions = Array.isArray(settings.subscriptions)
+      ? settings.subscriptions.map(normalizeSubscriptionRecord).filter(Boolean)
+      : [];
+
+    if (settings.customRules === undefined) {
+      return {
+        ...settings,
+        customRules: [],
+        subscriptions: normalizedSubscriptions
+      };
+    }
+
+    if (!Array.isArray(settings.customRules)) {
+      this.store.appendLog('[CoreManager] Invalid customRules persisted in settings; resetting to []');
+      return this.store.saveSettings({
+        ...settings,
+        customRules: []
+      });
+    }
+
+    try {
+      const normalizedRules = settings.customRules.map((rule, index) => normalizeCustomRule(rule, index));
+      if (JSON.stringify(settings.customRules) !== JSON.stringify(normalizedRules)) {
+        return this.store.saveSettings({
+          ...settings,
+          customRules: normalizedRules,
+          subscriptions: normalizedSubscriptions
+        });
+      }
+
+      return {
+        ...settings,
+        customRules: normalizedRules,
+        subscriptions: normalizedSubscriptions
+      };
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] Invalid persisted customRules ignored: ${error.message}`);
+      return this.store.saveSettings({
+        ...settings,
+        customRules: [],
+        subscriptions: normalizedSubscriptions
+      });
+    }
+  }
+
+  buildBinaryState(overrides = {}) {
+    const settings = this.getSettingsSnapshot();
+    const status = this.binaryManager.getStatus(settings.singBoxBinaryPath);
+
+    return {
+      status: status.ready ? 'ready' : 'missing',
+      configuredPath: status.configuredPath,
+      managedPath: status.managedPath,
+      resolvedPath: status.configuredExists ? status.configuredPath : (status.managedExists ? status.managedPath : null),
+      source: status.source,
+      lastError: null,
+      version: null,
+      ...overrides
+    };
+  }
+
+  buildSystemProxyState(overrides = {}) {
+    const settings = this.getSettingsSnapshot();
+    const capabilities = this.systemProxyManager.getCapabilities();
+
+    return {
+      enabled: false,
+      mode: capabilities.supported ? 'off' : 'unsupported',
+      provider: capabilities.provider,
+      http: null,
+      socks: null,
+      lastError: null,
+      supported: capabilities.supported,
+      desiredEnabled: !!settings.systemProxyEnabled,
+      ...overrides
+    };
+  }
+
+  resolveActiveNodeId(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
+    if (settings.activeNodeId && nodes.some((node) => node.id === settings.activeNodeId)) {
+      return settings.activeNodeId;
+    }
+
+    return nodes[0]?.id || null;
+  }
+
+  getProxyProfile() {
+    const settings = this.getSettingsSnapshot();
+    const nodes = this.store.getNodes();
+    const activeNodeId = this.resolveActiveNodeId(settings, nodes);
+
+    return {
+      mode: settings.routingMode,
+      systemProxyEnabled: !!settings.systemProxyEnabled,
+      activeNodeId,
+      unifiedHttpPort: settings.systemProxyHttpPort,
+      unifiedSocksPort: settings.systemProxySocksPort,
+      manualPortRangeStart: settings.proxyBasePort,
+      listenHost: settings.proxyListenHost,
+      customRules: settings.customRules,
+      activeNode: nodes.find((node) => node.id === activeNodeId) || null
+    };
+  }
+
+  updateSubscriptionRecord(url, importedCount, nodes) {
+    const settings = this.getSettingsSnapshot();
+    const now = new Date().toISOString();
+    const nextRecord = {
+      id: settings.subscriptions.find((item) => item.url === url)?.id || `subscription-${Date.now()}`,
+      url,
+      name: url,
+      importedCount,
+      lastSyncedAt: now,
+      lastNodeCount: nodes.filter((node) => node.subscriptionUrl === url).length
+    };
+
+    const subscriptions = [
+      ...settings.subscriptions.filter((item) => item.url !== url),
+      nextRecord
+    ];
+
+    this.store.saveSettings({
+      ...settings,
+      subscriptions
+    });
+
+    return nextRecord;
+  }
+
+  async refreshSystemProxyState() {
+    try {
+      const status = await this.systemProxyManager.getStatus();
+      this.state.systemProxy = this.buildSystemProxyState(status);
+    } catch (error) {
+      this.state.systemProxy = this.buildSystemProxyState({
+        lastError: error.message,
+        mode: 'error'
+      });
+    }
+
+    return this.state.systemProxy;
+  }
+
+  async cleanupSystemProxyAfterExit() {
+    const desiredEnabled = !!this.getSettingsSnapshot().systemProxyEnabled;
+    if (!desiredEnabled) {
+      this.state.systemProxy = this.buildSystemProxyState(await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState()));
+      return this.state.systemProxy;
+    }
+
+    try {
+      const disabled = await this.systemProxyManager.disable();
+      this.state.systemProxy = this.buildSystemProxyState(disabled);
+    } catch (error) {
+      this.state.systemProxy = this.buildSystemProxyState({
+        ...this.state.systemProxy,
+        enabled: false,
+        mode: 'error',
+        lastError: error.message
+      });
+    }
+
+    return this.state.systemProxy;
+  }
+
+  async applySystemProxy() {
+    if (this.state.status !== 'running') {
+      throw createHttpError('Core must be running before applying system proxy', 400);
+    }
+
+    const settings = this.getSettingsSnapshot();
+    const status = await this.systemProxyManager.apply({
+      host: settings.proxyListenHost,
+      httpPort: settings.systemProxyHttpPort,
+      socksPort: settings.systemProxySocksPort
+    });
+
+    if (!settings.systemProxyEnabled) {
+      await this.updateSettings({ systemProxyEnabled: true });
+    }
+    this.state.systemProxy = this.buildSystemProxyState(status);
+    return this.state.systemProxy;
+  }
+
+  async disableSystemProxy() {
+    const status = await this.systemProxyManager.disable();
+    if (this.getSettingsSnapshot().systemProxyEnabled) {
+      await this.updateSettings({ systemProxyEnabled: false });
+    }
+    this.state.systemProxy = this.buildSystemProxyState(status);
+    return this.state.systemProxy;
+  }
+
+  getRuntimeOptions(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
+    return {
+      activeNodeId: this.resolveActiveNodeId(settings, nodes),
+      customRules: settings.customRules,
+      proxyMode: settings.routingMode,
+      systemProxyEnabled: !!settings.systemProxyEnabled,
+      systemProxyHttpPort: settings.systemProxyHttpPort,
+      systemProxySocksPort: settings.systemProxySocksPort
+    };
+  }
+
+  async updateSettings(patch) {
+    const current = this.getSettingsSnapshot();
+    const next = {
+      ...current,
+      ...patch
+    };
+
+    if (next.routingMode && !ROUTING_MODES.includes(next.routingMode)) {
+      throw createHttpError('Invalid routing mode', 400);
+    }
+
+    const proxyBasePort = validatePort(next.proxyBasePort, 'proxyBasePort');
+    const systemProxySocksPort = validatePort(next.systemProxySocksPort, 'systemProxySocksPort');
+    const systemProxyHttpPort = validatePort(next.systemProxyHttpPort, 'systemProxyHttpPort');
+    if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Array.isArray(next.customRules)) {
+      throw createHttpError('customRules must be an array', 400);
+    }
+    const customRules = Array.isArray(next.customRules)
+      ? next.customRules.map((rule, index) => normalizeCustomRule(rule, index))
+      : current.customRules;
+
+    if (systemProxySocksPort === systemProxyHttpPort) {
+      throw createHttpError('systemProxySocksPort and systemProxyHttpPort must be different', 400);
+    }
+
+    const nodes = this.store.getNodes();
+    const normalizedNodes = assignStableLocalPorts(nodes, proxyBasePort);
+    const occupiedManualPorts = new Set(normalizedNodes.map((node) => Number.parseInt(node.local_port, 10)).filter((port) => Number.isInteger(port)));
+
+    if (occupiedManualPorts.has(systemProxySocksPort) || systemProxySocksPort === proxyBasePort) {
+      throw createHttpError('systemProxySocksPort conflicts with manual proxy ports', 400);
+    }
+
+    if (occupiedManualPorts.has(systemProxyHttpPort) || systemProxyHttpPort === proxyBasePort) {
+      throw createHttpError('systemProxyHttpPort conflicts with manual proxy ports', 400);
+    }
+
+    const activeNodeId = this.resolveActiveNodeId(next, nodes);
+    const saved = this.store.saveSettings({
+      ...next,
+      proxyBasePort,
+      systemProxySocksPort,
+      systemProxyHttpPort,
+      customRules,
+      activeNodeId
+    });
+
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules'];
+    const shouldAutoRestart = this.state.status === 'running'
+      && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+
+    let core = this.getStatus();
+    if (shouldAutoRestart) {
+      core = await this.restart();
+    }
+
+    return {
+      settings: saved,
+      proxy: this.getProxyProfile(),
+      restartRequired: shouldAutoRestart ? false : this.getRestartRequired(),
+      autoRestarted: shouldAutoRestart,
+      core
+    };
+  }
+
+  getStatus() {
+    const binary = this.buildBinaryState(this.state.binary);
+
+    return {
+      ...this.state,
+      binary,
+      proxy: this.getProxyProfile(),
+      systemProxy: this.state.systemProxy,
+      hasConfig: fs.existsSync(this.paths.configPath),
+      nodeCount: this.store.getNodes().length,
+      nodes: this.getNodeRecords(),
+      recentLogs: this.store.getRecentLogs(12)
+    };
+  }
+
+  getNodeRecords() {
+    const settings = this.getSettingsSnapshot();
+    const nodes = this.store.getNodes();
+
+    this.proxyService.proxyListen = settings.proxyListenHost;
+    this.proxyService.basePort = settings.proxyBasePort;
+    this.proxyService.setNodes(nodes);
+
+    return nodes.map((node) => ({
+      ...node,
+      localPort: this.proxyService.getLocalPort(node.id),
+      listenHost: settings.proxyListenHost,
+      endpoint: {
+        protocol: 'socks5',
+        host: settings.proxyListenHost,
+        port: this.proxyService.getLocalPort(node.id),
+        url: `socks5://${settings.proxyListenHost}:${this.proxyService.getLocalPort(node.id)}`
+      },
+      copyText: `${settings.proxyListenHost}:${this.proxyService.getLocalPort(node.id)}`,
+      isRunning: this.state.status === 'running'
+    }));
+  }
+
+  getNodeById(nodeId) {
+    return this.getNodeRecords().find((node) => node.id === nodeId) || null;
+  }
+
+  getRestartRequired() {
+    return this.state.status === 'running';
+  }
+
+  async applyNodeChanges(savedNodes) {
+    if (this.state.status !== 'running') {
+      return {
+        nodes: savedNodes,
+        restartRequired: false,
+        autoRestarted: false,
+        core: this.getStatus()
+      };
+    }
+
+    const core = await this.restart();
+    return {
+      nodes: this.getNodeRecords(),
+      restartRequired: false,
+      autoRestarted: true,
+      core
+    };
+  }
+
+  normalizeNodes(nodes) {
+    return assignStableLocalPorts(nodes, this.getSettingsSnapshot().proxyBasePort);
+  }
+
+  saveNodes(nodes) {
+    const savedNodes = this.store.saveNodes(this.normalizeNodes(nodes));
+    const settings = this.getSettingsSnapshot();
+    this.store.saveSettings({
+      ...settings,
+      activeNodeId: this.resolveActiveNodeId(settings, savedNodes)
+    });
+    return this.getNodeRecords();
+  }
+
+  mergeAndSaveNodes(incomingNodes) {
+    return this.saveNodes(mergeUniqueNodes(this.store.getNodes(), incomingNodes));
+  }
+
+  async importProxyLink(link) {
+    const parsedNode = this.proxyService.parseProxyLink(link);
+    if (!parsedNode) {
+      throw createHttpError('Invalid proxy link', 400);
+    }
+
+    const node = parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() };
+    const savedNodes = this.mergeAndSaveNodes([node]);
+    const applied = await this.applyNodeChanges(savedNodes);
+    return {
+      node: applied.nodes.find((item) => item.id === node.id),
+      ...applied
+    };
+  }
+
+  async importRawNode(rawNode) {
+    const savedNodes = this.mergeAndSaveNodes([rawNode]);
+    return this.applyNodeChanges(savedNodes);
+  }
+
+  async updateNode(nodeId, patch) {
+    const nodes = this.store.getNodes();
+    const index = nodes.findIndex((node) => node.id === nodeId);
+    if (index === -1) {
+      throw createHttpError('Node not found', 404);
+    }
+
+    nodes[index] = {
+      ...nodes[index],
+      ...patch,
+      id: nodeId
+    };
+
+    const savedNodes = this.saveNodes(nodes);
+    const applied = await this.applyNodeChanges(savedNodes);
+    return {
+      node: applied.nodes.find((item) => item.id === nodeId),
+      ...applied
+    };
+  }
+
+  async deleteNode(nodeId) {
+    const nodes = this.store.getNodes();
+    const remainingNodes = nodes.filter((node) => node.id !== nodeId);
+    if (remainingNodes.length === nodes.length) {
+      throw createHttpError('Node not found', 404);
+    }
+
+    return this.applyNodeChanges(this.saveNodes(remainingNodes));
+  }
+
+  async syncSubscription(url) {
+    const importedNodes = await this.proxyService.syncSubscription(url);
+    if (!importedNodes.length) {
+      throw createHttpError('Subscription returned no usable nodes', 400);
+    }
+
+    const existingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== url);
+    const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, importedNodes.map((node) => ({
+      ...node,
+      source: 'subscription',
+      subscriptionUrl: url
+    }))));
+
+    const applied = await this.applyNodeChanges(savedNodes);
+    const subscription = this.updateSubscriptionRecord(url, importedNodes.length, applied.nodes);
+
+    return {
+      importedCount: importedNodes.length,
+      subscription,
+      ...applied
+    };
+  }
+
+  bindProcessState() {
+    if (!this.proxyService.proxyProcess) {
+      return;
+    }
+
+    this.proxyService.proxyProcess.once('exit', async (code, signal) => {
+      await this.cleanupSystemProxyAfterExit();
+      this.state = {
+        ...this.state,
+        status: code === 0 || signal === 'SIGTERM' ? 'stopped' : 'error',
+        lastError: code === 0 || signal === 'SIGTERM'
+          ? null
+          : `sing-box exited unexpectedly${code !== null ? ` with code ${code}` : ''}`,
+        startedAt: null,
+        executablePath: null
+      };
+    });
+  }
+
+  async start() {
+    let binary = null;
+
+    try {
+      const settings = this.getSettingsSnapshot();
+      binary = await this.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
+      const nodes = this.store.getNodes();
+      this.proxyService.setNodes(nodes);
+      const result = await this.proxyService.start({
+        binPath: binary.executablePath,
+        runtime: this.getRuntimeOptions(settings, nodes)
+      });
+      const systemProxy = settings.systemProxyEnabled
+        ? await this.systemProxyManager.apply({
+            host: settings.proxyListenHost,
+            httpPort: settings.systemProxyHttpPort,
+            socksPort: settings.systemProxySocksPort
+          })
+        : await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+      this.state = {
+        ...this.state,
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        lastError: null,
+        executablePath: result.executablePath,
+        configPath: result.configPath,
+        binary: this.buildBinaryState({
+          status: 'ready',
+          resolvedPath: binary.executablePath,
+          source: binary.source,
+          lastError: null,
+          version: binary.version || this.state.binary.version
+        }),
+        systemProxy: this.buildSystemProxyState(systemProxy)
+      };
+      this.bindProcessState();
+      return this.getStatus();
+    } catch (error) {
+      if (binary && this.proxyService?.proxyProcess) {
+        this.proxyService.stop();
+      }
+
+      const binaryState = binary
+        ? this.buildBinaryState({
+            status: 'ready',
+            resolvedPath: binary.executablePath,
+            source: binary.source,
+            lastError: null,
+            version: binary.version || this.state.binary.version
+          })
+        : this.buildBinaryState({
+            status: 'error',
+            lastError: error.message
+          });
+
+      this.state = {
+        ...this.state,
+        status: 'error',
+        lastError: error.message,
+        binary: binaryState,
+        systemProxy: this.buildSystemProxyState({
+          ...this.state.systemProxy,
+          lastError: this.state.systemProxy?.lastError || null
+        })
+      };
+      throw error;
+    }
+  }
+
+  async stop() {
+    this.proxyService.stop();
+    const systemProxy = this.getSettingsSnapshot().systemProxyEnabled
+      ? await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
+          ...this.state.systemProxy,
+          lastError: error.message,
+          mode: 'error'
+        }))
+      : await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+    this.state = {
+      ...this.state,
+      status: 'stopped',
+      startedAt: null,
+      lastError: null,
+      executablePath: null,
+      binary: this.buildBinaryState({
+        status: this.state.binary?.status === 'error' ? 'error' : this.buildBinaryState().status,
+        lastError: this.state.binary?.status === 'error' ? this.state.binary.lastError : null,
+        version: this.state.binary?.version || null,
+        resolvedPath: this.state.binary?.resolvedPath || this.buildBinaryState().resolvedPath,
+        source: this.state.binary?.source || this.buildBinaryState().source
+      }),
+      systemProxy: this.buildSystemProxyState(systemProxy)
+    };
+    return this.getStatus();
+  }
+
+  async restart() {
+    await this.stop();
+    return this.start();
+  }
+
+  async testNode(nodeId) {
+    if (!this.getNodeById(nodeId)) {
+      throw createHttpError('Node not found', 404);
+    }
+
+    let autoStarted = false;
+    if (this.state.status !== 'running') {
+      await this.start();
+      autoStarted = true;
+    }
+
+    const latencyMs = await this.proxyService.testNode(nodeId);
+    return {
+      node: this.getNodeById(nodeId),
+      latencyMs,
+      core: this.getStatus(),
+      autoStarted
+    };
+  }
+}
