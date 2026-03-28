@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 
 import { createAppServer } from './createServer.js';
@@ -9,7 +10,6 @@ export async function startServer(env = process.env, options = {}) {
   const paths = resolveProjectPaths(projectRoot, { runtimeRoot });
 
   // --- Startup Diagnostics (remove after debugging) ---
-  const fs = await import('fs');
   console.log('[DIAG] process.pkg:', !!process.pkg);
   console.log('[DIAG] __dirname:', __dirname);
   console.log('[DIAG] process.cwd():', process.cwd());
