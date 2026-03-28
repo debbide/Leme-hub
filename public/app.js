@@ -22,6 +22,7 @@ const coreStatusIndicator = document.querySelector('#core-status-indicator');
 const systemProxyModeSelect = document.querySelector('.system-proxy-mode');
 const dashActiveNodeSelect = document.querySelector('#dash-active-node-select');
 const dashUptime = document.querySelector('#dash-uptime');
+const autoStartToggle = document.querySelector('#auto-start-toggle');
 
 let currentCoreState = null;
 let uptimeTimer = null;
@@ -87,6 +88,13 @@ const updateCoreStatus = (core) => {
 
   if (dashActiveNodeSelect) {
     dashActiveNodeSelect.value = proxyProfile.activeNodeId || '';
+  }
+
+  // Update auto-start toggle if settings are available in the broader scope or passed core
+  if (autoStartToggle && core.settings) {
+    autoStartToggle.checked = !!core.settings.autoStart;
+  } else if (autoStartToggle && currentCoreState?.settings) {
+     autoStartToggle.checked = !!currentCoreState.settings.autoStart;
   }
 
   if (uptimeTimer) {
@@ -708,8 +716,10 @@ if (dashActiveNodeSelect) {
         method: 'PUT',
         body: JSON.stringify({ activeNodeId })
       });
-      updateCoreStatus(payload.core);
-      renderSystemProxyNodeOptions(nodesData, payload.core?.proxy?.activeNodeId);
+      // In some responses, core is top-level, in others it's nested
+      const coreData = payload.core || payload;
+      updateCoreStatus(coreData);
+      renderSystemProxyNodeOptions(nodesData, coreData.proxy?.activeNodeId);
       updateRestartWarning(payload.restartRequired);
       if (payload.autoRestarted) {
         showToast('系统代理节点已切换并自动应用', 'success');
@@ -723,6 +733,23 @@ if (dashActiveNodeSelect) {
       if (currentCoreState?.proxy?.activeNodeId !== undefined) {
         dashActiveNodeSelect.value = currentCoreState.proxy.activeNodeId || '';
       }
+    }
+  });
+}
+
+if (autoStartToggle) {
+  autoStartToggle.addEventListener('change', async (event) => {
+    const isEnabled = event.target.checked;
+    try {
+      await requestJson('/api/system/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ autoStart: isEnabled })
+      });
+      showToast(`开机自启动已${isEnabled ? '开启' : '禁用'}`, 'success');
+    } catch (error) {
+      showToast(`设置失败: ${error.message}`, 'error');
+      // Revert UI state on failure
+      event.target.checked = !isEnabled;
     }
   });
 }
