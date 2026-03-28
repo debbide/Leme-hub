@@ -1,7 +1,10 @@
 {
   "name": "leme-hub",
   "private": true,
+  "version": "0.1.4",
   "productName": "Leme Hub",
+  "description": "Multi-port proxy splitting for desktop and server workflows.",
+  "author": "debbide",
   "type": "module",
   "main": "desktop/electron-main.js",
   "scripts": {
@@ -9,8 +12,8 @@
     "start:server": "node scripts/server.js",
     "prepare:icons": "node scripts/prepare-icons.js",
     "desktop:dev": "electron .",
-    "build:desktop:win": "npm run prepare:icons && electron-builder --win nsis portable",
-    "build:desktop:deb": "npm run prepare:icons && electron-builder --linux deb",
+    "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win nsis portable",
+    "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
     "build:server": "pkg ./scripts/server.js --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
     "dev": "node scripts/dev.js",
     "test": "node --test"
