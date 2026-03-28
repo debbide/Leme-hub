@@ -16,11 +16,11 @@ test('desktop mode inherits persisted ui host and port by default', () => {
   assert.equal(runtime.port, 51888);
 });
 
-test('server mode defaults to localhost without remote flag', () => {
+test('server mode defaults to all interfaces without remote flag', () => {
   const runtime = resolveServerRuntime(baseSettings, { LEME_MODE: 'server' });
 
   assert.equal(runtime.mode, 'server');
-  assert.equal(runtime.host, '127.0.0.1');
+  assert.equal(runtime.host, '0.0.0.0');
   assert.equal(runtime.port, 51888);
 });
 
@@ -34,7 +34,7 @@ test('server mode binds all interfaces when remote flag is enabled', () => {
 test('server mode ignores persisted desktop host when not overridden', () => {
   const runtime = resolveServerRuntime({ uiHost: '192.168.1.20', uiPort: 60000 }, { LEME_MODE: 'server' });
 
-  assert.equal(runtime.host, '127.0.0.1');
+  assert.equal(runtime.host, '0.0.0.0');
   assert.equal(runtime.port, 51888);
 });
 
