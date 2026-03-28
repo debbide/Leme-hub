@@ -511,3 +511,38 @@ test('testNode auto starts core when stopped', async () => {
   assert.equal(result.autoStarted, true);
   assert.equal(result.latencyMs, 123);
 });
+
+test('testNodes auto starts core and returns per-node results', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  let started = false;
+  manager.start = async () => {
+    started = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
+    testNode: async (nodeId) => {
+      if (nodeId === 'n2') {
+        throw new Error('connect failed');
+      }
+      return 88;
+    },
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const result = await manager.testNodes();
+
+  assert.equal(started, true);
+  assert.equal(result.autoStarted, true);
+  assert.equal(result.results.length, 2);
+  assert.equal(result.results[0].ok, true);
+  assert.equal(result.results[0].latencyMs, 88);
+  assert.equal(result.results[1].ok, false);
+  assert.equal(result.results[1].error, 'connect failed');
+});

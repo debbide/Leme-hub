@@ -73,6 +73,15 @@ export function createNodeRoutes({ coreManager }) {
       }
     },
 
+    'POST /api/nodes/test-batch': async ({ body }) => {
+      try {
+        const result = await coreManager.testNodes(body?.ids);
+        return json({ ok: true, ...result });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
     'POST /api/subscriptions/sync': async ({ body }) => {
       const url = body?.url?.trim();
       if (!url) {

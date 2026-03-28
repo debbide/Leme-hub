@@ -8,6 +8,7 @@ const nodesError = document.querySelector('#nodes-error');
 const showImportBtn = document.querySelector('#show-import');
 const showSyncBtn = document.querySelector('#show-sync');
 const manualAddBtn = document.querySelector('#manual-add');
+const testAllBtn = document.querySelector('#test-all');
 const closePanelBtn = document.querySelector('#close-panel');
 const saveRestartBtn = document.querySelector('#save-restart-core');
 
@@ -398,6 +399,32 @@ const deleteNode = async (id) => {
   }
 };
 
+const applyLatencyResult = (result) => {
+  const resultEl = document.querySelector(`#test-result-${result.id}`);
+  if (!resultEl) return;
+
+  resultEl.className = 'latency';
+  if (result.ok) {
+    resultEl.textContent = `${result.latencyMs}ms`;
+    resultEl.classList.add(result.latencyMs < 150 ? 'good' : (result.latencyMs < 400 ? 'warn' : 'bad'));
+    return;
+  }
+
+  resultEl.textContent = '失败';
+  resultEl.classList.add('error');
+  resultEl.title = result.error || '测试失败';
+};
+
+const resetLatencyPlaceholders = (ids) => {
+  ids.forEach((id) => {
+    const resultEl = document.querySelector(`#test-result-${id}`);
+    if (!resultEl) return;
+    resultEl.textContent = '-';
+    resultEl.className = 'latency';
+    resultEl.title = '';
+  });
+};
+
 const testNode = async (id) => {
   const resultEl = document.querySelector(`#test-result-${id}`);
   if (!resultEl) return;
@@ -416,18 +443,57 @@ const testNode = async (id) => {
     if (payload.autoStarted) {
       showToast('已自动启动核心并完成延迟测试', 'success');
     }
-    
-    if (payload.ok) {
-      resultEl.textContent = `${payload.latencyMs}ms`;
-      resultEl.classList.add('success');
-    } else {
-      resultEl.textContent = '失败';
-      resultEl.classList.add('error');
-    }
+
+    applyLatencyResult({ id, ok: true, latencyMs: payload.latencyMs });
   } catch (error) {
-    resultEl.textContent = error.message || '错误';
-    resultEl.classList.add('error');
+    applyLatencyResult({ id, ok: false, error: error.message || '未知错误' });
     showToast(`延迟测试失败: ${error.message || '未知错误'}`, 'error');
+  }
+};
+
+const testAllNodes = async () => {
+  if (!nodesData.length) {
+    showToast('暂无可测试节点', 'info');
+    return;
+  }
+
+  if (testAllBtn) {
+    testAllBtn.disabled = true;
+    testAllBtn.textContent = '批量测试中...';
+  }
+
+  nodesData.forEach((node) => {
+    const resultEl = document.querySelector(`#test-result-${node.id}`);
+    if (resultEl) {
+      resultEl.textContent = '测试中...';
+      resultEl.className = 'latency';
+      resultEl.title = '';
+    }
+  });
+
+  try {
+    const payload = await requestJson('/api/nodes/test-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids: nodesData.map((node) => node.id) })
+    });
+
+    if (payload.core) {
+      updateCoreStatus(payload.core);
+    }
+
+    payload.results.forEach(applyLatencyResult);
+    const successCount = payload.results.filter((result) => result.ok).length;
+    const failedCount = payload.results.length - successCount;
+    const autoStartText = payload.autoStarted ? '，并已自动启动核心' : '';
+    showToast(`批量测试完成：成功 ${successCount}，失败 ${failedCount}${autoStartText}`, failedCount ? 'info' : 'success');
+  } catch (error) {
+    resetLatencyPlaceholders(nodesData.map((node) => node.id));
+    showToast(`批量测试失败: ${error.message}`, 'error');
+  } finally {
+    if (testAllBtn) {
+      testAllBtn.disabled = false;
+      testAllBtn.textContent = '批量测试';
+    }
   }
 };
 
@@ -453,6 +519,8 @@ showImportBtn?.addEventListener('click', () => {
   syncForm.classList.add('hidden');
   if (!importForm.classList.contains('hidden')) importUrlInput.focus();
 });
+
+testAllBtn?.addEventListener('click', testAllNodes);
 
 showSyncBtn?.addEventListener('click', () => {
   syncForm.classList.toggle('hidden');

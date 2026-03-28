@@ -751,4 +751,52 @@ export class CoreManager {
       autoStarted
     };
   }
+
+  async testNodes(nodeIds = []) {
+    const requestedIds = Array.isArray(nodeIds) && nodeIds.length
+      ? [...new Set(nodeIds)]
+      : this.getNodeRecords().map((node) => node.id);
+
+    if (!requestedIds.length) {
+      throw createHttpError('No nodes available for latency tests', 400);
+    }
+
+    const unknownId = requestedIds.find((nodeId) => !this.getNodeById(nodeId));
+    if (unknownId) {
+      throw createHttpError(`Node not found: ${unknownId}`, 404);
+    }
+
+    let autoStarted = false;
+    if (this.state.status !== 'running') {
+      await this.start();
+      autoStarted = true;
+    }
+
+    const results = [];
+    for (const nodeId of requestedIds) {
+      const node = this.getNodeById(nodeId);
+      try {
+        const latencyMs = await this.proxyService.testNode(nodeId);
+        results.push({
+          id: nodeId,
+          ok: true,
+          latencyMs,
+          node
+        });
+      } catch (error) {
+        results.push({
+          id: nodeId,
+          ok: false,
+          error: error.message,
+          node
+        });
+      }
+    }
+
+    return {
+      results,
+      core: this.getStatus(),
+      autoStarted
+    };
+  }
 }
