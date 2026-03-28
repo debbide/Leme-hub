@@ -9,6 +9,7 @@ const WINDOWS_RUN_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion
 const APP_NAME = 'Leme Hub';
 
 const trimValue = (value) => String(value || '').trim();
+const quoteDesktopExec = (value) => `"${String(value || '').replace(/"/g, '\\"')}"`;
 
 export class AutoStartManager {
   constructor(options = {}) {
@@ -17,6 +18,7 @@ export class AutoStartManager {
     this.env = options.env || process.env;
     this.homeDir = options.homeDir || os.homedir();
     this.fs = options.fs || fs;
+    this.executablePath = options.executablePath || null;
   }
 
   getCapabilities() {
@@ -31,6 +33,10 @@ export class AutoStartManager {
   }
 
   resolveExecutablePath() {
+    if (this.executablePath) {
+      return this.executablePath;
+    }
+
     return this.env.LEME_AUTOSTART_EXECUTABLE
       || this.env.PORTABLE_EXECUTABLE_FILE
       || process.execPath;
@@ -100,7 +106,7 @@ export class AutoStartManager {
       '[Desktop Entry]',
       'Type=Application',
       `Name=${APP_NAME}`,
-      `Exec=${executable}`,
+      `Exec=${quoteDesktopExec(executable)}`,
       'X-GNOME-Autostart-enabled=true'
     ].join('\n'));
     return this.getLinuxStatus();

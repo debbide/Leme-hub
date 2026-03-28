@@ -130,9 +130,10 @@ const mergeUniqueNodes = (existingNodes, incomingNodes) => {
 };
 
 export class CoreManager {
-  constructor(paths, store) {
+  constructor(paths, store, options = {}) {
     this.paths = paths;
     this.store = store;
+    this.options = options;
     this.state = {
       status: 'stopped',
       startedAt: null,
@@ -173,7 +174,10 @@ export class CoreManager {
     this.state.binary = this.buildBinaryState();
     this.systemProxyManager = new SystemProxyManager();
     this.state.systemProxy = this.buildSystemProxyState();
-    this.autoStartManager = new AutoStartManager();
+    this.autoStartManager = new AutoStartManager({
+      env: options.env,
+      executablePath: options.autoStartExecutablePath
+    });
     this.state.autoStart = this.buildAutoStartState();
 
     this.proxyService = new ProxyService({

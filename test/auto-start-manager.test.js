@@ -47,15 +47,17 @@ test('linux auto start writes xdg desktop file', async () => {
   const manager = new AutoStartManager({
     platform: 'linux',
     homeDir,
-    env: { LEME_AUTOSTART_EXECUTABLE: '/opt/leme-hub/Leme-Hub' }
+    env: { LEME_AUTOSTART_EXECUTABLE: '/opt/Leme Hub/Leme Hub' }
   });
 
   const enabled = await manager.enable();
   const desktopFile = path.join(homeDir, '.config', 'autostart', 'leme-hub.desktop');
+  const desktopEntry = fs.readFileSync(desktopFile, 'utf8');
   assert.equal(fs.existsSync(desktopFile), true);
   const disabled = await manager.disable();
 
   assert.equal(enabled.enabled, true);
+  assert.equal(desktopEntry.includes('Exec="/opt/Leme Hub/Leme Hub"'), true);
   assert.equal(fs.existsSync(desktopFile), false);
   assert.equal(disabled.enabled, false);
 });

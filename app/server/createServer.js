@@ -54,7 +54,10 @@ export function createAppServer(paths, env = process.env) {
   ensureRuntimeDirs(paths);
 
   const store = new ConfigStore(paths);
-  const coreManager = new CoreManager(paths, store);
+  const coreManager = new CoreManager(paths, store, {
+    env,
+    autoStartExecutablePath: env.LEME_AUTOSTART_EXECUTABLE
+  });
   const runtime = resolveServerRuntime(store.getSettings(), env);
   const routes = {
     ...createSystemRoutes({ store, coreManager, paths }),
@@ -116,6 +119,7 @@ export function createAppServer(paths, env = process.env) {
 
   const start = () => new Promise((resolve) => {
     server.listen(runtime.port, runtime.host, () => {
+      coreManager.refreshAutoStartState().catch(() => null);
       console.log(`[${runtime.mode}] local-proxy-client listening on ${runtime.publicOrigin}`);
       resolve({ server, store, coreManager, runtime });
     });
