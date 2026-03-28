@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { build } from 'esbuild';
 
 await build({
@@ -14,3 +15,7 @@ await build({
     js: "module.exports.startServer(process.env).catch((error) => { console.error(error); process.exit(1); });"
   }
 });
+
+// Copy public/ alongside the bundle so pkg can embed it reliably
+fs.cpSync('public', 'dist/server/public', { recursive: true });
+console.log('Copied public/ → dist/server/public/');
