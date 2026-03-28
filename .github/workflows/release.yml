@@ -18,10 +18,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:desktop:win
+      - name: Collect Windows release files
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets/windows | Out-Null
+          Get-ChildItem dist/desktop -File -Include *.exe | Copy-Item -Destination release-assets/windows -Force
       - uses: actions/upload-artifact@v4
         with:
           name: leme-hub-desktop-windows
-          path: dist/desktop/**
+          path: release-assets/windows/*
 
   desktop-linux-deb:
     runs-on: ubuntu-latest
@@ -34,10 +39,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:desktop:deb
+      - name: Collect Linux deb release files
+        run: |
+          mkdir -p release-assets/linux-desktop
+          find dist/desktop -maxdepth 1 -type f -name '*.deb' -exec cp {} release-assets/linux-desktop/ \;
       - uses: actions/upload-artifact@v4
         with:
           name: leme-hub-desktop-deb
-          path: dist/desktop/**
+          path: release-assets/linux-desktop/*
 
   server-linux-binaries:
     runs-on: ubuntu-latest
@@ -50,10 +59,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:server
+      - name: Collect Linux server binaries
+        run: |
+          mkdir -p release-assets/server
+          find dist/server -maxdepth 1 -type f -exec cp {} release-assets/server/ \;
       - uses: actions/upload-artifact@v4
         with:
           name: leme-hub-server-linux
-          path: dist/server/**
+          path: release-assets/server/*
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
