@@ -252,11 +252,53 @@ const maskAddress = (address) => {
   return address;
 };
 
+const collapsedGroups = new Set(JSON.parse(localStorage.getItem('collapsedGroups') || '[]'));
+
+const saveCollapsedGroups = () => {
+  localStorage.setItem('collapsedGroups', JSON.stringify([...collapsedGroups]));
+};
+
+const renderNodeRow = (node, activeNodeId) => {
+  const protText = (node.type || 'SOCKS').toUpperCase();
+  const transText = (node.transport || 'tcp').toLowerCase();
+  let secText = '-';
+  if (node.security && node.security !== 'none') secText = node.security.toLowerCase();
+  else if (node.tls) secText = 'tls';
+  const maskedIp = maskAddress(node.server);
+  const localPortStr = node.localPort ? node.localPort : (node.port || '未知');
+  const isActive = node.id === activeNodeId;
+  const activeClass = isActive ? 'active-row' : '';
+  const activeBadge = isActive ? `<span class="pill pill-active"><i class="ph ph-lightning"></i> 此刻生效</span>` : '';
+  return `
+    <tr data-id="${node.id}" class="node-row ${activeClass}">
+      <td><span class="pill pill-protocol">${protText}</span>${activeBadge}</td>
+      <td>
+        <div class="node-info">
+          <span class="node-name">${node.name || '未命名节点'}</span>
+          <span class="node-ip">${maskedIp}</span>
+          <span class="node-port">本地出口: ${localPortStr}</span>
+        </div>
+      </td>
+      <td>
+        <span class="pill pill-dark">${transText}</span>
+        <span class="pill pill-dark">${secText}</span>
+      </td>
+      <td><span class="latency" id="test-result-${node.id}">-</span></td>
+      <td style="text-align: right;">
+        <div class="btn-group" style="justify-content: flex-end;">
+          <button type="button" class="test-node-btn" data-id="${node.id}">测试</button>
+          <button type="button" class="detail-node-btn" data-id="${node.id}">详情</button>
+          <button type="button" class="btn-danger delete-node-btn" data-id="${node.id}">删除</button>
+        </div>
+      </td>
+    </tr>`;
+};
+
 const renderNodesElement = () => {
   nodesLoading.classList.add('hidden');
   nodesError.classList.add('hidden');
   nodesError.textContent = '';
-  
+
   if (nodesData.length === 0) {
     nodesState.classList.remove('hidden');
     nodesEmpty.classList.remove('hidden');
@@ -272,51 +314,80 @@ const renderNodesElement = () => {
 
   const activeNodeId = currentCoreState?.proxy?.activeNodeId || null;
 
-  nodesTbody.innerHTML = nodesData.map(node => {
-    // Determine security and transport pills
-    const protText = (node.type || 'SOCKS').toUpperCase();
-    const transText = (node.transport || 'tcp').toLowerCase();
-    
-    let secText = '-';
-    if (node.security && node.security !== 'none') secText = node.security.toLowerCase();
-    else if (node.tls) secText = 'tls';
+  // 按分组聚合
+  const groupMap = new Map();
+  for (const node of nodesData) {
+    const g = node.group ? String(node.group).trim() : null;
+    const key = g || '__ungrouped__';
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key).push(node);
+  }
 
-    const maskedIp = maskAddress(node.server);
-    const localPortStr = node.localPort ? node.localPort : (node.port || '未知');
-    
-    const isActive = node.id === activeNodeId;
-    const activeClass = isActive ? 'active-row' : '';
-    const activeBadge = isActive ? `<span class="pill pill-active"><i class="ph ph-lightning"></i> 此刻生效</span>` : '';
+  // 有名分组排前，未分组排最后
+  const groupKeys = [...groupMap.keys()].sort((a, b) => {
+    if (a === '__ungrouped__') return 1;
+    if (b === '__ungrouped__') return -1;
+    return a.localeCompare(b);
+  });
 
-    return `
-      <tr data-id="${node.id}" class="node-row ${activeClass}">
-        <td>
-          <span class="pill pill-protocol">${protText}</span>${activeBadge}
-        </td>
-        <td>
-          <div class="node-info">
-            <span class="node-name">${node.name || '未命名节点'}</span>
-            <span class="node-ip">${maskedIp}</span>
-            <span class="node-port">本地出口: ${localPortStr}</span>
-          </div>
-        </td>
-        <td>
-          <span class="pill pill-dark">${transText}</span>
-          <span class="pill pill-dark">${secText}</span>
-        </td>
-        <td>
-          <span class="latency" id="test-result-${node.id}">-</span>
-        </td>
-        <td style="text-align: right;">
-          <div class="btn-group" style="justify-content: flex-end;">
-            <button type="button" class="test-node-btn" data-id="${node.id}">测试</button>
-            <button type="button" class="detail-node-btn" data-id="${node.id}">详情</button>
-            <button type="button" class="btn-danger delete-node-btn" data-id="${node.id}">删除</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
+  let html = '';
+  for (const key of groupKeys) {
+    const nodes = groupMap.get(key);
+    const label = key === '__ungrouped__' ? '未分组' : key;
+    const collapsed = collapsedGroups.has(key);
+    html += `<tr class="group-header-row${collapsed ? ' collapsed' : ''}" data-group="${key}">`;
+    html += `<td colspan="5"><span class="group-chevron">${collapsed ? '▶' : '▼'}</span> ${label} <span class="group-count">(${nodes.length})</span>`;
+    if (key !== '__ungrouped__') {
+      html += ` <span class="group-actions"><button type="button" class="group-rename-btn" data-group="${key}">重命名</button><button type="button" class="group-delete-btn" data-group="${key}">删除分组</button></span>`;
+    }
+    html += `</td></tr>`;
+    if (!collapsed) {
+      html += nodes.map(n => renderNodeRow(n, activeNodeId)).join('');
+    }
+  }
+
+  nodesTbody.innerHTML = html;
+
+  // 分组折叠
+  document.querySelectorAll('.group-header-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.group-actions')) return;
+      const key = row.dataset.group;
+      if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+      else collapsedGroups.add(key);
+      saveCollapsedGroups();
+      renderNodesElement();
+    });
+  });
+
+  // 分组重命名
+  document.querySelectorAll('.group-rename-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const oldName = btn.dataset.group;
+      const newName = prompt(`重命名分组 "${oldName}" 为：`, oldName);
+      if (!newName || newName.trim() === oldName) return;
+      try {
+        await requestJson('/api/groups/rename', { method: 'PUT', body: JSON.stringify({ from: oldName, to: newName.trim() }) });
+        showToast('分组已重命名', 'success');
+        loadNodes();
+      } catch (err) { showToast(`重命名失败: ${err.message}`, 'error'); }
+    });
+  });
+
+  // 分组删除
+  document.querySelectorAll('.group-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.group;
+      if (!confirm(`删除分组 "${name}"？节点将移入未分组。`)) return;
+      try {
+        await requestJson('/api/groups', { method: 'DELETE', body: JSON.stringify({ name }) });
+        showToast('分组已删除', 'success');
+        loadNodes();
+      } catch (err) { showToast(`删除失败: ${err.message}`, 'error'); }
+    });
+  });
 
   document.querySelectorAll('.test-node-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); testNode(e.target.dataset.id); });
@@ -328,19 +399,17 @@ const renderNodesElement = () => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); openEditModal(e.target.dataset.id); });
   });
 
-  // Seamless Row Click
   document.querySelectorAll('.node-row').forEach(row => {
     row.addEventListener('click', async () => {
       const nodeId = row.dataset.id;
-      if (currentCoreState?.proxy?.activeNodeId === nodeId) return; // Already active
-      
+      if (currentCoreState?.proxy?.activeNodeId === nodeId) return;
       try {
         await requestJson('/api/system/settings', {
           method: 'PUT',
           body: JSON.stringify({ activeNodeId: nodeId })
         });
         showToast('节点切换触发，引擎重载中...', 'info');
-        loadNodes(); // refresh state globally
+        loadNodes();
       } catch (err) {
         showToast(`节点切换失败: ${err.message}`, 'error');
       }
@@ -611,15 +680,20 @@ const closeModal = () => {
   editModal.classList.remove('active');
   currentEditNodeId = null;
   editJsonInput.value = '';
+  const groupInput = document.querySelector('#edit-node-group');
+  if (groupInput) groupInput.value = '';
 };
 
 closeModalBtns.forEach(btn => btn.addEventListener('click', closeModal));
+
+const editNodeGroupInput = document.querySelector('#edit-node-group');
 
 const openEditModal = (id) => {
   const node = nodesData.find(n => n.id === id);
   if (!node) return;
   currentEditNodeId = id;
   const editData = { ...node };
+  if (editNodeGroupInput) editNodeGroupInput.value = node.group || '';
   editJsonInput.value = JSON.stringify(editData, null, 2);
   editModal.classList.add('active');
 };
@@ -630,10 +704,12 @@ saveNodeBtn?.addEventListener('click', async () => {
   
   try {
     const updatedData = JSON.parse(editJsonInput.value);
-    
+    const groupValue = editNodeGroupInput ? editNodeGroupInput.value.trim() || null : undefined;
+    if (groupValue !== undefined) updatedData.group = groupValue;
+
     let path = '/api/nodes';
     let method = 'PUT';
-    
+
     // Create Mode
     if (!currentEditNodeId) {
       path = '/api/nodes/raw';

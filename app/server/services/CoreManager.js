@@ -72,6 +72,7 @@ const normalizeSubscriptionRecord = (record, index) => {
     id: record.id || `subscription-${index + 1}`,
     url,
     name: String(record.name || '').trim() || url,
+    groupName: String(record.groupName || '').trim() || null,
     importedCount: Number.parseInt(record.importedCount, 10) || 0,
     lastSyncedAt: record.lastSyncedAt || null,
     lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0
@@ -664,17 +665,63 @@ export class CoreManager {
     return this.applyNodeChanges(this.saveNodes(remainingNodes));
   }
 
+  getGroups() {
+    const nodes = this.store.getNodes();
+    const seen = new Set();
+    const groups = [];
+    for (const node of nodes) {
+      const g = node.group ? String(node.group).trim() : null;
+      if (g && !seen.has(g)) {
+        seen.add(g);
+        groups.push(g);
+      }
+    }
+    return groups;
+  }
+
+  async setNodeGroup(nodeIds, group) {
+    const normalizedGroup = group ? String(group).trim() || null : null;
+    const nodes = this.store.getNodes().map((node) =>
+      nodeIds.includes(node.id) ? { ...node, group: normalizedGroup } : node
+    );
+    const savedNodes = this.saveNodes(nodes);
+    return this.applyNodeChanges(savedNodes);
+  }
+
+  async renameGroup(oldName, newName) {
+    const trimmedNew = String(newName || '').trim();
+    if (!trimmedNew) throw createHttpError('Group name cannot be empty', 400);
+    const nodes = this.store.getNodes().map((node) =>
+      node.group === oldName ? { ...node, group: trimmedNew } : node
+    );
+    const savedNodes = this.saveNodes(nodes);
+    return this.applyNodeChanges(savedNodes);
+  }
+
+  async deleteGroup(groupName) {
+    const nodes = this.store.getNodes().map((node) =>
+      node.group === groupName ? { ...node, group: null } : node
+    );
+    const savedNodes = this.saveNodes(nodes);
+    return this.applyNodeChanges(savedNodes);
+  }
+
   async syncSubscription(url) {
     const importedNodes = await this.proxyService.syncSubscription(url);
     if (!importedNodes.length) {
       throw createHttpError('Subscription returned no usable nodes', 400);
     }
 
+    const settings = this.getSettingsSnapshot();
+    const subRecord = settings.subscriptions.find((s) => s.url === url);
+    const groupName = subRecord?.groupName || null;
+
     const existingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== url);
     const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, importedNodes.map((node) => ({
       ...node,
       source: 'subscription',
-      subscriptionUrl: url
+      subscriptionUrl: url,
+      ...(groupName ? { group: groupName } : {})
     }))));
 
     const applied = await this.applyNodeChanges(savedNodes);

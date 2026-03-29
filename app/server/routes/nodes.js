@@ -93,6 +93,49 @@ export function createNodeRoutes({ coreManager }) {
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }
+    },
+
+    'GET /api/groups': async () => json({
+      ok: true,
+      groups: coreManager.getGroups()
+    }),
+
+    'PUT /api/groups/rename': async ({ body }) => {
+      const from = String(body?.from || '').trim();
+      const to = String(body?.to || '').trim();
+      if (!from || !to) {
+        return json({ ok: false, error: 'Missing from or to' }, 400);
+      }
+      try {
+        return json({ ok: true, ...(await coreManager.renameGroup(from, to)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
+    'DELETE /api/groups': async ({ body }) => {
+      const name = String(body?.name || '').trim();
+      if (!name) {
+        return json({ ok: false, error: 'Missing group name' }, 400);
+      }
+      try {
+        return json({ ok: true, ...(await coreManager.deleteGroup(name)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
+    'PUT /api/nodes/group': async ({ body }) => {
+      const nodeIds = body?.nodeIds;
+      const group = body?.group ?? null;
+      if (!Array.isArray(nodeIds) || !nodeIds.length) {
+        return json({ ok: false, error: 'Missing nodeIds array' }, 400);
+      }
+      try {
+        return json({ ok: true, ...(await coreManager.setNodeGroup(nodeIds, group)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
     }
   };
 }

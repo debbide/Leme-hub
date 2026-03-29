@@ -826,6 +826,66 @@ input:focus + .cyber-slider {
   font-size: 1.125rem;
   font-weight: 600;
 }
+
+.group-header-row {
+  background: var(--bg-sidebar);
+  cursor: pointer;
+  user-select: none;
+}
+.group-header-row td {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.group-header-row:hover td {
+  color: var(--text-main);
+}
+.group-chevron {
+  font-size: 0.65rem;
+  margin-right: 0.4rem;
+}
+.group-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
+}
+.group-actions {
+  float: right;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+.group-rename-btn,
+.group-delete-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+.group-rename-btn:hover { color: var(--text-main); border-color: var(--border-strong); }
+.group-delete-btn:hover { color: var(--btn-red-text); border-color: var(--btn-red-text); }
+
+.modal-field-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+.modal-field-input {
+  width: 100%;
+  background: var(--bg-main);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  color: var(--text-main);
+  font-size: 0.875rem;
+  outline: none;
+}
+.modal-field-input:focus { border-color: var(--accent-base); }
 .modal-close-btn {
   background: transparent;
   border: none;
