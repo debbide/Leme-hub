@@ -222,33 +222,84 @@ window.showToast = (message, type = 'info') => {
 let nodesData = [];
 let currentGroup = null;
 
-const currentGroupSelect = document.querySelector('#current-group-select');
+const groupTabsEl = document.querySelector('#group-tabs');
 const addGroupBtn = document.querySelector('#add-group-btn');
 
-const updateGroupSelect = () => {
-  if (!currentGroupSelect) return;
+const renderGroupTabs = () => {
+  if (!groupTabsEl) return;
   const groups = [...new Set(nodesData.map(n => n.group).filter(Boolean))];
-  const current = currentGroupSelect.value;
-  currentGroupSelect.innerHTML = `<option value="">未分组</option>` +
-    groups.map(g => `<option value="${g}">${g}</option>`).join('');
-  if (groups.includes(current)) currentGroupSelect.value = current;
-  currentGroup = currentGroupSelect.value || null;
-};
+  const hasUngrouped = nodesData.some(n => !n.group);
 
-currentGroupSelect?.addEventListener('change', () => {
-  currentGroup = currentGroupSelect.value || null;
-});
+  const tabs = [
+    { key: null, label: '全部', count: nodesData.length }
+  ];
+  for (const g of groups) {
+    tabs.push({ key: g, label: g, count: nodesData.filter(n => n.group === g).length, renameable: true });
+  }
+  if (hasUngrouped) {
+    tabs.push({ key: '__ungrouped__', label: '未分组', count: nodesData.filter(n => !n.group).length });
+  }
+
+  groupTabsEl.innerHTML = tabs.map(t => {
+    const isActive = activeGroupTab === t.key;
+    const actions = t.renameable ? `<span class="group-tab-actions">
+      <button class="group-tab-action-btn group-rename-btn" data-group="${t.key}" title="重命名">✎</button>
+      <button class="group-tab-action-btn group-delete-btn" data-group="${t.key}" title="删除">✕</button>
+    </span>` : '';
+    return `<button type="button" class="group-tab${isActive ? ' active' : ''}" data-key="${t.key ?? ''}">${t.label}<span class="group-tab-count">${t.count}</span>${actions}</button>`;
+  }).join('');
+
+  // Tab 切换
+  groupTabsEl.querySelectorAll('.group-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      if (e.target.closest('.group-tab-actions')) return;
+      const key = btn.dataset.key === '' ? null : btn.dataset.key;
+      activeGroupTab = key;
+      currentGroup = key === null || key === '__ungrouped__' ? null : key;
+      renderGroupTabs();
+      renderNodesElement();
+    });
+  });
+
+  // 重命名
+  groupTabsEl.querySelectorAll('.group-rename-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const oldName = btn.dataset.group;
+      const newName = prompt(`重命名分组 "${oldName}" 为：`, oldName);
+      if (!newName || newName.trim() === oldName) return;
+      try {
+        await requestJson('/api/groups/rename', { method: 'PUT', body: JSON.stringify({ from: oldName, to: newName.trim() }) });
+        if (activeGroupTab === oldName) { activeGroupTab = newName.trim(); currentGroup = newName.trim(); }
+        showToast('分组已重命名', 'success');
+        loadNodes();
+      } catch (err) { showToast(`重命名失败: ${err.message}`, 'error'); }
+    });
+  });
+
+  // 删除
+  groupTabsEl.querySelectorAll('.group-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.group;
+      if (!confirm(`删除分组 "${name}"？节点将移入未分组。`)) return;
+      try {
+        await requestJson('/api/groups', { method: 'DELETE', body: JSON.stringify({ name }) });
+        if (activeGroupTab === name) { activeGroupTab = null; currentGroup = null; }
+        showToast('分组已删除', 'success');
+        loadNodes();
+      } catch (err) { showToast(`删除失败: ${err.message}`, 'error'); }
+    });
+  });
+};
 
 addGroupBtn?.addEventListener('click', () => {
   const name = prompt('新建分组名称：', '');
   if (!name || !name.trim()) return;
   const trimmed = name.trim();
-  const opt = document.createElement('option');
-  opt.value = trimmed;
-  opt.textContent = trimmed;
-  currentGroupSelect.appendChild(opt);
-  currentGroupSelect.value = trimmed;
+  activeGroupTab = trimmed;
   currentGroup = trimmed;
+  renderGroupTabs();
 });
 
 const showInlineMessage = (target, message, tone = '') => {
@@ -282,11 +333,8 @@ const maskAddress = (address) => {
   return address;
 };
 
-const collapsedGroups = new Set(JSON.parse(localStorage.getItem('collapsedGroups') || '[]'));
-
-const saveCollapsedGroups = () => {
-  localStorage.setItem('collapsedGroups', JSON.stringify([...collapsedGroups]));
-};
+// 当前激活的分组 Tab，null = 全部
+let activeGroupTab = null;
 
 const renderNodeRow = (node, activeNodeId) => {
   const protText = (node.type || 'SOCKS').toUpperCase();
@@ -344,80 +392,14 @@ const renderNodesElement = () => {
 
   const activeNodeId = currentCoreState?.proxy?.activeNodeId || null;
 
-  // 按分组聚合
-  const groupMap = new Map();
-  for (const node of nodesData) {
-    const g = node.group ? String(node.group).trim() : null;
-    const key = g || '__ungrouped__';
-    if (!groupMap.has(key)) groupMap.set(key, []);
-    groupMap.get(key).push(node);
-  }
+  // 按当前 Tab 过滤节点
+  const visibleNodes = activeGroupTab === null
+    ? nodesData
+    : activeGroupTab === '__ungrouped__'
+      ? nodesData.filter(n => !n.group)
+      : nodesData.filter(n => n.group === activeGroupTab);
 
-  // 有名分组排前，未分组排最后
-  const groupKeys = [...groupMap.keys()].sort((a, b) => {
-    if (a === '__ungrouped__') return 1;
-    if (b === '__ungrouped__') return -1;
-    return a.localeCompare(b);
-  });
-
-  let html = '';
-  for (const key of groupKeys) {
-    const nodes = groupMap.get(key);
-    const label = key === '__ungrouped__' ? '未分组' : key;
-    const collapsed = collapsedGroups.has(key);
-    html += `<tr class="group-header-row${collapsed ? ' collapsed' : ''}" data-group="${key}">`;
-    html += `<td colspan="5"><span class="group-chevron">${collapsed ? '▶' : '▼'}</span> ${label} <span class="group-count">(${nodes.length})</span>`;
-    if (key !== '__ungrouped__') {
-      html += ` <span class="group-actions"><button type="button" class="group-rename-btn" data-group="${key}">重命名</button><button type="button" class="group-delete-btn" data-group="${key}">删除分组</button></span>`;
-    }
-    html += `</td></tr>`;
-    if (!collapsed) {
-      html += nodes.map(n => renderNodeRow(n, activeNodeId)).join('');
-    }
-  }
-
-  nodesTbody.innerHTML = html;
-
-  // 分组折叠
-  document.querySelectorAll('.group-header-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.group-actions')) return;
-      const key = row.dataset.group;
-      if (collapsedGroups.has(key)) collapsedGroups.delete(key);
-      else collapsedGroups.add(key);
-      saveCollapsedGroups();
-      renderNodesElement();
-    });
-  });
-
-  // 分组重命名
-  document.querySelectorAll('.group-rename-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const oldName = btn.dataset.group;
-      const newName = prompt(`重命名分组 "${oldName}" 为：`, oldName);
-      if (!newName || newName.trim() === oldName) return;
-      try {
-        await requestJson('/api/groups/rename', { method: 'PUT', body: JSON.stringify({ from: oldName, to: newName.trim() }) });
-        showToast('分组已重命名', 'success');
-        loadNodes();
-      } catch (err) { showToast(`重命名失败: ${err.message}`, 'error'); }
-    });
-  });
-
-  // 分组删除
-  document.querySelectorAll('.group-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const name = btn.dataset.group;
-      if (!confirm(`删除分组 "${name}"？节点将移入未分组。`)) return;
-      try {
-        await requestJson('/api/groups', { method: 'DELETE', body: JSON.stringify({ name }) });
-        showToast('分组已删除', 'success');
-        loadNodes();
-      } catch (err) { showToast(`删除失败: ${err.message}`, 'error'); }
-    });
-  });
+  nodesTbody.innerHTML = visibleNodes.map(n => renderNodeRow(n, activeNodeId)).join('');
 
   document.querySelectorAll('.test-node-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); testNode(e.target.dataset.id); });
@@ -457,8 +439,8 @@ const loadNodes = async () => {
   try {
     const payload = await requestJson('/api/nodes');
     nodesData = payload.nodes || [];
+    renderGroupTabs();
     renderNodesElement();
-    updateGroupSelect();
     updateCoreStatus(payload.core);
     renderSystemProxyNodeOptions(nodesData, payload.core?.proxy?.activeNodeId);
   } catch (error) {
