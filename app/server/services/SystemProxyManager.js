@@ -173,7 +173,7 @@ export class SystemProxyManager {
   }
 
   async setWindowsProxy({ host, httpPort, socksPort }) {
-    const proxyServer = `http=${host}:${httpPort};https=${host}:${httpPort};socks=${host}:${socksPort}`;
+    const proxyServer = `socks=${host}:${socksPort}`;
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', proxyServer, '/f']);
   }
@@ -224,10 +224,10 @@ export class SystemProxyManager {
   }
 
   async setLinuxProxy({ host, httpPort, socksPort }) {
-    await this.gsettingsSet('org.gnome.system.proxy.http', 'host', host);
-    await this.gsettingsSet('org.gnome.system.proxy.http', 'port', String(httpPort));
-    await this.gsettingsSet('org.gnome.system.proxy.https', 'host', host);
-    await this.gsettingsSet('org.gnome.system.proxy.https', 'port', String(httpPort));
+    await this.gsettingsSet('org.gnome.system.proxy.http', 'host', '');
+    await this.gsettingsSet('org.gnome.system.proxy.http', 'port', '0');
+    await this.gsettingsSet('org.gnome.system.proxy.https', 'host', '');
+    await this.gsettingsSet('org.gnome.system.proxy.https', 'port', '0');
     await this.gsettingsSet('org.gnome.system.proxy.socks', 'host', host);
     await this.gsettingsSet('org.gnome.system.proxy.socks', 'port', String(socksPort));
     await this.gsettingsSet('org.gnome.system.proxy', 'mode', 'manual');
