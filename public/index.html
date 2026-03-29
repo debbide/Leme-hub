@@ -123,14 +123,19 @@
               </form>
             </div>
 
+            <!-- Group Bar -->
+            <div class="group-bar">
+              <span class="group-bar-label">当前分组</span>
+              <select id="current-group-select" class="group-select">
+                <option value="">未分组</option>
+              </select>
+              <button id="add-group-btn" type="button" class="group-bar-add" title="新建分组">+</button>
+            </div>
+
             <!-- Toolbar Section -->
             <div class="toolbar">
               <div class="node-count" id="node-count-label">节点数: 0</div>
               <div class="btn-group">
-                <select id="current-group-select" class="group-select">
-                  <option value="">未分组</option>
-                </select>
-                <button id="add-group-btn" type="button" title="新建分组">+</button>
                 <button id="test-all" type="button">批量测试</button>
                 <button id="show-import" type="button">导入链接</button>
                 <button id="show-sync" type="button">同步订阅</button>

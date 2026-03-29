@@ -887,6 +887,19 @@ input:focus + .cyber-slider {
 }
 .modal-field-input:focus { border-color: var(--accent-base); }
 
+.group-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.5rem;
+  background: rgba(255,255,255,0.01);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.group-bar-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .group-select {
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
@@ -896,9 +909,24 @@ input:focus + .cyber-slider {
   padding: 0.3rem 0.6rem;
   cursor: pointer;
   outline: none;
-  max-width: 120px;
+  min-width: 120px;
 }
 .group-select:focus { border-color: var(--accent-base); }
+.group-bar-add {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.group-bar-add:hover { color: var(--text-main); border-color: var(--accent-base); }
 .modal-close-btn {
   background: transparent;
   border: none;
