@@ -22,6 +22,8 @@ const sendJson = (response, status, body) => {
   response.end(JSON.stringify(body));
 };
 
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB
+
 const readJsonBody = async (request) => {
   if (request.method === 'GET' || request.method === 'HEAD') {
     return null;
@@ -30,13 +32,24 @@ const readJsonBody = async (request) => {
   let raw = '';
   for await (const chunk of request) {
     raw += chunk;
+    if (Buffer.byteLength(raw) > MAX_BODY_SIZE) {
+      const err = new Error('Request body too large');
+      err.status = 413;
+      throw err;
+    }
   }
 
   if (!raw.trim()) {
     return null;
   }
 
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const err = new Error('Invalid JSON');
+    err.status = 400;
+    throw err;
+  }
 };
 
 const sendFile = (response, filePath) => {
@@ -92,7 +105,7 @@ export function createAppServer(paths, env = process.env) {
         const result = await route({ request, url, body });
         sendJson(response, result.status || 200, result.body);
       } catch (error) {
-        const status = error instanceof SyntaxError ? 400 : 500;
+        const status = error.status || (error instanceof SyntaxError ? 400 : 500);
         sendJson(response, status, { ok: false, error: error.message });
       }
       return;

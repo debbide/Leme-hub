@@ -66,16 +66,38 @@ export class ConfigStore {
   }
 
   readJson(filePath, fallback) {
+    let raw;
     try {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return raw.trim() ? JSON.parse(raw) : fallback;
+      raw = fs.readFileSync(filePath, 'utf8');
     } catch (error) {
+      if (error.code !== 'ENOENT') {
+        this.appendLog(`[ConfigStore] Failed to read ${filePath}: ${error.message}`);
+      }
+      return fallback;
+    }
+
+    if (!raw.trim()) {
+      return fallback;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      const backup = `${filePath}.corrupt`;
+      try {
+        fs.copyFileSync(filePath, backup);
+        this.appendLog(`[ConfigStore] Corrupt JSON in ${filePath}, backed up to ${backup}`);
+      } catch {
+        this.appendLog(`[ConfigStore] Corrupt JSON in ${filePath} (backup failed): ${error.message}`);
+      }
       return fallback;
     }
   }
 
   writeJson(filePath, value) {
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+    const tmp = `${filePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+    fs.renameSync(tmp, filePath);
     return value;
   }
 
@@ -95,7 +117,30 @@ export class ConfigStore {
     return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings));
   }
 
+  rotateLogs() {
+    const MAX_SIZE = 5 * 1024 * 1024;
+    const MAX_FILES = 3;
+    try {
+      const stat = fs.statSync(this.paths.logPath);
+      if (stat.size < MAX_SIZE) return;
+    } catch {
+      return;
+    }
+
+    for (let i = MAX_FILES - 1; i >= 1; i--) {
+      const older = `${this.paths.logPath}.${i}`;
+      const newer = `${this.paths.logPath}.${i + 1}`;
+      if (fs.existsSync(newer)) fs.rmSync(newer);
+      if (fs.existsSync(older)) fs.renameSync(older, newer);
+    }
+
+    const rotated = `${this.paths.logPath}.1`;
+    if (fs.existsSync(rotated)) fs.rmSync(rotated);
+    fs.renameSync(this.paths.logPath, rotated);
+  }
+
   appendLog(message) {
+    this.rotateLogs();
     fs.appendFileSync(this.paths.logPath, `${message}\n`);
   }
 

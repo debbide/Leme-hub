@@ -734,6 +734,21 @@ export class ProxyService {
   }
 
   async syncSubscription(url) {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error(`Invalid subscription URL: ${url}`);
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error(`Subscription URL must use http or https`);
+    }
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname.startsWith('127.') || hostname === '::1'
+        || hostname.startsWith('10.') || hostname.startsWith('192.168.')
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+      throw new Error(`Subscription URL must not point to a private/local address`);
+    }
     const response = await axios.get(url);
     let content = response.data;
 

@@ -694,15 +694,38 @@ export class CoreManager {
 
     this.proxyService.proxyProcess.once('exit', async (code, signal) => {
       await this.cleanupSystemProxyAfterExit();
+      const isClean = code === 0 || signal === 'SIGTERM';
       this.state = {
         ...this.state,
-        status: code === 0 || signal === 'SIGTERM' ? 'stopped' : 'error',
-        lastError: code === 0 || signal === 'SIGTERM'
+        status: isClean ? 'stopped' : 'error',
+        lastError: isClean
           ? null
           : `sing-box exited unexpectedly${code !== null ? ` with code ${code}` : ''}`,
         startedAt: null,
         executablePath: null
       };
+
+      if (!isClean) {
+        const MAX_RESTART_ATTEMPTS = 5;
+        this._restartAttempts = (this._restartAttempts || 0) + 1;
+        if (this._restartAttempts > MAX_RESTART_ATTEMPTS) {
+          this.store.appendLog(`[CoreManager] sing-box crashed ${MAX_RESTART_ATTEMPTS} times, giving up`);
+          this.state = { ...this.state, status: 'crashed', lastError: 'sing-box crashed too many times, manual restart required' };
+          return;
+        }
+        const delay = Math.min(1000 * 2 ** (this._restartAttempts - 1), 30000);
+        this.store.appendLog(`[CoreManager] sing-box crashed, restarting in ${delay}ms (attempt ${this._restartAttempts}/${MAX_RESTART_ATTEMPTS})`);
+        setTimeout(async () => {
+          try {
+            await this.start();
+            this._restartAttempts = 0;
+          } catch (err) {
+            this.store.appendLog(`[CoreManager] Auto-restart failed: ${err.message}`);
+          }
+        }, delay);
+      } else {
+        this._restartAttempts = 0;
+      }
     });
   }
 
@@ -776,6 +799,7 @@ export class CoreManager {
   }
 
   async stop() {
+    this._restartAttempts = 0;
     this.proxyService.stop();
     const systemProxy = this.getSettingsSnapshot().systemProxyEnabled
       ? await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
@@ -847,25 +871,20 @@ export class CoreManager {
       autoStarted = true;
     }
 
+    const CONCURRENCY = 5;
     const results = [];
-    for (const nodeId of requestedIds) {
-      const node = this.getNodeById(nodeId);
-      try {
-        const latencyMs = await this.proxyService.testNode(nodeId);
-        results.push({
-          id: nodeId,
-          ok: true,
-          latencyMs,
-          node
-        });
-      } catch (error) {
-        results.push({
-          id: nodeId,
-          ok: false,
-          error: error.message,
-          node
-        });
-      }
+    for (let i = 0; i < requestedIds.length; i += CONCURRENCY) {
+      const batch = requestedIds.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(batch.map(async (nodeId) => {
+        const node = this.getNodeById(nodeId);
+        try {
+          const latencyMs = await this.proxyService.testNode(nodeId);
+          return { id: nodeId, ok: true, latencyMs, node };
+        } catch (error) {
+          return { id: nodeId, ok: false, error: error.message, node };
+        }
+      }));
+      results.push(...batchResults);
     }
 
     return {

@@ -171,6 +171,14 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.add('off');
       dashText.textContent = '核心运行中，系统代理未接管';
     }
+  } else if (core.status === 'crashed') {
+    coreStatusIndicator.classList.add('crashed');
+    coreStatusIndicator.title = '多次崩溃，需手动重启';
+    if(dashSwitch) {
+      dashSwitch.classList.remove('on');
+      dashSwitch.classList.add('off');
+      dashText.textContent = '引擎已崩溃，请手动重启';
+    }
   } else if (core.status === 'error') {
     coreStatusIndicator.classList.add('error');
     coreStatusIndicator.title = '异常终止';

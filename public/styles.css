@@ -821,6 +821,24 @@ input:focus + .cyber-slider {
   justify-content: flex-end;
   gap: 0.5rem;
 }
+.modal-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
 
 /* STATUS DOTS */
 .status-dot {
@@ -838,6 +856,11 @@ input:focus + .cyber-slider {
 }
 .status-dot.error {
   background-color: var(--btn-red-text);
+  animation: dot-pulse 1.5s infinite;
+}
+.status-dot.crashed {
+  background-color: #f97316;
+  box-shadow: 0 0 8px #f97316;
   animation: dot-pulse 1.5s infinite;
 }
 @keyframes dot-pulse {
