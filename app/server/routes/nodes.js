@@ -13,9 +13,10 @@ export function createNodeRoutes({ coreManager }) {
       if (!link) {
         return json({ ok: false, error: 'Missing proxy link' }, 400);
       }
+      const group = body?.group ? String(body.group).trim() || null : null;
 
       try {
-        return json({ ok: true, ...(await coreManager.importProxyLink(link)) }, 201);
+        return json({ ok: true, ...(await coreManager.importProxyLink(link, group)) }, 201);
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }

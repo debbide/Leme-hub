@@ -220,6 +220,36 @@ window.showToast = (message, type = 'info') => {
 };
 
 let nodesData = [];
+let currentGroup = null;
+
+const currentGroupSelect = document.querySelector('#current-group-select');
+const addGroupBtn = document.querySelector('#add-group-btn');
+
+const updateGroupSelect = () => {
+  if (!currentGroupSelect) return;
+  const groups = [...new Set(nodesData.map(n => n.group).filter(Boolean))];
+  const current = currentGroupSelect.value;
+  currentGroupSelect.innerHTML = `<option value="">未分组</option>` +
+    groups.map(g => `<option value="${g}">${g}</option>`).join('');
+  if (groups.includes(current)) currentGroupSelect.value = current;
+  currentGroup = currentGroupSelect.value || null;
+};
+
+currentGroupSelect?.addEventListener('change', () => {
+  currentGroup = currentGroupSelect.value || null;
+});
+
+addGroupBtn?.addEventListener('click', () => {
+  const name = prompt('新建分组名称：', '');
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  const opt = document.createElement('option');
+  opt.value = trimmed;
+  opt.textContent = trimmed;
+  currentGroupSelect.appendChild(opt);
+  currentGroupSelect.value = trimmed;
+  currentGroup = trimmed;
+});
 
 const showInlineMessage = (target, message, tone = '') => {
   target.textContent = message;
@@ -428,6 +458,7 @@ const loadNodes = async () => {
     const payload = await requestJson('/api/nodes');
     nodesData = payload.nodes || [];
     renderNodesElement();
+    updateGroupSelect();
     updateCoreStatus(payload.core);
     renderSystemProxyNodeOptions(nodesData, payload.core?.proxy?.activeNodeId);
   } catch (error) {
@@ -459,7 +490,7 @@ const importLink = async (e) => {
   try {
     const payload = await requestJson('/api/nodes/import-link', {
       method: 'POST',
-      body: JSON.stringify({ link })
+      body: JSON.stringify({ link, group: currentGroup || undefined })
     });
     nodesData = payload.nodes;
     renderNodesElement();
@@ -657,6 +688,8 @@ manualAddBtn?.addEventListener('click', () => {
     security: "none"
   };
   editJsonInput.value = JSON.stringify(skeleton, null, 2);
+  const groupInput = document.querySelector('#edit-node-group');
+  if (groupInput) groupInput.value = currentGroup || '';
   editModal.classList.add('active');
 });
 

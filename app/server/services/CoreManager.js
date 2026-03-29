@@ -614,13 +614,16 @@ export class CoreManager {
     return this.saveNodes(mergeUniqueNodes(this.store.getNodes(), incomingNodes));
   }
 
-  async importProxyLink(link) {
+  async importProxyLink(link, group = null) {
     const parsedNode = this.proxyService.parseProxyLink(link);
     if (!parsedNode) {
       throw createHttpError('Invalid proxy link', 400);
     }
 
-    const node = parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() };
+    const node = {
+      ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
+      ...(group ? { group } : {})
+    };
     const savedNodes = this.mergeAndSaveNodes([node]);
     const applied = await this.applyNodeChanges(savedNodes);
     return {

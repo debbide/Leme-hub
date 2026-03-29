@@ -886,6 +886,19 @@ input:focus + .cyber-slider {
   outline: none;
 }
 .modal-field-input:focus { border-color: var(--accent-base); }
+
+.group-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  outline: none;
+  max-width: 120px;
+}
+.group-select:focus { border-color: var(--accent-base); }
 .modal-close-btn {
   background: transparent;
   border: none;
