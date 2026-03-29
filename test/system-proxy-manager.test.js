@@ -46,7 +46,7 @@ test('linux disabled status clears proxy endpoints', async () => {
   assert.equal(status.socks, null);
 });
 
-test('windows apply writes socks-only proxy server', async () => {
+test('windows apply writes http and socks proxy server', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
     platform: 'win32',
@@ -58,10 +58,10 @@ test('windows apply writes socks-only proxy server', async () => {
 
   await manager.setWindowsProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
 
-  assert.equal(calls[1][8], 'socks=127.0.0.1:20100');
+  assert.equal(calls[1][8], 'http=127.0.0.1:20101;https=127.0.0.1:20101;socks=127.0.0.1:20100');
 });
 
-test('linux apply clears http endpoints and keeps socks endpoint', async () => {
+test('linux apply sets http and socks endpoints together', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
     platform: 'linux',
@@ -74,10 +74,10 @@ test('linux apply clears http endpoints and keeps socks endpoint', async () => {
   await manager.setLinuxProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
 
   assert.deepEqual(calls, [
-    ['gsettings', 'set', 'org.gnome.system.proxy.http', 'host', ''],
-    ['gsettings', 'set', 'org.gnome.system.proxy.http', 'port', '0'],
-    ['gsettings', 'set', 'org.gnome.system.proxy.https', 'host', ''],
-    ['gsettings', 'set', 'org.gnome.system.proxy.https', 'port', '0'],
+    ['gsettings', 'set', 'org.gnome.system.proxy.http', 'host', '127.0.0.1'],
+    ['gsettings', 'set', 'org.gnome.system.proxy.http', 'port', '20101'],
+    ['gsettings', 'set', 'org.gnome.system.proxy.https', 'host', '127.0.0.1'],
+    ['gsettings', 'set', 'org.gnome.system.proxy.https', 'port', '20101'],
     ['gsettings', 'set', 'org.gnome.system.proxy.socks', 'host', '127.0.0.1'],
     ['gsettings', 'set', 'org.gnome.system.proxy.socks', 'port', '20100'],
     ['gsettings', 'set', 'org.gnome.system.proxy', 'mode', 'manual']

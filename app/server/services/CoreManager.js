@@ -317,16 +317,22 @@ export class CoreManager {
       manualPortRangeStart: settings.proxyBasePort,
       listenHost,
       systemDefaultEndpoint: {
+        protocol: 'http',
+        host: listenHost,
+        port: unifiedHttpPort,
+        url: `http://${listenHost}:${unifiedHttpPort}`
+      },
+      httpCompatibilityEndpoint: {
         protocol: 'socks5',
         host: listenHost,
         port: unifiedSocksPort,
         url: `socks5://${listenHost}:${unifiedSocksPort}`
       },
-      httpCompatibilityEndpoint: {
-        protocol: 'http',
+      systemSocksEndpoint: {
+        protocol: 'socks5',
         host: listenHost,
-        port: unifiedHttpPort,
-        url: `http://${listenHost}:${unifiedHttpPort}`
+        port: unifiedSocksPort,
+        url: `socks5://${listenHost}:${unifiedSocksPort}`
       },
       customRules: settings.customRules,
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
