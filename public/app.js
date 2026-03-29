@@ -78,16 +78,16 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
 const renderProxyEndpoints = (proxyProfile = {}) => {
   const listenHost = proxyProfile.listenHost || '127.0.0.1';
   const defaultEndpoint = proxyProfile.systemDefaultEndpoint || {
-    protocol: 'socks5',
-    host: listenHost,
-    port: proxyProfile.unifiedSocksPort || 20100,
-    url: `socks5://${listenHost}:${proxyProfile.unifiedSocksPort || 20100}`
-  };
-  const httpEndpoint = proxyProfile.httpCompatibilityEndpoint || {
     protocol: 'http',
     host: listenHost,
     port: proxyProfile.unifiedHttpPort || 20101,
     url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 20101}`
+  };
+  const httpEndpoint = proxyProfile.systemSocksEndpoint || proxyProfile.httpCompatibilityEndpoint || {
+    protocol: 'socks5',
+    host: listenHost,
+    port: proxyProfile.unifiedSocksPort || 20100,
+    url: `socks5://${listenHost}:${proxyProfile.unifiedSocksPort || 20100}`
   };
 
   if (dashDefaultProxy) {
@@ -99,7 +99,7 @@ const renderProxyEndpoints = (proxyProfile = {}) => {
   }
 
   if (dashHttpNote) {
-    dashHttpNote.textContent = '用于 Git、GitHub 和旧软件手动填写';
+    dashHttpNote.textContent = '用于手动代理、分流和兼容 SOCKS5 的客户端';
   }
 };
 

@@ -77,18 +77,18 @@
             <div class="proxy-endpoints-card">
               <div class="proxy-endpoints-header">
                 <span class="proxy-endpoints-title">本地代理入口</span>
-                <span class="proxy-endpoints-hint">默认网页走 SOCKS5，HTTP 仅作兼容入口</span>
+                <span class="proxy-endpoints-hint">系统代理默认走 HTTP，SOCKS5 可供手动配置</span>
               </div>
               <div class="proxy-endpoints-grid">
                 <div class="endpoint-box endpoint-box-primary">
-                  <span class="endpoint-label">默认 SOCKS5</span>
-                  <span class="endpoint-value" id="dash-default-proxy">socks5://127.0.0.1:20100</span>
-                  <span class="endpoint-note">用于浏览器、哪吒和实时页面</span>
+                  <span class="endpoint-label">默认系统代理 (HTTP)</span>
+                  <span class="endpoint-value" id="dash-default-proxy">http://127.0.0.1:20101</span>
+                  <span class="endpoint-note">用于浏览器和遵循系统代理的软件</span>
                 </div>
                 <div class="endpoint-box">
-                  <span class="endpoint-label">HTTP 兼容端口</span>
-                  <span class="endpoint-value" id="dash-http-proxy">http://127.0.0.1:20101</span>
-                  <span class="endpoint-note" id="dash-http-note">用于 Git、GitHub 和旧软件手动填写</span>
+                  <span class="endpoint-label">SOCKS5 入口</span>
+                  <span class="endpoint-value" id="dash-http-proxy">socks5://127.0.0.1:20100</span>
+                  <span class="endpoint-note" id="dash-http-note">用于手动代理、分流和兼容 SOCKS5 的客户端</span>
                 </div>
               </div>
             </div>
