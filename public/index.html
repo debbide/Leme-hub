@@ -74,6 +74,24 @@
                 <span class="stat-value" id="dash-uptime">00:00:00</span>
               </div>
             </div>
+            <div class="proxy-endpoints-card">
+              <div class="proxy-endpoints-header">
+                <span class="proxy-endpoints-title">本地代理入口</span>
+                <span class="proxy-endpoints-hint">默认网页走 SOCKS5，HTTP 仅作兼容入口</span>
+              </div>
+              <div class="proxy-endpoints-grid">
+                <div class="endpoint-box endpoint-box-primary">
+                  <span class="endpoint-label">默认 SOCKS5</span>
+                  <span class="endpoint-value" id="dash-default-proxy">socks5://127.0.0.1:20100</span>
+                  <span class="endpoint-note">用于浏览器、哪吒和实时页面</span>
+                </div>
+                <div class="endpoint-box">
+                  <span class="endpoint-label">HTTP 兼容端口</span>
+                  <span class="endpoint-value" id="dash-http-proxy">http://127.0.0.1:20101</span>
+                  <span class="endpoint-note" id="dash-http-note">用于 Git、GitHub 和旧软件手动填写</span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

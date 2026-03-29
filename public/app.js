@@ -22,6 +22,9 @@ const coreStatusIndicator = document.querySelector('#core-status-indicator');
 const systemProxyModeSelect = document.querySelector('.system-proxy-mode');
 const dashActiveNodeSelect = document.querySelector('#dash-active-node-select');
 const dashUptime = document.querySelector('#dash-uptime');
+const dashDefaultProxy = document.querySelector('#dash-default-proxy');
+const dashHttpProxy = document.querySelector('#dash-http-proxy');
+const dashHttpNote = document.querySelector('#dash-http-note');
 const autoStartToggle = document.querySelector('#auto-start-toggle');
 
 let currentCoreState = null;
@@ -72,6 +75,34 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
   }
 };
 
+const renderProxyEndpoints = (proxyProfile = {}) => {
+  const listenHost = proxyProfile.listenHost || '127.0.0.1';
+  const defaultEndpoint = proxyProfile.systemDefaultEndpoint || {
+    protocol: 'socks5',
+    host: listenHost,
+    port: proxyProfile.unifiedSocksPort || 20100,
+    url: `socks5://${listenHost}:${proxyProfile.unifiedSocksPort || 20100}`
+  };
+  const httpEndpoint = proxyProfile.httpCompatibilityEndpoint || {
+    protocol: 'http',
+    host: listenHost,
+    port: proxyProfile.unifiedHttpPort || 20101,
+    url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 20101}`
+  };
+
+  if (dashDefaultProxy) {
+    dashDefaultProxy.textContent = defaultEndpoint.url;
+  }
+
+  if (dashHttpProxy) {
+    dashHttpProxy.textContent = httpEndpoint.url;
+  }
+
+  if (dashHttpNote) {
+    dashHttpNote.textContent = '用于 Git、GitHub 和旧软件手动填写';
+  }
+};
+
 const updateCoreStatus = (core) => {
   if (!core) return;
   currentCoreState = core;
@@ -81,6 +112,8 @@ const updateCoreStatus = (core) => {
   const systemProxy = core.systemProxy || {};
   const proxyProfile = core.proxy || {};
   const activeNode = proxyProfile.activeNode;
+
+  renderProxyEndpoints(proxyProfile);
 
   if (systemProxyModeSelect && proxyProfile.mode) {
     systemProxyModeSelect.value = proxyProfile.mode;
