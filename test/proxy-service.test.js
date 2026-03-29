@@ -24,7 +24,22 @@ test('generates socks config for valid node', () => {
   assert.equal(config.inbounds[0].listen, '127.0.0.1');
   assert.equal(config.inbounds[0].listen_port, 20000);
   assert.equal(config.outbounds[0].tag, 'out-n1');
+  assert.equal(config.route.rules[0].action, 'sniff');
   assert.equal(config.route.final, 'direct');
+});
+
+test('generates vless config with default xudp encoding', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'vless', server: '127.0.0.1', port: 1080, uuid: '00000000-0000-0000-0000-000000000000' }]);
+  const config = service.generateConfig();
+  assert.equal(config.outbounds[0].packet_encoding, 'xudp');
+});
+
+test('generates vmess config with default packetaddr encoding', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'vmess', server: '127.0.0.1', port: 1080, uuid: '00000000-0000-0000-0000-000000000000' }]);
+  const config = service.generateConfig();
+  assert.equal(config.outbounds[0].packet_encoding, 'packetaddr');
 });
 
 test('generates unified system proxy inbounds for active node mode', () => {

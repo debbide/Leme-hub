@@ -193,15 +193,13 @@ export class ProxyService {
       if (node.type === 'vmess') {
         outbound.security = node.security || 'none';
         outbound.alter_id = parseInt(node.alterId || 0, 10);
-        if (node.packet_encoding) {
-          outbound.packet_encoding = node.packet_encoding;
-        }
+        outbound.packet_encoding = node.packet_encoding || 'packetaddr';
       } else if (node.type === 'shadowsocks') {
         outbound.method = node.method || 'aes-256-gcm';
         applyIfPresent(outbound, 'plugin', node.plugin);
         applyIfPresent(outbound, 'plugin_opts', node.plugin_opts);
       } else if (node.type === 'vless') {
-        applyIfPresent(outbound, 'packet_encoding', node.packet_encoding);
+        outbound.packet_encoding = node.packet_encoding || 'xudp';
       }
 
       applyIfPresent(outbound, 'network', node.network);
@@ -397,6 +395,9 @@ export class ProxyService {
         outbound: 'direct'
       });
     }
+    
+    // Global sniffing rule MUST be at the top for proper protocol identification (WebSocket, gRPC, etc.)
+    routeRules.unshift({ action: 'sniff' });
 
     if (systemProxyEnabled) {
       const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
