@@ -304,15 +304,30 @@ export class CoreManager {
     const settings = this.getSettingsSnapshot();
     const nodes = this.store.getNodes();
     const activeNodeId = this.resolveActiveNodeId(settings, nodes);
+    const listenHost = settings.proxyListenHost;
+    const unifiedSocksPort = settings.systemProxySocksPort;
+    const unifiedHttpPort = settings.systemProxyHttpPort;
 
     return {
       mode: settings.routingMode,
       systemProxyEnabled: !!settings.systemProxyEnabled,
       activeNodeId,
-      unifiedHttpPort: settings.systemProxyHttpPort,
-      unifiedSocksPort: settings.systemProxySocksPort,
+      unifiedHttpPort,
+      unifiedSocksPort,
       manualPortRangeStart: settings.proxyBasePort,
-      listenHost: settings.proxyListenHost,
+      listenHost,
+      systemDefaultEndpoint: {
+        protocol: 'socks5',
+        host: listenHost,
+        port: unifiedSocksPort,
+        url: `socks5://${listenHost}:${unifiedSocksPort}`
+      },
+      httpCompatibilityEndpoint: {
+        protocol: 'http',
+        host: listenHost,
+        port: unifiedHttpPort,
+        url: `http://${listenHost}:${unifiedHttpPort}`
+      },
       customRules: settings.customRules,
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
     };

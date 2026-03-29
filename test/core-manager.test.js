@@ -356,6 +356,25 @@ test('updateSettings rejects unified ports that collide with manual ports', asyn
   await assert.rejects(() => manager.updateSettings({ systemProxySocksPort: 20100 }), /conflicts with manual proxy ports/);
 });
 
+test('getStatus exposes socks default and http compatibility endpoints', () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const status = manager.getStatus();
+
+  assert.deepEqual(status.proxy.systemDefaultEndpoint, {
+    protocol: 'socks5',
+    host: '127.0.0.1',
+    port: 20100,
+    url: 'socks5://127.0.0.1:20100'
+  });
+  assert.deepEqual(status.proxy.httpCompatibilityEndpoint, {
+    protocol: 'http',
+    host: '127.0.0.1',
+    port: 20101,
+    url: 'http://127.0.0.1:20101'
+  });
+});
+
 test('applySystemProxy uses current unified proxy ports', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.state.status = 'running';
@@ -364,7 +383,7 @@ test('applySystemProxy uses current unified proxy ports', async () => {
       enabled: true,
       mode: 'manual',
       provider: 'mock',
-      http: { host, port: httpPort },
+      http: null,
       socks: { host, port: socksPort },
       supported: true,
       lastError: null
@@ -375,7 +394,7 @@ test('applySystemProxy uses current unified proxy ports', async () => {
   const status = await manager.applySystemProxy();
 
   assert.equal(status.enabled, true);
-  assert.equal(status.http.port, 20101);
+  assert.equal(status.http, null);
   assert.equal(status.socks.port, 20100);
 });
 
