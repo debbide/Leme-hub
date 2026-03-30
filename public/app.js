@@ -220,6 +220,9 @@ window.showToast = (message, type = 'info') => {
 };
 
 let nodesData = [];
+let groupsData = [];
+let nodeSearchQuery = '';
+let selectedNodeIds = new Set();
 let currentGroup = null;
 
 const groupTabsEl = document.querySelector('#group-tabs');
@@ -227,13 +230,15 @@ const addGroupBtn = document.querySelector('#add-group-btn');
 
 const renderGroupTabs = () => {
   if (!groupTabsEl) return;
-  const groups = [...new Set(nodesData.map(n => n.group).filter(Boolean))];
+  // Merge stored groups with groups derived from nodes (preserve order, no duplicates)
+  const nodeGroups = nodesData.map(n => n.group).filter(Boolean);
+  const allGroups = [...new Set([...groupsData, ...nodeGroups])];
   const hasUngrouped = nodesData.some(n => !n.group);
 
   const tabs = [
     { key: null, label: '全部', count: nodesData.length }
   ];
-  for (const g of groups) {
+  for (const g of allGroups) {
     tabs.push({ key: g, label: g, count: nodesData.filter(n => n.group === g).length, renameable: true });
   }
   if (hasUngrouped) {
@@ -266,7 +271,7 @@ const renderGroupTabs = () => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const oldName = btn.dataset.group;
-      const newName = prompt(`重命名分组 "${oldName}" 为：`, oldName);
+      const newName = await showInputModal(`重命名分组 "${oldName}"`, oldName);
       if (!newName || newName.trim() === oldName) return;
       try {
         await requestJson('/api/groups/rename', { method: 'PUT', body: JSON.stringify({ from: oldName, to: newName.trim() }) });
@@ -282,7 +287,7 @@ const renderGroupTabs = () => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const name = btn.dataset.group;
-      if (!confirm(`删除分组 "${name}"？节点将移入未分组。`)) return;
+      if (!await showConfirmModal(`删除分组 "${name}"`, '该分组下的所有节点将移入未分组。')) return;
       try {
         await requestJson('/api/groups', { method: 'DELETE', body: JSON.stringify({ name }) });
         if (activeGroupTab === name) { activeGroupTab = null; currentGroup = null; }
@@ -293,13 +298,19 @@ const renderGroupTabs = () => {
   });
 };
 
-addGroupBtn?.addEventListener('click', () => {
-  const name = prompt('新建分组名称：', '');
+addGroupBtn?.addEventListener('click', async () => {
+  const name = await showInputModal('新建分组名称');
   if (!name || !name.trim()) return;
   const trimmed = name.trim();
-  activeGroupTab = trimmed;
-  currentGroup = trimmed;
-  renderGroupTabs();
+  try {
+    const payload = await requestJson('/api/groups', { method: 'POST', body: JSON.stringify({ name: trimmed }) });
+    groupsData = payload.groups || groupsData;
+    activeGroupTab = trimmed;
+    currentGroup = trimmed;
+    renderGroupTabs();
+  } catch (error) {
+    showToast(`创建分组失败: ${error.message}`, 'error');
+  }
 });
 
 const showInlineMessage = (target, message, tone = '') => {
@@ -307,6 +318,48 @@ const showInlineMessage = (target, message, tone = '') => {
   target.className = tone ? `state-msg ${tone}` : 'state-msg';
   target.classList.remove('hidden');
 };
+
+const showConfirmModal = (title, body) => new Promise((resolve) => {
+  const overlay = document.getElementById('confirm-modal');
+  document.getElementById('confirm-modal-title').textContent = title;
+  document.getElementById('confirm-modal-body').textContent = body;
+  overlay.classList.add('active');
+  const finish = (val) => {
+    overlay.classList.remove('active');
+    document.getElementById('confirm-modal-ok').replaceWith(document.getElementById('confirm-modal-ok').cloneNode(true));
+    document.getElementById('confirm-modal-cancel').replaceWith(document.getElementById('confirm-modal-cancel').cloneNode(true));
+    resolve(val);
+  };
+  document.getElementById('confirm-modal-ok').addEventListener('click', () => finish(true));
+  document.getElementById('confirm-modal-cancel').addEventListener('click', () => finish(false));
+});
+
+const showInputModal = (title, defaultValue = '') => new Promise((resolve) => {
+  const overlay = document.getElementById('input-modal');
+  const titleEl = document.getElementById('input-modal-title');
+  const field = document.getElementById('input-modal-field');
+  const confirmBtn = document.getElementById('input-modal-confirm');
+  const cancelBtn = document.getElementById('input-modal-cancel');
+  const closeBtn = document.getElementById('input-modal-close');
+
+  titleEl.textContent = title;
+  field.value = defaultValue;
+  overlay.classList.add('active');
+  setTimeout(() => { field.focus(); field.select(); }, 50);
+
+  const finish = (value) => {
+    overlay.classList.remove('active');
+    confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+    closeBtn.replaceWith(closeBtn.cloneNode(true));
+    resolve(value);
+  };
+
+  document.getElementById('input-modal-confirm').addEventListener('click', () => finish(field.value));
+  document.getElementById('input-modal-cancel').addEventListener('click', () => finish(null));
+  document.getElementById('input-modal-close').addEventListener('click', () => finish(null));
+  field.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(field.value); if (e.key === 'Escape') finish(null); }, { once: true });
+});
 
 const requestJson = async (url, options = {}) => {
   const response = await fetch(url, {
@@ -347,8 +400,14 @@ const renderNodeRow = (node, activeNodeId) => {
   const isActive = node.id === activeNodeId;
   const activeClass = isActive ? 'active-row' : '';
   const activeBadge = isActive ? `<span class="pill pill-active"><i class="ph ph-lightning"></i> 此刻生效</span>` : '';
+  const allGroups = [...new Set([...groupsData, ...nodesData.map(n => n.group).filter(Boolean)])];
+  const groupMenuItems = [
+    `<div class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</div>`,
+    ...allGroups.map(g => `<div class="group-menu-item${node.group === g ? ' active' : ''}" data-group="${g}">${g}</div>`)
+  ].join('');
   return `
     <tr data-id="${node.id}" class="node-row ${activeClass}">
+      <td class="node-check-cell"><input type="checkbox" class="node-checkbox" data-id="${node.id}"></td>
       <td><span class="pill pill-protocol">${protText}</span>${activeBadge}</td>
       <td>
         <div class="node-info">
@@ -362,20 +421,29 @@ const renderNodeRow = (node, activeNodeId) => {
         <span class="pill pill-dark">${secText}</span>
       </td>
       <td><span class="latency" id="test-result-${node.id}">-</span></td>
-      <td style="text-align: right;">
-        <div class="btn-group" style="justify-content: flex-end;">
-          <button type="button" class="test-node-btn" data-id="${node.id}">测试</button>
-          <button type="button" class="detail-node-btn" data-id="${node.id}">详情</button>
-          <button type="button" class="btn-danger delete-node-btn" data-id="${node.id}">删除</button>
+      <td class="row-actions-cell">
+        <div class="row-actions">
+          <button type="button" class="row-action-btn test-node-btn" data-id="${node.id}" title="测试延迟"><i class="ph ph-activity"></i></button>
+          <button type="button" class="row-action-btn detail-node-btn" data-id="${node.id}" title="编辑详情"><i class="ph ph-pencil-simple"></i></button>
+          <div class="move-group-wrap" data-id="${node.id}">
+            <button type="button" class="row-action-btn move-group-btn" data-id="${node.id}" title="移至分组"><i class="ph ph-folder-simple-arrow"></i></button>
+            <div class="group-menu">${groupMenuItems}</div>
+          </div>
+          <button type="button" class="row-action-btn btn-danger-icon delete-node-btn" data-id="${node.id}" title="删除"><i class="ph ph-trash"></i></button>
         </div>
       </td>
     </tr>`;
 };
 
 const renderNodesElement = () => {
+  const nodesGroupEmpty = document.querySelector('#nodes-group-empty');
+  const nodesSearchEmpty = document.querySelector('#nodes-search-empty');
+
   nodesLoading.classList.add('hidden');
   nodesError.classList.add('hidden');
   nodesError.textContent = '';
+  nodesGroupEmpty?.classList.add('hidden');
+  nodesSearchEmpty?.classList.add('hidden');
 
   if (nodesData.length === 0) {
     nodesState.classList.remove('hidden');
@@ -385,34 +453,137 @@ const renderNodesElement = () => {
     return;
   }
 
-  nodesState.classList.add('hidden');
   nodesEmpty.classList.add('hidden');
-  nodesList.classList.remove('hidden');
-  nodeCountLabel.textContent = `节点数: ${nodesData.length}`;
 
   const activeNodeId = currentCoreState?.proxy?.activeNodeId || null;
 
-  // 按当前 Tab 过滤节点
-  const visibleNodes = activeGroupTab === null
+  // 按当前 Tab 过滤
+  let visibleNodes = activeGroupTab === null
     ? nodesData
     : activeGroupTab === '__ungrouped__'
       ? nodesData.filter(n => !n.group)
       : nodesData.filter(n => n.group === activeGroupTab);
 
+  // 搜索过滤
+  const q = nodeSearchQuery.toLowerCase();
+  if (q) {
+    visibleNodes = visibleNodes.filter(n =>
+      (n.name || '').toLowerCase().includes(q) ||
+      (n.server || '').toLowerCase().includes(q)
+    );
+  }
+
+  // 空状态
+  if (visibleNodes.length === 0) {
+    nodesState.classList.remove('hidden');
+    nodesList.classList.add('hidden');
+    nodeCountLabel.textContent = `节点数: ${nodesData.length}`;
+    if (q) {
+      nodesSearchEmpty?.classList.remove('hidden');
+    } else {
+      nodesGroupEmpty?.classList.remove('hidden');
+    }
+    return;
+  }
+
+  nodesState.classList.add('hidden');
+  nodesList.classList.remove('hidden');
+  nodeCountLabel.textContent = `节点数: ${nodesData.length}（显示 ${visibleNodes.length}）`;
+
   nodesTbody.innerHTML = visibleNodes.map(n => renderNodeRow(n, activeNodeId)).join('');
 
-  document.querySelectorAll('.test-node-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); testNode(e.target.dataset.id); });
+  nodesTbody.querySelectorAll('.test-node-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); testNode(btn.dataset.id); });
   });
-  document.querySelectorAll('.delete-node-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); deleteNode(e.target.dataset.id); });
+  nodesTbody.querySelectorAll('.delete-node-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); deleteNode(btn.dataset.id); });
   });
-  document.querySelectorAll('.detail-node-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); openEditModal(e.target.dataset.id); });
+  nodesTbody.querySelectorAll('.detail-node-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openEditModal(btn.dataset.id); });
   });
 
-  document.querySelectorAll('.node-row').forEach(row => {
-    row.addEventListener('click', async () => {
+  nodesTbody.querySelectorAll('.move-group-wrap').forEach(wrap => {
+    const menuBtn = wrap.querySelector('.move-group-btn');
+    const menu = wrap.querySelector('.group-menu');
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = menu.classList.contains('open');
+      document.querySelectorAll('.group-menu.open').forEach(m => m.classList.remove('open'));
+      if (!isOpen) menu.classList.add('open');
+    });
+    menu.querySelectorAll('.group-menu-item').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        menu.classList.remove('open');
+        const nodeId = wrap.dataset.id;
+        const group = item.dataset.group || null;
+        try {
+          const payload = await requestJson('/api/nodes/group', {
+            method: 'PUT',
+            body: JSON.stringify({ nodeIds: [nodeId], group })
+          });
+          nodesData = payload.nodes;
+          groupsData = payload.groups || groupsData;
+          renderGroupTabs();
+          renderNodesElement();
+          showToast('节点已移至分组', 'success');
+        } catch (err) {
+          showToast(`移动失败: ${err.message}`, 'error');
+        }
+      });
+    });
+  });
+
+  const sortTh = document.getElementById('sort-latency-th');
+  if (sortTh && !sortTh.dataset.bound) {
+    sortTh.dataset.bound = '1';
+    sortTh.addEventListener('click', () => {
+      const asc = sortTh.dataset.sort !== 'asc';
+      sortTh.dataset.sort = asc ? 'asc' : 'desc';
+      sortTh.querySelector('.sort-indicator').textContent = asc ? '↑' : '↓';
+      const getMs = id => {
+        const el = document.getElementById(`test-result-${id}`);
+        const v = parseInt(el?.textContent);
+        return isNaN(v) ? (asc ? Infinity : -1) : v;
+      };
+      nodesData = [...nodesData].sort((a, b) => asc ? getMs(a.id) - getMs(b.id) : getMs(b.id) - getMs(a.id));
+      renderNodesElement();
+    });
+  }
+
+  // Checkboxes
+  const selectAllCb = document.getElementById('select-all-nodes');
+  if (selectAllCb) {
+    selectAllCb.checked = false;
+    selectAllCb.indeterminate = false;
+    selectAllCb.addEventListener('change', () => {
+      document.querySelectorAll('.node-checkbox').forEach(cb => {
+        cb.checked = selectAllCb.checked;
+        if (selectAllCb.checked) selectedNodeIds.add(cb.dataset.id);
+        else selectedNodeIds.delete(cb.dataset.id);
+      });
+      updateBulkBar();
+    });
+  }
+  nodesTbody.querySelectorAll('.node-checkbox').forEach(cb => {
+    cb.checked = selectedNodeIds.has(cb.dataset.id);
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedNodeIds.add(cb.dataset.id);
+      else selectedNodeIds.delete(cb.dataset.id);
+      const all = nodesTbody.querySelectorAll('.node-checkbox');
+      const checked = [...all].filter(c => c.checked).length;
+      if (selectAllCb) {
+        selectAllCb.checked = checked === all.length;
+        selectAllCb.indeterminate = checked > 0 && checked < all.length;
+      }
+      updateBulkBar();
+    });
+  });
+
+  nodesTbody.querySelectorAll('.node-row').forEach(row => {
+    row.addEventListener('click', async (e) => {
+      if (e.target.closest('.node-check-cell') || e.target.closest('.row-actions')) return;
       const nodeId = row.dataset.id;
       if (currentCoreState?.proxy?.activeNodeId === nodeId) return;
       try {
@@ -439,6 +610,8 @@ const loadNodes = async () => {
   try {
     const payload = await requestJson('/api/nodes');
     nodesData = payload.nodes || [];
+    groupsData = payload.groups || [];
+    selectedNodeIds.clear();
     renderGroupTabs();
     renderNodesElement();
     updateCoreStatus(payload.core);
@@ -582,43 +755,93 @@ const testNode = async (id) => {
   }
 };
 
+const updateBulkBar = () => {
+  const bar = document.getElementById('bulk-action-bar');
+  const label = document.getElementById('bulk-count-label');
+  if (!bar) return;
+  if (selectedNodeIds.size === 0) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  label.textContent = `已选 ${selectedNodeIds.size} 个节点`;
+  const menu = document.getElementById('bulk-group-menu');
+  if (menu) {
+    const allGroups = [...new Set([...groupsData, ...nodesData.map(n => n.group).filter(Boolean)])];
+    menu.innerHTML = [
+      `<div class="group-menu-item" data-group="">未分组</div>`,
+      ...allGroups.map(g => `<div class="group-menu-item" data-group="${g}">${g}</div>`)
+    ].join('');
+    menu.querySelectorAll('.group-menu-item').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        menu.classList.remove('open');
+        const group = item.dataset.group || null;
+        try {
+          const payload = await requestJson('/api/nodes/group', {
+            method: 'PUT',
+            body: JSON.stringify({ nodeIds: [...selectedNodeIds], group })
+          });
+          nodesData = payload.nodes;
+          groupsData = payload.groups || groupsData;
+          selectedNodeIds.clear();
+          renderGroupTabs();
+          renderNodesElement();
+          showToast('批量移至分组完成', 'success');
+        } catch (err) { showToast(`移动失败: ${err.message}`, 'error'); }
+      });
+    });
+  }
+};
+
 const testAllNodes = async () => {
-  if (!nodesData.length) {
+  let targetNodes = activeGroupTab === null
+    ? nodesData
+    : activeGroupTab === '__ungrouped__'
+      ? nodesData.filter(n => !n.group)
+      : nodesData.filter(n => n.group === activeGroupTab);
+  if (nodeSearchQuery) {
+    const q = nodeSearchQuery.toLowerCase();
+    targetNodes = targetNodes.filter(n =>
+      (n.name || '').toLowerCase().includes(q) || (n.server || '').toLowerCase().includes(q)
+    );
+  }
+  if (!targetNodes.length) {
     showToast('暂无可测试节点', 'info');
     return;
   }
 
   if (testAllBtn) {
     testAllBtn.disabled = true;
-    testAllBtn.textContent = '批量测试中...';
+    testAllBtn.textContent = `测试 0/${targetNodes.length}...`;
   }
 
-  nodesData.forEach((node) => {
+  targetNodes.forEach((node) => {
     const resultEl = document.querySelector(`#test-result-${node.id}`);
-    if (resultEl) {
-      resultEl.textContent = '测试中...';
-      resultEl.className = 'latency';
-      resultEl.title = '';
-    }
+    if (resultEl) { resultEl.textContent = '测试中...'; resultEl.className = 'latency'; resultEl.title = ''; }
   });
 
   try {
     const payload = await requestJson('/api/nodes/test-batch', {
       method: 'POST',
-      body: JSON.stringify({ ids: nodesData.map((node) => node.id) })
+      body: JSON.stringify({ ids: targetNodes.map((node) => node.id) })
     });
 
-    if (payload.core) {
-      updateCoreStatus(payload.core);
-    }
+    if (payload.core) updateCoreStatus(payload.core);
 
-    payload.results.forEach(applyLatencyResult);
-    const successCount = payload.results.filter((result) => result.ok).length;
+    let done = 0;
+    payload.results.forEach(r => {
+      applyLatencyResult(r);
+      done++;
+      if (testAllBtn) testAllBtn.textContent = `测试 ${done}/${targetNodes.length}...`;
+    });
+
+    const successCount = payload.results.filter((r) => r.ok).length;
     const failedCount = payload.results.length - successCount;
     const autoStartText = payload.autoStarted ? '，并已自动启动核心' : '';
     showToast(`批量测试完成：成功 ${successCount}，失败 ${failedCount}${autoStartText}`, failedCount ? 'info' : 'success');
   } catch (error) {
-    resetLatencyPlaceholders(nodesData.map((node) => node.id));
+    resetLatencyPlaceholders(targetNodes.map((node) => node.id));
     showToast(`批量测试失败: ${error.message}`, 'error');
   } finally {
     if (testAllBtn) {
@@ -652,6 +875,43 @@ showImportBtn?.addEventListener('click', () => {
 });
 
 testAllBtn?.addEventListener('click', testAllNodes);
+
+// Bulk action bar
+document.getElementById('bulk-move-btn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('bulk-group-menu');
+  if (menu) menu.classList.toggle('open');
+});
+
+document.getElementById('bulk-delete-btn')?.addEventListener('click', async () => {
+  if (!selectedNodeIds.size) return;
+  if (!await showConfirmModal(`删除 ${selectedNodeIds.size} 个节点`, '此操作不可撤销，确认删除所选节点？')) return;
+  try {
+    await Promise.all([...selectedNodeIds].map(id =>
+      requestJson('/api/nodes', { method: 'DELETE', body: JSON.stringify({ id }) })
+    ));
+    selectedNodeIds.clear();
+    await loadNodes();
+    showToast('批量删除完成', 'success');
+  } catch (err) { showToast(`删除失败: ${err.message}`, 'error'); }
+});
+
+document.getElementById('bulk-cancel-btn')?.addEventListener('click', () => {
+  selectedNodeIds.clear();
+  renderNodesElement();
+  updateBulkBar();
+});
+
+const nodeSearchInput = document.querySelector('#node-search');
+nodeSearchInput?.addEventListener('input', (e) => {
+  nodeSearchQuery = e.target.value.trim();
+  if (nodeSearchQuery && activeGroupTab !== null) {
+    activeGroupTab = null;
+    currentGroup = null;
+    renderGroupTabs();
+  }
+  renderNodesElement();
+});
 
 showSyncBtn?.addEventListener('click', () => {
   syncForm.classList.toggle('hidden');
@@ -889,6 +1149,11 @@ if (autoStartToggle) {
 // Window Titlebar Mocks
 document.getElementById('titlebar-close')?.addEventListener('click', () => {
   showToast('Tauri 退出指令正在开发中...', 'info');
+});
+
+// Close group menus on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.group-menu.open').forEach(m => m.classList.remove('open'));
 });
 
 // Init

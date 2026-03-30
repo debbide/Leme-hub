@@ -129,9 +129,23 @@
               <button id="add-group-btn" type="button" class="group-tab-add" title="新建分组">+</button>
             </div>
 
+            <!-- Bulk Action Bar -->
+            <div id="bulk-action-bar" class="bulk-action-bar hidden">
+              <span id="bulk-count-label" class="bulk-count"></span>
+              <div class="bulk-move-wrap" id="bulk-move-wrap">
+                <button type="button" class="btn-outline" id="bulk-move-btn">移至分组</button>
+                <div class="group-menu" id="bulk-group-menu"></div>
+              </div>
+              <button type="button" class="btn-danger" id="bulk-delete-btn">批量删除</button>
+              <button type="button" class="cancel-btn" id="bulk-cancel-btn">取消选择</button>
+            </div>
+
             <!-- Toolbar Section -->
             <div class="toolbar">
-              <div class="node-count" id="node-count-label">节点数: 0</div>
+              <div style="display:flex;align-items:center;gap:0.5rem;flex:1;">
+                <div class="node-count" id="node-count-label">节点数: 0</div>
+                <input type="text" id="node-search" class="node-search-input" placeholder="搜索节点名 / 地址..." autocomplete="off">
+              </div>
               <div class="btn-group">
                 <button id="test-all" type="button">批量测试</button>
                 <button id="show-import" type="button">导入链接</button>
@@ -143,6 +157,8 @@
             <div id="nodes-state" class="state-container">
               <p id="nodes-loading" class="state-msg">正在加载节点...</p>
               <p id="nodes-empty" class="state-msg hidden">暂无节点。请导入链接或同步订阅。</p>
+              <p id="nodes-group-empty" class="state-msg hidden">此分组暂无节点，导入或编辑节点时选择该分组即可归入。</p>
+              <p id="nodes-search-empty" class="state-msg hidden">没有匹配的节点。</p>
               <p id="nodes-error" class="state-msg error hidden"></p>
             </div>
 
@@ -151,10 +167,11 @@
               <table>
                 <thead>
                   <tr>
+                    <th style="width:36px;"><input type="checkbox" id="select-all-nodes" title="全选"></th>
                     <th>协议</th>
                     <th>别名 / 地址</th>
                     <th>传输 / 安全</th>
-                    <th>延时</th>
+                    <th id="sort-latency-th" class="sortable-th" title="点击排序">延时 <span class="sort-indicator">↕</span></th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -260,6 +277,39 @@
         <div class="modal-footer">
           <button type="button" class="cancel-modal-btn">取消</button>
           <button type="button" class="btn-primary" id="save-node-btn">保存设置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal-overlay">
+      <div class="modal" style="max-width:360px;">
+        <div class="modal-header">
+          <h2 class="modal-title" id="confirm-modal-title"></h2>
+        </div>
+        <div class="modal-body">
+          <p id="confirm-modal-body" style="color:var(--text-muted);font-size:0.875rem;line-height:1.5;"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="confirm-modal-cancel">取消</button>
+          <button type="button" class="btn-primary btn-danger-confirm" id="confirm-modal-ok">确认删除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Prompt Modal -->
+    <div id="input-modal" class="modal-overlay">
+      <div class="modal" style="max-width:380px;">
+        <div class="modal-header">
+          <h2 class="modal-title" id="input-modal-title"></h2>
+          <button type="button" class="btn-icon modal-close-btn" id="input-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="text" id="input-modal-field" class="modal-field-input" autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="input-modal-cancel">取消</button>
+          <button type="button" class="btn-primary" id="input-modal-confirm">确定</button>
         </div>
       </div>
     </div>

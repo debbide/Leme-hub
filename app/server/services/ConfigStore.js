@@ -21,6 +21,7 @@ const defaultSettings = (paths) => ({
   activeNodeId: null,
   customRules: [],
   subscriptions: [],
+  groups: [],
   singBoxBinaryPath: process.platform === 'win32'
     ? `${paths.binDir}\\sing-box.exe`
     : `${paths.binDir}/sing-box`,

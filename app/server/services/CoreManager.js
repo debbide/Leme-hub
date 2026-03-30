@@ -670,8 +670,9 @@ export class CoreManager {
 
   getGroups() {
     const nodes = this.store.getNodes();
-    const seen = new Set();
-    const groups = [];
+    const stored = this.getSettingsSnapshot().groups || [];
+    const seen = new Set(stored);
+    const groups = [...stored];
     for (const node of nodes) {
       const g = node.group ? String(node.group).trim() : null;
       if (g && !seen.has(g)) {
@@ -680,6 +681,16 @@ export class CoreManager {
       }
     }
     return groups;
+  }
+
+  async createGroup(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) throw createHttpError('Group name cannot be empty', 400);
+    const settings = this.getSettingsSnapshot();
+    const groups = settings.groups || [];
+    if (groups.includes(trimmed)) return { groups: this.getGroups() };
+    this.store.saveSettings({ ...settings, groups: [...groups, trimmed] });
+    return { groups: this.getGroups() };
   }
 
   async setNodeGroup(nodeIds, group) {
@@ -697,6 +708,9 @@ export class CoreManager {
     const nodes = this.store.getNodes().map((node) =>
       node.group === oldName ? { ...node, group: trimmedNew } : node
     );
+    const settings = this.getSettingsSnapshot();
+    const groups = (settings.groups || []).map(g => g === oldName ? trimmedNew : g);
+    this.store.saveSettings({ ...settings, groups });
     const savedNodes = this.saveNodes(nodes);
     return this.applyNodeChanges(savedNodes);
   }
@@ -705,6 +719,9 @@ export class CoreManager {
     const nodes = this.store.getNodes().map((node) =>
       node.group === groupName ? { ...node, group: null } : node
     );
+    const settings = this.getSettingsSnapshot();
+    const groups = (settings.groups || []).filter(g => g !== groupName);
+    this.store.saveSettings({ ...settings, groups });
     const savedNodes = this.saveNodes(nodes);
     return this.applyNodeChanges(savedNodes);
   }

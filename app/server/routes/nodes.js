@@ -5,8 +5,21 @@ export function createNodeRoutes({ coreManager }) {
     'GET /api/nodes': async () => json({
       ok: true,
       nodes: coreManager.getNodeRecords(),
+      groups: coreManager.getGroups(),
       core: coreManager.getStatus()
     }),
+
+    'POST /api/groups': async ({ body }) => {
+      const name = String(body?.name || '').trim();
+      if (!name) {
+        return json({ ok: false, error: 'Missing group name' }, 400);
+      }
+      try {
+        return json({ ok: true, ...(await coreManager.createGroup(name)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
 
     'POST /api/nodes/import-link': async ({ body }) => {
       const link = body?.link?.trim();
@@ -108,7 +121,8 @@ export function createNodeRoutes({ coreManager }) {
         return json({ ok: false, error: 'Missing from or to' }, 400);
       }
       try {
-        return json({ ok: true, ...(await coreManager.renameGroup(from, to)) });
+        const result = await coreManager.renameGroup(from, to);
+        return json({ ok: true, ...result, groups: coreManager.getGroups() });
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }
@@ -120,7 +134,8 @@ export function createNodeRoutes({ coreManager }) {
         return json({ ok: false, error: 'Missing group name' }, 400);
       }
       try {
-        return json({ ok: true, ...(await coreManager.deleteGroup(name)) });
+        const result = await coreManager.deleteGroup(name);
+        return json({ ok: true, ...result, groups: coreManager.getGroups() });
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }
@@ -133,7 +148,8 @@ export function createNodeRoutes({ coreManager }) {
         return json({ ok: false, error: 'Missing nodeIds array' }, 400);
       }
       try {
-        return json({ ok: true, ...(await coreManager.setNodeGroup(nodeIds, group)) });
+        const result = await coreManager.setNodeGroup(nodeIds, group);
+        return json({ ok: true, ...result, groups: coreManager.getGroups() });
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }
