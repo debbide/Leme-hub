@@ -4,6 +4,7 @@ import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
 import { CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES } from '../../shared/constants.js';
 import { AutoStartManager } from './AutoStartManager.js';
+import { GeoIpService } from './GeoIpService.js';
 import { SystemProxyManager } from './SystemProxyManager.js';
 
 const createHttpError = (message, status) => Object.assign(new Error(message), { status });
@@ -180,6 +181,9 @@ export class CoreManager {
       executablePath: options.autoStartExecutablePath
     });
     this.state.autoStart = this.buildAutoStartState();
+    this.geoIpService = new GeoIpService(this.paths, {
+      log: this.createLogger()
+    });
 
     this.proxyService = new ProxyService({
       configDir: this.paths.dataDir,
@@ -538,15 +542,29 @@ export class CoreManager {
       proxy: this.getProxyProfile(),
       systemProxy: { ...this.state.systemProxy },
       autoStart: { ...this.state.autoStart },
+      geoIp: this.getGeoIpStatus(),
       settings: this.getSettingsSnapshot(),
       hasConfig: fs.existsSync(this.paths.configPath),
       nodeCount: this.store.getNodes().length,
-      nodes: this.getNodeRecords(),
+      nodes: this.store.getNodes(),
       recentLogs: this.store.getRecentLogs(12)
     };
   }
 
-  getNodeRecords() {
+  async initializeGeoIp() {
+    await this.geoIpService.initialize();
+  }
+
+  getGeoIpStatus() {
+    return this.geoIpService.getStatus();
+  }
+
+  async refreshGeoIp() {
+    await this.geoIpService.refreshNow();
+    return this.getGeoIpStatus();
+  }
+
+  async getNodeRecords() {
     const settings = this.getSettingsSnapshot();
     const nodes = this.store.getNodes();
 
@@ -554,7 +572,7 @@ export class CoreManager {
     this.proxyService.basePort = settings.proxyBasePort;
     this.proxyService.setNodes(nodes);
 
-    return nodes.map((node) => ({
+    const records = nodes.map((node) => ({
       ...node,
       localPort: this.proxyService.getLocalPort(node.id),
       listenHost: settings.proxyListenHost,
@@ -567,10 +585,12 @@ export class CoreManager {
       copyText: `${settings.proxyListenHost}:${this.proxyService.getLocalPort(node.id)}`,
       isRunning: this.state.status === 'running'
     }));
+
+    return this.geoIpService.enrichNodes(records);
   }
 
   getNodeById(nodeId) {
-    return this.getNodeRecords().find((node) => node.id === nodeId) || null;
+    return this.store.getNodes().find((node) => node.id === nodeId) || null;
   }
 
   getRestartRequired() {
@@ -579,8 +599,9 @@ export class CoreManager {
 
   async applyNodeChanges(savedNodes) {
     if (this.state.status !== 'running') {
+      const nodes = await this.getNodeRecords();
       return {
-        nodes: savedNodes,
+        nodes,
         restartRequired: false,
         autoRestarted: false,
         core: this.getStatus()
@@ -589,7 +610,7 @@ export class CoreManager {
 
     const core = await this.restart();
     return {
-      nodes: this.getNodeRecords(),
+      nodes: await this.getNodeRecords(),
       restartRequired: false,
       autoRestarted: true,
       core
@@ -607,7 +628,7 @@ export class CoreManager {
       ...settings,
       activeNodeId: this.resolveActiveNodeId(settings, savedNodes)
     });
-    return this.getNodeRecords();
+    return savedNodes;
   }
 
   mergeAndSaveNodes(incomingNodes) {
@@ -924,7 +945,7 @@ export class CoreManager {
   async testNodes(nodeIds = []) {
     const requestedIds = Array.isArray(nodeIds) && nodeIds.length
       ? [...new Set(nodeIds)]
-      : this.getNodeRecords().map((node) => node.id);
+      : this.store.getNodes().map((node) => node.id);
 
     if (!requestedIds.length) {
       throw createHttpError('No nodes available for latency tests', 400);

@@ -208,6 +208,10 @@ test('importProxyLink merges parsed nodes through CoreManager', async () => {
     proxyListen: '127.0.0.1',
     basePort: 20000
   };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes.map((node) => ({ ...node, localPort: node.localPort ?? (node.id === 'n1' ? 20000 : 20001) })),
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
 
   const result = await manager.importProxyLink('socks://demo');
 
@@ -235,6 +239,10 @@ test('importProxyLink splits multi-line links and persists all parsed nodes thro
     proxyListen: '127.0.0.1',
     basePort: 20000
   };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
 
   const result = await manager.importProxyLink('socks://demo\ntrojan://secret@example.com#trojan', 'Batch');
 
@@ -254,6 +262,10 @@ test('syncSubscription decorates imported nodes and persists them through CoreMa
     getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
     proxyListen: '127.0.0.1',
     basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes.map((node) => ({ ...node, localPort: node.localPort ?? (node.id === 'n1' ? 20000 : 20001) })),
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
   };
 
   const result = await manager.syncSubscription('https://example.com/sub');
@@ -288,7 +300,7 @@ test('syncSubscription replaces older nodes from the same subscription url', asy
   assert.equal(result.nodes.some((node) => node.server === 'new.example'), true);
 });
 
-test('getNodeRecords exposes ready-to-copy endpoint metadata', () => {
+test('getNodeRecords exposes ready-to-copy endpoint metadata', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.proxyService = {
     setNodes() {},
@@ -296,14 +308,47 @@ test('getNodeRecords exposes ready-to-copy endpoint metadata', () => {
     proxyListen: '127.0.0.1',
     basePort: 20000
   };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
 
-  const [node] = manager.getNodeRecords();
+  const [node] = await manager.getNodeRecords();
 
   assert.equal(node.endpoint.protocol, 'socks5');
   assert.equal(node.endpoint.host, '127.0.0.1');
   assert.equal(node.endpoint.port, 20000);
   assert.equal(node.endpoint.url, 'socks5://127.0.0.1:20000');
   assert.equal(node.copyText, '127.0.0.1:20000');
+});
+
+test('getNodeRecords enriches nodes with geo metadata when available', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes.map((node) => ({
+      ...node,
+      countryCode: 'JP',
+      countryName: 'Japan',
+      flagEmoji: '🇯🇵'
+    })),
+    getStatus: () => ({ ready: true, pending: false, lastError: null })
+  };
+
+  const [node] = await manager.getNodeRecords();
+
+  assert.equal(node.countryCode, 'JP');
+  assert.equal(node.countryName, 'Japan');
+  assert.equal(node.flagEmoji, '🇯🇵');
 });
 
 test('updateSettings persists proxy mode and active node profile', async () => {
