@@ -27,8 +27,9 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
   const dataDir = path.join(runtimeRoot, 'data');
   const logsDir = path.join(runtimeRoot, 'logs');
   const binDir = path.join(runtimeRoot, 'bin');
+  const geoDir = path.join(runtimeRoot, 'geo');
 
-  [dataDir, logsDir, binDir].forEach(ensureDir);
+  [dataDir, logsDir, binDir, geoDir].forEach(ensureDir);
 
   return {
     root,
@@ -38,10 +39,14 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
     dataDir,
     logsDir,
     binDir,
+    geoDir,
     configPath: path.join(dataDir, DEFAULT_CONFIG_FILE),
     nodesPath: path.join(dataDir, DEFAULT_NODES_FILE),
     settingsPath: path.join(dataDir, DEFAULT_SETTINGS_FILE),
-    logPath: path.join(logsDir, DEFAULT_LOG_FILE)
+    logPath: path.join(logsDir, DEFAULT_LOG_FILE),
+    geoIpDbPath: path.join(geoDir, 'GeoLite2-Country.mmdb'),
+    geoIpArchivePath: path.join(geoDir, 'GeoLite2-Country.mmdb.gz'),
+    geoIpMetaPath: path.join(geoDir, 'geoip-meta.json')
   };
 }
 
@@ -58,5 +63,5 @@ export function resolveDefaultRuntimeRoot(projectRoot = defaultProjectRoot, env 
 }
 
 export function ensureRuntimeDirs(paths) {
-  [paths.dataDir, paths.logsDir, paths.binDir].forEach(ensureDir);
+  [paths.dataDir, paths.logsDir, paths.binDir, paths.geoDir].forEach(ensureDir);
 }
