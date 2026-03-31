@@ -649,7 +649,7 @@ const importLink = async (e) => {
     });
     nodesData = payload.nodes;
     renderNodesElement();
-    syncNodeMutationFeedback(payload, '节点已导入');
+    syncNodeMutationFeedback(payload, `已导入 ${payload.importedCount || 1} 个节点`);
     importUrlInput.value = '';
     importForm.classList.add('hidden');
   } catch (error) {

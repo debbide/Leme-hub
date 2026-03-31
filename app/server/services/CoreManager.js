@@ -615,19 +615,22 @@ export class CoreManager {
   }
 
   async importProxyLink(link, group = null) {
-    const parsedNode = this.proxyService.parseProxyLink(link);
-    if (!parsedNode) {
+    const parsedNodes = this.proxyService.parseProxyLinks
+      ? this.proxyService.parseProxyLinks(link)
+      : [this.proxyService.parseProxyLink(link)].filter(Boolean);
+    if (!parsedNodes.length) {
       throw createHttpError('Invalid proxy link', 400);
     }
 
-    const node = {
+    const nodes = parsedNodes.map((parsedNode) => ({
       ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
       ...(group ? { group } : {})
-    };
-    const savedNodes = this.mergeAndSaveNodes([node]);
+    }));
+    const savedNodes = this.mergeAndSaveNodes(nodes);
     const applied = await this.applyNodeChanges(savedNodes);
     return {
-      node: applied.nodes.find((item) => item.id === node.id),
+      node: applied.nodes.find((item) => item.id === nodes[0].id),
+      importedCount: nodes.length,
       ...applied
     };
   }

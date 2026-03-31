@@ -201,6 +201,7 @@ test('importProxyLink merges parsed nodes through CoreManager', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
   manager.proxyService = {
+    parseProxyLinks: () => ([{ type: 'socks', server: 'two.example', port: 1081 }]),
     parseProxyLink: () => ({ type: 'socks', server: 'two.example', port: 1081 }),
     setNodes() {},
     getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
@@ -214,6 +215,34 @@ test('importProxyLink merges parsed nodes through CoreManager', async () => {
   assert.equal(result.node.server, 'two.example');
   assert.equal(result.node.localPort, 20001);
   assert.equal(result.restartRequired, false);
+  assert.equal(result.importedCount, 1);
+});
+
+test('importProxyLink splits multi-line links and persists all parsed nodes through CoreManager', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([
+      { type: 'socks', server: 'two.example', port: 1081 },
+      { type: 'trojan', server: 'three.example', port: 443, password: 'secret', id: 'custom-id' }
+    ]),
+    setNodes() {},
+    getLocalPort: (nodeId) => {
+      if (nodeId === 'n1') return 20000;
+      if (nodeId === 'custom-id') return 20002;
+      return 20001;
+    },
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const result = await manager.importProxyLink('socks://demo\ntrojan://secret@example.com#trojan', 'Batch');
+
+  assert.equal(result.importedCount, 2);
+  assert.equal(result.nodes.some((node) => node.server === 'two.example'), true);
+  assert.equal(result.nodes.some((node) => node.server === 'three.example'), true);
+  assert.equal(result.nodes.filter((node) => node.group === 'Batch').length, 2);
+  assert.equal(result.node.server, 'two.example');
 });
 
 test('syncSubscription decorates imported nodes and persists them through CoreManager', async () => {
