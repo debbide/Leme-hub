@@ -14,9 +14,27 @@ export function createSystemRoutes({ store, coreManager, paths }) {
           },
           settings: coreManager.getSettingsSnapshot(),
           core: coreManager.getStatus(),
+          geoIp: coreManager.getGeoIpStatus(),
           systemProxy
         }
       };
+    },
+    'POST /api/system/geoip/refresh': async () => {
+      try {
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            geoIp: await coreManager.refreshGeoIp(),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, geoIp: coreManager.getGeoIpStatus(), core: coreManager.getStatus() }
+        };
+      }
     },
     'PUT /api/system/settings': async ({ body }) => {
       if (!body || typeof body !== 'object') {

@@ -4,9 +4,10 @@ export function createNodeRoutes({ coreManager }) {
   return {
     'GET /api/nodes': async () => json({
       ok: true,
-      nodes: coreManager.getNodeRecords(),
+      nodes: await coreManager.getNodeRecords(),
       groups: coreManager.getGroups(),
-      core: coreManager.getStatus()
+      core: coreManager.getStatus(),
+      geoIp: coreManager.getGeoIpStatus()
     }),
 
     'POST /api/groups': async ({ body }) => {

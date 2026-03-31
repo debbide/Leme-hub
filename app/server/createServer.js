@@ -133,6 +133,7 @@ export function createAppServer(paths, env = process.env) {
   const start = () => new Promise((resolve) => {
     server.listen(runtime.port, runtime.host, () => {
       coreManager.refreshAutoStartState().catch(() => null);
+      coreManager.initializeGeoIp().catch(() => null);
       console.log(`[${runtime.mode}] local-proxy-client listening on ${runtime.publicOrigin}`);
       resolve({ server, store, coreManager, runtime });
     });
