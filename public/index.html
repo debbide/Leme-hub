@@ -91,6 +91,14 @@
                   <span class="endpoint-note" id="dash-http-note">用于手动代理、分流和兼容 SOCKS5 的客户端</span>
                 </div>
               </div>
+              <div class="geoip-status-card">
+                <div class="geoip-status-copy">
+                  <span class="endpoint-label">GeoIP 国家库</span>
+                  <span class="geoip-status-value" id="dash-geoip-status">准备中</span>
+                  <span class="endpoint-note" id="dash-geoip-note">首次启动会在后台自动下载，失败时不会影响代理功能</span>
+                </div>
+                <button type="button" id="geoip-refresh-btn" class="geoip-refresh-btn">刷新 GeoIP</button>
+              </div>
             </div>
           </div>
         </section>

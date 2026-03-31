@@ -25,10 +25,56 @@ const dashUptime = document.querySelector('#dash-uptime');
 const dashDefaultProxy = document.querySelector('#dash-default-proxy');
 const dashHttpProxy = document.querySelector('#dash-http-proxy');
 const dashHttpNote = document.querySelector('#dash-http-note');
+const dashGeoIpStatus = document.querySelector('#dash-geoip-status');
+const dashGeoIpNote = document.querySelector('#dash-geoip-note');
+const geoIpRefreshBtn = document.querySelector('#geoip-refresh-btn');
 const autoStartToggle = document.querySelector('#auto-start-toggle');
 
 let currentCoreState = null;
 let uptimeTimer = null;
+let geoIpStatus = null;
+
+const flagFromCountryCode = (countryCode) => {
+  const normalized = String(countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/u.test(normalized)) {
+    return null;
+  }
+
+  return String.fromCodePoint(...[...normalized].map((char) => 0x1F1E6 + char.charCodeAt(0) - 65));
+};
+
+const renderGeoIpStatus = (status = geoIpStatus) => {
+  geoIpStatus = status || null;
+  if (!dashGeoIpStatus || !dashGeoIpNote) return;
+
+  if (!geoIpStatus) {
+    dashGeoIpStatus.textContent = '未初始化';
+    dashGeoIpNote.textContent = 'GeoIP 状态尚未返回';
+    if (geoIpRefreshBtn) geoIpRefreshBtn.disabled = false;
+    return;
+  }
+
+  if (geoIpStatus.pending) {
+    dashGeoIpStatus.textContent = '下载中';
+    dashGeoIpNote.textContent = '正在后台准备国家库，完成后刷新节点列表即可显示国旗';
+  } else if (geoIpStatus.ready) {
+    dashGeoIpStatus.textContent = '已就绪';
+    dashGeoIpNote.textContent = geoIpStatus.downloadedAt
+      ? `本地国家库可用，上次更新时间 ${new Date(geoIpStatus.downloadedAt).toLocaleString('zh-CN')}`
+      : '本地国家库可用';
+  } else if (geoIpStatus.lastError) {
+    dashGeoIpStatus.textContent = '下载失败';
+    dashGeoIpNote.textContent = `GeoIP 下载失败：${geoIpStatus.lastError}`;
+  } else {
+    dashGeoIpStatus.textContent = '等待下载';
+    dashGeoIpNote.textContent = '首次启动会在后台自动下载国家库';
+  }
+
+  if (geoIpRefreshBtn) {
+    geoIpRefreshBtn.disabled = Boolean(geoIpStatus.pending);
+    geoIpRefreshBtn.textContent = geoIpStatus.pending ? 'GeoIP 下载中...' : '刷新 GeoIP';
+  }
+};
 
 const renderSystemProxyNodeOptions = (nodes, activeNodeId) => {
   if (!dashActiveNodeSelect) return;
@@ -401,6 +447,8 @@ const renderNodeRow = (node, activeNodeId) => {
   const activeClass = isActive ? 'active-row' : '';
   const activeBadge = isActive ? `<span class="pill pill-active"><i class="ph ph-lightning"></i> 此刻生效</span>` : '';
   const allGroups = [...new Set([...groupsData, ...nodesData.map(n => n.group).filter(Boolean)])];
+  const flagEmoji = node.flagEmoji || flagFromCountryCode(node.countryCode);
+  const flagTitle = node.countryName || node.countryCode || 'GeoIP 数据准备中';
   const groupMenuItems = [
     `<div class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</div>`,
     ...allGroups.map(g => `<div class="group-menu-item${node.group === g ? ' active' : ''}" data-group="${g}">${g}</div>`)
@@ -411,7 +459,10 @@ const renderNodeRow = (node, activeNodeId) => {
       <td><span class="pill pill-protocol">${protText}</span>${activeBadge}</td>
       <td>
         <div class="node-info">
-          <span class="node-name">${node.name || '未命名节点'}</span>
+          <div class="node-primary-line">
+            <span class="node-flag${flagEmoji ? '' : ' is-placeholder'}" title="${flagTitle}">${flagEmoji || '---'}</span>
+            <span class="node-name">${node.name || '未命名节点'}</span>
+          </div>
           <span class="node-ip">${maskedIp}</span>
           <span class="node-port">本地出口: ${localPortStr}</span>
         </div>
@@ -611,9 +662,11 @@ const loadNodes = async () => {
     const payload = await requestJson('/api/nodes');
     nodesData = payload.nodes || [];
     groupsData = payload.groups || [];
+    geoIpStatus = payload.geoIp || null;
     selectedNodeIds.clear();
     renderGroupTabs();
     renderNodesElement();
+    renderGeoIpStatus(payload.geoIp || null);
     updateCoreStatus(payload.core);
     renderSystemProxyNodeOptions(nodesData, payload.core?.proxy?.activeNodeId);
   } catch (error) {
@@ -627,9 +680,27 @@ const loadNodes = async () => {
 const loadSystemStatus = async () => {
   try {
     const payload = await requestJson('/api/system/status');
+    renderGeoIpStatus(payload.geoIp || payload.core?.geoIp || null);
     updateCoreStatus(payload.core);
   } catch (error) {
     showToast(`系统状态加载失败: ${error.message}`, 'error');
+  }
+};
+
+const refreshGeoIp = async () => {
+  if (!geoIpRefreshBtn) return;
+  geoIpRefreshBtn.disabled = true;
+  geoIpRefreshBtn.textContent = 'GeoIP 下载中...';
+  try {
+    const payload = await requestJson('/api/system/geoip/refresh', { method: 'POST' });
+    renderGeoIpStatus(payload.geoIp || null);
+    await loadNodes();
+    showToast(payload.geoIp?.ready ? 'GeoIP 数据已刷新' : 'GeoIP 刷新已触发，正在后台准备', 'success');
+  } catch (error) {
+    renderGeoIpStatus(geoIpStatus);
+    showToast(`GeoIP 刷新失败: ${error.message}`, 'error');
+  } finally {
+    renderGeoIpStatus(geoIpStatus);
   }
 };
 
@@ -1145,6 +1216,8 @@ if (autoStartToggle) {
     }
   });
 }
+
+geoIpRefreshBtn?.addEventListener('click', refreshGeoIp);
 
 // Window Titlebar Mocks
 document.getElementById('titlebar-close')?.addEventListener('click', () => {
