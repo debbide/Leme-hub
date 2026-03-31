@@ -46,6 +46,45 @@ const parsePluginString = (value) => {
   };
 };
 
+const SUBSCRIPTION_USER_AGENT = 'Leme-Hub/0.1';
+
+const trimBase64Padding = (value) => value.replace(/=+$/u, '');
+
+const looksLikeBase64Payload = (value) => {
+  const normalized = String(value || '').trim().replace(/\s+/gu, '');
+  if (!normalized || normalized.length < 16) {
+    return false;
+  }
+
+  if (/[^A-Za-z0-9+/=_-]/u.test(normalized)) {
+    return false;
+  }
+
+  const sanitized = trimBase64Padding(normalized).replace(/-/gu, '+').replace(/_/gu, '/');
+  if (!sanitized || sanitized.length % 4 === 1) {
+    return false;
+  }
+
+  try {
+    const decoded = Buffer.from(sanitized, 'base64').toString('utf8');
+    const decodedTrimmed = decoded.trim();
+    return Boolean(decodedTrimmed) && (
+      decodedTrimmed.includes('://')
+      || decodedTrimmed.startsWith('{')
+      || decodedTrimmed.startsWith('[')
+      || decodedTrimmed.includes('proxies:')
+      || decodedTrimmed.includes('outbounds')
+    );
+  } catch {
+    return false;
+  }
+};
+
+const decodeBase64Payload = (value) => {
+  const normalized = trimBase64Padding(String(value || '').trim().replace(/\s+/gu, ''));
+  return Buffer.from(normalized.replace(/-/gu, '+').replace(/_/gu, '/'), 'base64').toString('utf8');
+};
+
 export class ProxyService {
   constructor(options = {}) {
     const {
@@ -733,6 +772,157 @@ export class ProxyService {
     }
   }
 
+  parseProxyLinks(input) {
+    return String(input || '')
+      .split(/\r?\n|\s+(?=(?:vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2):\/\/)/u)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => this.parseProxyLink(item))
+      .filter(Boolean);
+  }
+
+  extractConfigNodes(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.filter((item) => item && typeof item === 'object');
+    }
+
+    const candidates = [];
+    if (Array.isArray(payload.outbounds)) {
+      candidates.push(...payload.outbounds);
+    }
+    if (Array.isArray(payload.proxies)) {
+      candidates.push(...payload.proxies);
+    }
+
+    return candidates.filter((item) => item && typeof item === 'object');
+  }
+
+  normalizeConfigNode(node, index = 0) {
+    const type = String(node.type || '').toLowerCase();
+    if (!type || ['direct', 'block', 'dns', 'selector', 'urltest'].includes(type)) {
+      return null;
+    }
+
+    const normalized = {
+      id: node.id || Math.random().toString(36).substring(2, 9),
+      name: node.name || node.tag || `${type}-${index + 1}`,
+      type,
+      server: node.server,
+      port: toInt(node.port ?? node.server_port)
+    };
+
+    if (!normalized.server || !normalized.port) {
+      return null;
+    }
+
+    const fieldMap = {
+      uuid: node.uuid,
+      password: node.password,
+      username: node.username,
+      method: node.method,
+      security: node.security,
+      flow: node.flow,
+      network: node.network,
+      transport: node.transport?.type || node.transport,
+      plugin: node.plugin,
+      plugin_opts: node.plugin_opts,
+      obfs: node.obfs?.type || node.obfs,
+      obfs_password: node.obfs?.password || node.obfs_password,
+      up_mbps: node.up_mbps,
+      down_mbps: node.down_mbps,
+      congestion_control: node.congestion_control,
+      udp_relay_mode: node.udp_relay_mode,
+      heartbeat: node.heartbeat,
+      packet_encoding: node.packet_encoding,
+      serviceName: node.transport?.service_name || node.serviceName || node.service_name,
+      wsPath: node.transport?.path || node.path,
+      wsHost: node.transport?.headers?.Host || node.wsHost || node.host,
+      max_early_data: node.transport?.max_early_data,
+      early_data_header_name: node.transport?.early_data_header_name,
+      fp: node.tls?.utls?.fingerprint || node.fp,
+      pbk: node.tls?.reality?.public_key || node.pbk,
+      sid: node.tls?.reality?.short_id || node.sid,
+      spx: node.tls?.reality?.spider_x || node.spx,
+      tls_min_version: node.tls?.min_version,
+      tls_max_version: node.tls?.max_version,
+      tls_cipher_suites: Array.isArray(node.tls?.cipher_suites) ? node.tls.cipher_suites.join(',') : node.tls?.cipher_suites,
+      certificate_public_key_sha256: Array.isArray(node.tls?.certificate_public_key_sha256)
+        ? node.tls.certificate_public_key_sha256.join(',')
+        : node.tls?.certificate_public_key_sha256,
+      alpn: Array.isArray(node.tls?.alpn) ? node.tls.alpn.join(',') : node.tls?.alpn,
+      insecure: node.tls?.insecure ?? node.insecure,
+      tls: node.tls?.enabled ?? node.tls,
+      sni: node.tls?.server_name || node.sni,
+      alterId: node.alter_id ?? node.alterId
+    };
+
+    Object.entries(fieldMap).forEach(([key, value]) => applyIfPresent(normalized, key, value));
+
+    if (normalized.type === 'shadowsocks' && normalized.plugin && !normalized.plugin_opts && node.plugin_opts) {
+      normalized.plugin_opts = node.plugin_opts;
+    }
+
+    if (normalized.type === 'vmess' && normalized.transport === 'grpc' && !normalized.serviceName && node.path) {
+      normalized.serviceName = node.path;
+    }
+
+    if (normalized.type === 'hysteria2') {
+      normalized.tls = true;
+      normalized.security = normalized.security || 'tls';
+      normalized.sni = normalized.sni || normalized.server;
+    }
+
+    if (normalized.type === 'trojan') {
+      normalized.tls = true;
+      normalized.security = normalized.security || 'tls';
+      normalized.sni = normalized.sni || normalized.server;
+    }
+
+    return normalized;
+  }
+
+  parseStructuredSubscription(content) {
+    const trimmed = String(content || '').trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const payload = JSON.parse(trimmed);
+        return this.extractConfigNodes(payload)
+          .map((node, index) => this.normalizeConfigNode(node, index))
+          .filter(Boolean);
+      } catch (error) {
+        this.log.warn?.(`[ProxyService] Failed to parse structured subscription JSON: ${error.message}`);
+      }
+    }
+
+    if (/^\s*(mixed-port|port|proxies):/mu.test(trimmed)) {
+      this.log.warn?.('[ProxyService] Clash-style YAML subscriptions are not supported yet');
+    }
+
+    return [];
+  }
+
+  normalizeSubscriptionContent(content) {
+    const text = typeof content === 'string'
+      ? content
+      : Buffer.isBuffer(content)
+        ? content.toString('utf8')
+        : JSON.stringify(content);
+
+    if (looksLikeBase64Payload(text)) {
+      return decodeBase64Payload(text);
+    }
+
+    return text;
+  }
+
   async syncSubscription(url) {
     let parsedUrl;
     try {
@@ -749,20 +939,35 @@ export class ProxyService {
         || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
       throw new Error(`Subscription URL must not point to a private/local address`);
     }
-    const response = await axios.get(url);
-    let content = response.data;
-
-    try {
-      content = Buffer.from(content, 'base64').toString('utf-8');
-    } catch (error) {
-      this.log.warn?.(`[ProxyService] Subscription content is not base64: ${error.message}`);
+    const headers = {
+      'User-Agent': SUBSCRIPTION_USER_AGENT,
+      Accept: 'text/plain, application/json;q=0.9, */*;q=0.8'
+    };
+    if (parsedUrl.username || parsedUrl.password) {
+      headers.Authorization = `Basic ${Buffer.from(parsedUrl.username ? `${parsedUrl.username}:${parsedUrl.password}` : `:${parsedUrl.password}`).toString('base64')}`;
     }
 
-    return content
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => this.parseProxyLink(line.trim()))
-      .filter(Boolean);
+    let response;
+    try {
+      response = await axios.get(url, {
+        headers,
+        responseType: 'text',
+        transformResponse: [(data) => data],
+        validateStatus: (status) => status >= 200 && status < 300
+      });
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = status ? `HTTP ${status}` : error.message;
+      throw new Error(`Failed to download subscription: ${detail}`);
+    }
+
+    const content = this.normalizeSubscriptionContent(response.data);
+    const structuredNodes = this.parseStructuredSubscription(content);
+    if (structuredNodes.length) {
+      return structuredNodes;
+    }
+
+    return this.parseProxyLinks(content);
   }
 
   async testNode(nodeId) {

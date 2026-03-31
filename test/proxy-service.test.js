@@ -5,8 +5,13 @@ import os from 'os';
 import path from 'path';
 
 import { ProxyService } from '../app/proxy/ProxyService.js';
+import axios from 'axios';
 
 const createTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-'));
+
+test.afterEach(() => {
+  delete axios.get;
+});
 
 test('uses isolated config directory', () => {
   const tempDir = createTempDir();
@@ -355,4 +360,110 @@ test('emits tls block for plain trojan links after protocol defaults', () => {
   assert.equal(outbound.server_port, 443);
   assert.equal(outbound.tls.enabled, true);
   assert.equal(outbound.tls.server_name, 'example.com');
+});
+
+test('syncSubscription parses plain text uri lists without base64 decoding', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  axios.get = async () => ({
+    data: 'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws#edge\n\ninvalid-line\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss'
+  });
+
+  const nodes = await service.syncSubscription('https://example.com/sub');
+
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].type, 'vless');
+  assert.equal(nodes[1].type, 'shadowsocks');
+});
+
+test('syncSubscription decodes base64 payloads containing uri lines', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const payload = Buffer.from('trojan://secret@example.com#trojan\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss').toString('base64');
+  axios.get = async () => ({ data: payload });
+
+  const nodes = await service.syncSubscription('https://example.com/sub');
+
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].type, 'trojan');
+  assert.equal(nodes[1].type, 'shadowsocks');
+});
+
+test('syncSubscription imports sing-box style json outbounds', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  axios.get = async () => ({
+    data: JSON.stringify({
+      outbounds: [
+        { type: 'selector', tag: 'auto', outbounds: ['proxy-1'] },
+        {
+          type: 'vless',
+          tag: 'proxy-1',
+          server: 'edge.example',
+          server_port: 443,
+          uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+          flow: 'xtls-rprx-vision',
+          tls: {
+            enabled: true,
+            server_name: 'edge.example',
+            insecure: false,
+            alpn: ['h2', 'http/1.1'],
+            reality: {
+              public_key: 'pub-key',
+              short_id: 'abcd'
+            }
+          },
+          transport: {
+            type: 'grpc',
+            service_name: 'svc'
+          }
+        }
+      ]
+    })
+  });
+
+  const nodes = await service.syncSubscription('https://example.com/sub');
+
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].type, 'vless');
+  assert.equal(nodes[0].server, 'edge.example');
+  assert.equal(nodes[0].port, 443);
+  assert.equal(nodes[0].serviceName, 'svc');
+  assert.equal(nodes[0].pbk, 'pub-key');
+});
+
+test('syncSubscription sends user agent and basic auth headers', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  let capturedOptions = null;
+  axios.get = async (_url, options) => {
+    capturedOptions = options;
+    return { data: '' };
+  };
+
+  await service.syncSubscription('https://demo:secret@example.com/sub');
+
+  assert.equal(capturedOptions.headers['User-Agent'], 'Leme-Hub/0.1');
+  assert.equal(capturedOptions.headers.Authorization, `Basic ${Buffer.from('demo:secret').toString('base64')}`);
+});
+
+test('syncSubscription reports http status failures clearly', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  axios.get = async () => {
+    const error = new Error('Request failed with status code 403');
+    error.response = { status: 403 };
+    throw error;
+  };
+
+  await assert.rejects(() => service.syncSubscription('https://example.com/sub'), /Failed to download subscription: HTTP 403/);
+});
+
+test('parseProxyLinks splits multi-line share links into separate nodes', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+
+  const nodes = service.parseProxyLinks([
+    'trojan://secret@example.com#trojan',
+    'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws#edge',
+    'invalid-line',
+    'ss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss'
+  ].join('\n'));
+
+  assert.equal(nodes.length, 3);
+  assert.deepEqual(nodes.map((node) => node.type), ['trojan', 'vless', 'shadowsocks']);
 });
