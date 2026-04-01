@@ -474,6 +474,7 @@ const renderNodeRow = (node, activeNodeId) => {
       <td><span class="latency" id="test-result-${node.id}">-</span></td>
       <td class="row-actions-cell">
         <div class="row-actions">
+          <button type="button" class="row-action-btn share-node-btn" data-id="${node.id}" title="复制代理链接"><i class="ph ph-share-network"></i></button>
           <button type="button" class="row-action-btn test-node-btn" data-id="${node.id}" title="测试延迟"><i class="ph ph-activity"></i></button>
           <button type="button" class="row-action-btn detail-node-btn" data-id="${node.id}" title="编辑详情"><i class="ph ph-pencil-simple"></i></button>
           <div class="move-group-wrap" data-id="${node.id}">
@@ -484,6 +485,21 @@ const renderNodeRow = (node, activeNodeId) => {
         </div>
       </td>
     </tr>`;
+};
+
+const copyNodeShareLink = async (id) => {
+  const node = nodesData.find((item) => item.id === id);
+  if (!node?.shareLink) {
+    showToast('该节点暂不支持分享链接', 'error');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(node.shareLink);
+    showToast('代理链接已复制', 'success');
+  } catch (error) {
+    showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
+  }
 };
 
 const renderNodesElement = () => {
@@ -545,6 +561,9 @@ const renderNodesElement = () => {
 
   nodesTbody.querySelectorAll('.test-node-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); testNode(btn.dataset.id); });
+  });
+  nodesTbody.querySelectorAll('.share-node-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); copyNodeShareLink(btn.dataset.id); });
   });
   nodesTbody.querySelectorAll('.delete-node-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); deleteNode(btn.dataset.id); });

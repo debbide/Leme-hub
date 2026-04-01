@@ -576,6 +576,7 @@ export class CoreManager {
       ...node,
       localPort: this.proxyService.getLocalPort(node.id),
       listenHost: settings.proxyListenHost,
+      shareLink: this.proxyService.toShareLink ? this.proxyService.toShareLink(node) : null,
       endpoint: {
         protocol: 'socks5',
         host: settings.proxyListenHost,
@@ -636,9 +637,14 @@ export class CoreManager {
   }
 
   async importProxyLink(link, group = null) {
+    const normalizedLink = this.proxyService.normalizeManualImportContent
+      ? this.proxyService.normalizeManualImportContent(link)
+      : this.proxyService.normalizeSubscriptionContent
+        ? this.proxyService.normalizeSubscriptionContent(link)
+        : link;
     const parsedNodes = this.proxyService.parseProxyLinks
-      ? this.proxyService.parseProxyLinks(link)
-      : [this.proxyService.parseProxyLink(link)].filter(Boolean);
+      ? this.proxyService.parseProxyLinks(normalizedLink)
+      : [this.proxyService.parseProxyLink(normalizedLink)].filter(Boolean);
     if (!parsedNodes.length) {
       throw createHttpError('Invalid proxy link', 400);
     }

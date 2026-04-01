@@ -253,6 +253,47 @@ test('importProxyLink splits multi-line links and persists all parsed nodes thro
   assert.equal(result.node.server, 'two.example');
 });
 
+test('importProxyLink decodes base64 manual payloads before parsing', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const decodedLinks = 'trojan://secret@example.com#trojan\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss';
+  const encoded = Buffer.from(decodedLinks).toString('base64');
+  let received = null;
+
+  manager.proxyService = {
+    normalizeManualImportContent: (input) => {
+      assert.equal(input, encoded);
+      return decodedLinks;
+    },
+    parseProxyLinks: (input) => {
+      received = input;
+      return [
+        { type: 'trojan', server: 'two.example', port: 443, password: 'secret' },
+        { type: 'shadowsocks', server: 'three.example', port: 8388, method: 'aes-256-gcm', password: 'secret', id: 'custom-id' }
+      ];
+    },
+    setNodes() {},
+    getLocalPort: (nodeId) => {
+      if (nodeId === 'n1') return 20000;
+      if (nodeId === 'custom-id') return 20002;
+      return 20001;
+    },
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const result = await manager.importProxyLink(encoded, 'Batch');
+
+  assert.equal(received, decodedLinks);
+  assert.equal(result.importedCount, 2);
+  assert.equal(result.nodes.some((node) => node.server === 'two.example'), true);
+  assert.equal(result.nodes.some((node) => node.server === 'three.example'), true);
+  assert.equal(result.nodes.filter((node) => node.group === 'Batch').length, 2);
+});
+
 test('syncSubscription decorates imported nodes and persists them through CoreManager', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
@@ -305,6 +346,7 @@ test('getNodeRecords exposes ready-to-copy endpoint metadata', async () => {
   manager.proxyService = {
     setNodes() {},
     getLocalPort: () => 20000,
+    toShareLink: () => 'socks://127.0.0.1:1080#n1',
     proxyListen: '127.0.0.1',
     basePort: 20000
   };
@@ -324,6 +366,7 @@ test('getNodeRecords exposes ready-to-copy endpoint metadata', async () => {
   assert.equal(node.endpoint.port, 20000);
   assert.equal(node.endpoint.url, 'socks5://127.0.0.1:20000');
   assert.equal(node.copyText, '127.0.0.1:20000');
+  assert.equal(node.shareLink, 'socks://127.0.0.1:1080#n1');
 });
 
 test('getNodeRecords enriches nodes with geo metadata when available', async () => {

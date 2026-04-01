@@ -168,6 +168,40 @@ test('parses socks link with credentials', () => {
   assert.equal(node.name, 'edge');
 });
 
+test('toShareLink serializes vless nodes', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'vless',
+    server: 'example.com',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    transport: 'ws',
+    wsHost: 'cdn.example',
+    wsPath: '/ws',
+    security: 'tls',
+    sni: 'cdn.example',
+    name: 'edge'
+  });
+
+  assert.equal(link, 'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?encryption=none&security=tls&type=ws&host=cdn.example&path=%2Fws&sni=cdn.example#edge');
+});
+
+test('toShareLink serializes shadowsocks nodes with plugin options', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'shadowsocks',
+    server: 'ss.example',
+    port: 8388,
+    method: 'aes-256-gcm',
+    password: 'secret',
+    plugin: 'v2ray-plugin',
+    plugin_opts: 'mode=websocket;host=cdn.example;path=/ws',
+    name: 'ss edge'
+  });
+
+  assert.equal(link, 'ss://YWVzLTI1Ni1nY206c2VjcmV0@ss.example:8388?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dcdn.example%3Bpath%3D%2Fws#ss%20edge');
+});
+
 test('parses hysteria2 bandwidth and obfs password fields', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=salamander&obfs-password=mask&upmbps=20&downmbps=80&sni=edge.example#hy2');
@@ -206,6 +240,20 @@ test('parses shadowsocks plugin string into plugin options', () => {
   assert.equal(node.type, 'shadowsocks');
   assert.equal(node.plugin, 'v2ray-plugin');
   assert.equal(node.plugin_opts, 'mode=websocket;host=cdn.example;path=/ws');
+});
+
+test('parses percent-encoded manual proxy links', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const encoded = encodeURIComponent('vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws&sni=cdn.example#edge');
+  const node = service.parseProxyLink(encoded);
+
+  assert.equal(node.type, 'vless');
+  assert.equal(node.server, 'example.com');
+  assert.equal(node.port, 443);
+  assert.equal(node.transport, 'ws');
+  assert.equal(node.wsPath, '/ws');
+  assert.equal(node.sni, 'cdn.example');
+  assert.equal(node.name, 'edge');
 });
 
 test('defaults trojan links to tls and port 443', () => {
@@ -387,6 +435,25 @@ test('syncSubscription decodes base64 payloads containing uri lines', async () =
   assert.equal(nodes[1].type, 'shadowsocks');
 });
 
+test('normalizeManualImportContent decodes base64 payloads containing uri lines', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const payload = Buffer.from('trojan://secret@example.com#trojan\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss').toString('base64');
+
+  const normalized = service.normalizeManualImportContent(payload);
+  const nodes = service.parseProxyLinks(normalized);
+
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].type, 'trojan');
+  assert.equal(nodes[1].type, 'shadowsocks');
+});
+
+test('normalizeManualImportContent leaves raw proxy links unchanged', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const raw = 'trojan://secret@example.com#trojan';
+
+  assert.equal(service.normalizeManualImportContent(raw), raw);
+});
+
 test('syncSubscription imports sing-box style json outbounds', async () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   axios.get = async () => ({
@@ -466,4 +533,18 @@ test('parseProxyLinks splits multi-line share links into separate nodes', () => 
 
   assert.equal(nodes.length, 3);
   assert.deepEqual(nodes.map((node) => node.type), ['trojan', 'vless', 'shadowsocks']);
+});
+
+test('parseProxyLinks accepts newline-separated encoded manual links', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const encoded = encodeURIComponent('vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws#edge');
+
+  const nodes = service.parseProxyLinks([
+    encoded,
+    'trojan://secret@example.com#trojan'
+  ].join('\n'));
+
+  assert.equal(nodes.length, 2);
+  assert.deepEqual(nodes.map((node) => node.type), ['vless', 'trojan']);
+  assert.equal(nodes[0].wsPath, '/ws');
 });

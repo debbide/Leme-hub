@@ -47,6 +47,7 @@ const parsePluginString = (value) => {
 };
 
 const SUBSCRIPTION_USER_AGENT = 'Leme-Hub/0.1';
+const PROXY_LINK_SCHEME_RE = /^(vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2):\/\//u;
 
 const trimBase64Padding = (value) => value.replace(/=+$/u, '');
 
@@ -83,6 +84,44 @@ const looksLikeBase64Payload = (value) => {
 const decodeBase64Payload = (value) => {
   const normalized = trimBase64Padding(String(value || '').trim().replace(/\s+/gu, ''));
   return Buffer.from(normalized.replace(/-/gu, '+').replace(/_/gu, '/'), 'base64').toString('utf8');
+};
+
+const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('base64');
+
+const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
+
+const buildQuery = (params) => {
+  const search = new URLSearchParams();
+  for (const [key, rawValue] of Object.entries(params || {})) {
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      continue;
+    }
+
+    if (typeof rawValue === 'boolean') {
+      if (rawValue) {
+        search.set(key, '1');
+      }
+      continue;
+    }
+
+    search.set(key, String(rawValue));
+  }
+  const text = search.toString();
+  return text ? `?${text}` : '';
+};
+
+const normalizeImportedProxyLink = (value) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || PROXY_LINK_SCHEME_RE.test(trimmed) || !/%[0-9A-Fa-f]{2}/u.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const decoded = decodeURIComponent(trimmed);
+    return PROXY_LINK_SCHEME_RE.test(decoded) ? decoded : trimmed;
+  } catch {
+    return trimmed;
+  }
 };
 
 export class ProxyService {
@@ -596,7 +635,7 @@ export class ProxyService {
 
   parseProxyLink(link) {
     try {
-      const value = link.trim();
+      const value = normalizeImportedProxyLink(link);
       if (value.startsWith('{') && value.endsWith('}')) {
         return null;
       }
@@ -921,6 +960,136 @@ export class ProxyService {
     }
 
     return text;
+  }
+
+  normalizeManualImportContent(content) {
+    return this.normalizeSubscriptionContent(content);
+  }
+
+  toShareLink(node) {
+    if (!node || !node.type || !node.server) {
+      return null;
+    }
+
+    const type = String(node.type).toLowerCase();
+    const name = encodeShareName(node.name, node.server);
+    const host = node.server;
+    const port = node.port ? Number.parseInt(node.port, 10) : null;
+
+    if (type === 'vmess') {
+      const payload = {
+        v: '2',
+        ps: node.name || node.server || 'VMess',
+        add: host,
+        port: port || 443,
+        id: node.uuid || '',
+        aid: node.alterId || 0,
+        scy: node.security || 'auto',
+        net: node.transport || 'tcp',
+        type: 'none',
+        host: node.wsHost || '',
+        path: node.transport === 'grpc' ? (node.serviceName || '') : (node.wsPath || ''),
+        tls: node.tls || node.security === 'tls' || node.security === 'reality' ? 'tls' : '',
+        sni: node.sni || '',
+        alpn: node.alpn || '',
+        fp: node.fp || ''
+      };
+      return `vmess://${toBase64(JSON.stringify(payload))}`;
+    }
+
+    if (type === 'shadowsocks') {
+      if (!node.method || !node.password || !port) {
+        return null;
+      }
+      const userInfo = toBase64(`${node.method}:${node.password}`);
+      const query = buildQuery({
+        plugin: node.plugin
+          ? [node.plugin, node.plugin_opts].filter(Boolean).join(';')
+          : undefined
+      });
+      return `ss://${userInfo}@${host}:${port}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'trojan') {
+      if (!node.password) {
+        return null;
+      }
+      const query = buildQuery({
+        security: node.security || (node.tls ? 'tls' : undefined),
+        type: node.transport && node.transport !== 'tcp' ? node.transport : undefined,
+        host: node.wsHost || undefined,
+        path: node.wsPath || undefined,
+        serviceName: node.serviceName || undefined,
+        sni: node.sni || undefined,
+        alpn: node.alpn || undefined,
+        fp: node.fp || undefined,
+        allowInsecure: node.insecure ? '1' : undefined
+      });
+      return `trojan://${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'vless') {
+      if (!node.uuid) {
+        return null;
+      }
+      const query = buildQuery({
+        encryption: 'none',
+        security: node.security || (node.tls ? 'tls' : undefined),
+        type: node.transport && node.transport !== 'tcp' ? node.transport : undefined,
+        host: node.wsHost || undefined,
+        path: node.wsPath || undefined,
+        serviceName: node.serviceName || undefined,
+        sni: node.sni || undefined,
+        alpn: node.alpn || undefined,
+        fp: node.fp || undefined,
+        pbk: node.pbk || undefined,
+        sid: node.sid || undefined,
+        flow: node.flow || undefined,
+        packet_encoding: node.packet_encoding || undefined,
+        allowInsecure: node.insecure ? '1' : undefined
+      });
+      return `vless://${encodeURIComponent(node.uuid)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'hysteria2') {
+      if (!node.password) {
+        return null;
+      }
+      const query = buildQuery({
+        obfs: node.obfs || undefined,
+        'obfs-password': node.obfs_password || undefined,
+        upmbps: node.up_mbps || undefined,
+        downmbps: node.down_mbps || undefined,
+        sni: node.sni || undefined,
+        insecure: node.insecure ? '1' : undefined
+      });
+      return `hy2://${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'tuic') {
+      if (!node.uuid || !node.password) {
+        return null;
+      }
+      const query = buildQuery({
+        congestion_control: node.congestion_control || undefined,
+        udp_relay_mode: node.udp_relay_mode || undefined,
+        heartbeat: node.heartbeat || undefined,
+        zero_rtt_handshake: node.zero_rtt_handshake,
+        sni: node.sni || undefined,
+        allow_insecure: node.insecure ? '1' : undefined
+      });
+      return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'socks' || type === 'http') {
+      const scheme = type === 'http' ? 'http' : 'socks';
+      const auth = node.username
+        ? `${encodeURIComponent(node.username)}:${encodeURIComponent(node.password || '')}@`
+        : '';
+      return `${scheme}://${auth}${host}:${port || (type === 'http' ? 80 : 1080)}${name ? `#${name}` : ''}`;
+    }
+
+    return null;
   }
 
   async syncSubscription(url) {
