@@ -2,9 +2,11 @@ import fs from 'fs';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
-import { CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES } from '../../shared/constants.js';
+import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
 import { AutoStartManager } from './AutoStartManager.js';
+import { ConnectionsService } from './ConnectionsService.js';
 import { GeoIpService } from './GeoIpService.js';
+import { RulesetDatabaseService } from './RulesetDatabaseService.js';
 import { SystemProxyManager } from './SystemProxyManager.js';
 
 const createHttpError = (message, status) => Object.assign(new Error(message), { status });
@@ -29,6 +31,15 @@ const validatePort = (value, fieldName) => {
   return parsed;
 };
 
+const isValidIpv4Cidr = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,3})(?:\.(\d{1,3}))(?:\.(\d{1,3}))(?:\.(\d{1,3}))\/(\d|[12]\d|3[0-2])$/);
+  if (!match) {
+    return false;
+  }
+
+  return match.slice(1, 5).every((part) => Number(part) >= 0 && Number(part) <= 255);
+};
+
 const normalizeCustomRule = (rule, index) => {
   if (!rule || typeof rule !== 'object') {
     throw createHttpError(`customRules[${index}] must be an object`, 400);
@@ -37,6 +48,7 @@ const normalizeCustomRule = (rule, index) => {
   const type = String(rule.type || '').trim();
   const action = String(rule.action || '').trim();
   const value = String(rule.value || '').trim();
+  const nodeId = rule.nodeId == null || rule.nodeId === '' ? null : String(rule.nodeId).trim();
 
   if (!CUSTOM_RULE_TYPES.includes(type)) {
     throw createHttpError(`customRules[${index}] has invalid type`, 400);
@@ -46,17 +58,146 @@ const normalizeCustomRule = (rule, index) => {
     throw createHttpError(`customRules[${index}] has invalid action`, 400);
   }
 
+  if (action === 'node' && !nodeId) {
+    throw createHttpError(`customRules[${index}] target=node requires nodeId`, 400);
+  }
+
   if (!value) {
     throw createHttpError(`customRules[${index}] must include a value`, 400);
+  }
+
+  if (type === 'ip_cidr' && !isValidIpv4Cidr(value)) {
+    throw createHttpError(`customRules[${index}] must include a valid IPv4 CIDR`, 400);
   }
 
   return {
     id: rule.id || `rule-${index + 1}`,
     type,
     action,
+    nodeId,
     value,
     note: typeof rule.note === 'string' ? rule.note.trim() : ''
   };
+};
+
+const normalizeCustomRules = (rules) => {
+  const normalizedRules = rules.map((rule, index) => normalizeCustomRule(rule, index));
+  const seen = new Map();
+
+  normalizedRules.forEach((rule, index) => {
+    const signature = `${rule.type}|${rule.action}|${rule.nodeId || ''}|${rule.value.toLowerCase()}`;
+    if (seen.has(signature)) {
+      throw createHttpError(`customRules[${index}] duplicates customRules[${seen.get(signature)}]`, 400);
+    }
+    seen.set(signature, index);
+  });
+
+  return normalizedRules;
+};
+
+const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
+
+const normalizeRulesetEntry = (entry, index, rulesetIndex) => {
+  if (!entry || typeof entry !== 'object') {
+    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must be an object`, 400);
+  }
+
+  const type = String(entry.type || '').trim();
+  const value = String(entry.value || '').trim();
+  if (!CUSTOM_RULE_TYPES.includes(type)) {
+    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] has invalid type`, 400);
+  }
+  if (!value) {
+    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must include a value`, 400);
+  }
+  if (type === 'ip_cidr' && !isValidIpv4Cidr(value)) {
+    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must include a valid IPv4 CIDR`, 400);
+  }
+
+  return {
+    id: entry.id || `entry-${index + 1}`,
+    type,
+    value,
+    note: typeof entry.note === 'string' ? entry.note.trim() : ''
+  };
+};
+
+const normalizeRuleset = (ruleset, index) => {
+  if (!ruleset || typeof ruleset !== 'object') {
+    throw createHttpError(`rulesets[${index}] must be an object`, 400);
+  }
+
+  const kind = String(ruleset.kind || '').trim();
+  const target = String(ruleset.target || '').trim();
+  const id = String(ruleset.id || `ruleset-${index + 1}`).trim();
+  const presetId = ruleset.presetId == null ? null : String(ruleset.presetId).trim();
+  const nodeId = ruleset.nodeId == null || ruleset.nodeId === '' ? null : String(ruleset.nodeId).trim();
+
+  if (!RULESET_KINDS.includes(kind)) {
+    throw createHttpError(`rulesets[${index}] has invalid kind`, 400);
+  }
+  if (!RULESET_TARGETS.includes(target)) {
+    throw createHttpError(`rulesets[${index}] has invalid target`, 400);
+  }
+  if (target === 'node' && !nodeId) {
+    throw createHttpError(`rulesets[${index}] target=node requires nodeId`, 400);
+  }
+
+  if (kind === 'builtin') {
+    if (!presetId || !BUILTIN_RULESET_MAP.has(presetId)) {
+      throw createHttpError(`rulesets[${index}] has invalid presetId`, 400);
+    }
+
+    return {
+      id,
+      kind,
+      presetId,
+      name: String(ruleset.name || BUILTIN_RULESET_MAP.get(presetId).name).trim() || BUILTIN_RULESET_MAP.get(presetId).name,
+      enabled: ruleset.enabled !== false,
+      target,
+      nodeId,
+      entries: [],
+      note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
+    };
+  }
+
+  if (!Array.isArray(ruleset.entries) || !ruleset.entries.length) {
+    throw createHttpError(`rulesets[${index}] custom entries must be a non-empty array`, 400);
+  }
+
+  const entries = ruleset.entries.map((entry, entryIndex) => normalizeRulesetEntry(entry, entryIndex, index));
+  const seenEntries = new Set();
+  entries.forEach((entry, entryIndex) => {
+    const signature = `${entry.type}|${entry.value.toLowerCase()}`;
+    if (seenEntries.has(signature)) {
+      throw createHttpError(`rulesets[${index}].entries[${entryIndex}] duplicates another entry`, 400);
+    }
+    seenEntries.add(signature);
+  });
+
+  return {
+    id,
+    kind,
+    presetId: null,
+    name: String(ruleset.name || '').trim() || `Custom Ruleset ${index + 1}`,
+    enabled: ruleset.enabled !== false,
+    target,
+    nodeId,
+    entries,
+    note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
+  };
+};
+
+const normalizeRulesets = (rulesets) => {
+  const normalized = rulesets.map((ruleset, index) => normalizeRuleset(ruleset, index));
+  const seenIds = new Set();
+  normalized.forEach((ruleset, index) => {
+    if (seenIds.has(ruleset.id)) {
+      throw createHttpError(`rulesets[${index}] duplicates another ruleset id`, 400);
+    }
+    seenIds.add(ruleset.id);
+  });
+  return normalized;
 };
 
 const normalizeSubscriptionRecord = (record, index) => {
@@ -184,6 +325,10 @@ export class CoreManager {
     this.geoIpService = new GeoIpService(this.paths, {
       log: this.createLogger()
     });
+    this.rulesetDatabaseService = new RulesetDatabaseService(this.paths, {
+      log: this.createLogger()
+    });
+    this.connectionsService = new ConnectionsService();
 
     this.proxyService = new ProxyService({
       configDir: this.paths.dataDir,
@@ -213,6 +358,7 @@ export class CoreManager {
       return {
         ...settings,
         customRules: [],
+        rulesets: [],
         subscriptions: normalizedSubscriptions
       };
     }
@@ -226,11 +372,22 @@ export class CoreManager {
     }
 
     try {
-      const normalizedRules = settings.customRules.map((rule, index) => normalizeCustomRule(rule, index));
+      const normalizedRules = normalizeCustomRules(settings.customRules);
+      const normalizedRulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets) : [];
       if (JSON.stringify(settings.customRules) !== JSON.stringify(normalizedRules)) {
         return this.store.saveSettings({
           ...settings,
           customRules: normalizedRules,
+          rulesets: normalizedRulesets,
+          subscriptions: normalizedSubscriptions
+        });
+      }
+
+      if (JSON.stringify(settings.rulesets || []) !== JSON.stringify(normalizedRulesets)) {
+        return this.store.saveSettings({
+          ...settings,
+          customRules: normalizedRules,
+          rulesets: normalizedRulesets,
           subscriptions: normalizedSubscriptions
         });
       }
@@ -238,13 +395,15 @@ export class CoreManager {
       return {
         ...settings,
         customRules: normalizedRules,
+        rulesets: normalizedRulesets,
         subscriptions: normalizedSubscriptions
       };
     } catch (error) {
-      this.store.appendLog(`[CoreManager] Invalid persisted customRules ignored: ${error.message}`);
+      this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
       return this.store.saveSettings({
         ...settings,
         customRules: [],
+        rulesets: [],
         subscriptions: normalizedSubscriptions
       });
     }
@@ -340,8 +499,25 @@ export class CoreManager {
         url: `socks5://${listenHost}:${unifiedSocksPort}`
       },
       customRules: settings.customRules,
+      rulesets: settings.rulesets || [],
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
     };
+  }
+
+  getBuiltinRulesets() {
+    return [
+      ...BUILTIN_RULESETS.map((ruleset) => ({
+        id: ruleset.id,
+        name: ruleset.name,
+        kind: 'builtin',
+      entries: ruleset.entries.map((entry, index) => ({
+        id: `${ruleset.id}-entry-${index + 1}`,
+        type: entry.type,
+        value: entry.value,
+        note: entry.note || ''
+      }))
+      }))
+    ];
   }
 
   async refreshAutoStartState() {
@@ -452,6 +628,7 @@ export class CoreManager {
     return {
       activeNodeId: this.resolveActiveNodeId(settings, nodes),
       customRules: settings.customRules,
+      rulesets: settings.rulesets || [],
       proxyMode: settings.routingMode,
       systemProxyEnabled: !!settings.systemProxyEnabled,
       systemProxyHttpPort: settings.systemProxyHttpPort,
@@ -476,9 +653,15 @@ export class CoreManager {
     if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Array.isArray(next.customRules)) {
       throw createHttpError('customRules must be an array', 400);
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Array.isArray(next.rulesets)) {
+      throw createHttpError('rulesets must be an array', 400);
+    }
     const customRules = Array.isArray(next.customRules)
-      ? next.customRules.map((rule, index) => normalizeCustomRule(rule, index))
+      ? normalizeCustomRules(next.customRules)
       : current.customRules;
+    const rulesets = Array.isArray(next.rulesets)
+      ? normalizeRulesets(next.rulesets)
+      : current.rulesets;
 
     if (systemProxySocksPort === systemProxyHttpPort) {
       throw createHttpError('systemProxySocksPort and systemProxyHttpPort must be different', 400);
@@ -510,12 +693,13 @@ export class CoreManager {
       systemProxySocksPort,
       systemProxyHttpPort,
       customRules,
+      rulesets,
       activeNodeId,
       autoStart: !!next.autoStart
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -543,6 +727,7 @@ export class CoreManager {
       systemProxy: { ...this.state.systemProxy },
       autoStart: { ...this.state.autoStart },
       geoIp: this.getGeoIpStatus(),
+      rulesetDatabase: this.getRulesetDatabaseStatus(),
       settings: this.getSettingsSnapshot(),
       hasConfig: fs.existsSync(this.paths.configPath),
       nodeCount: this.store.getNodes().length,
@@ -555,6 +740,10 @@ export class CoreManager {
     await this.geoIpService.initialize();
   }
 
+  async initializeRulesetDatabase() {
+    await this.rulesetDatabaseService.initialize();
+  }
+
   getGeoIpStatus() {
     return this.geoIpService.getStatus();
   }
@@ -562,6 +751,48 @@ export class CoreManager {
   async refreshGeoIp() {
     await this.geoIpService.refreshNow();
     return this.getGeoIpStatus();
+  }
+
+  getRulesetDatabaseStatus() {
+    return this.rulesetDatabaseService.getStatus();
+  }
+
+  async refreshRulesetDatabase() {
+    await this.rulesetDatabaseService.refreshNow();
+    return this.getRulesetDatabaseStatus();
+  }
+
+  async getRoutingHits() {
+    if (this.state.status !== 'running') return [];
+    const settings = this.store.getSettings();
+    if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return [];
+
+    const nodeMap = new Map(this.store.getNodes().map((node) => [`out-${node.id}`, node]));
+    const connections = await this.connectionsService.getConnections();
+    return connections
+      .map((connection) => {
+        const metadata = connection.metadata || {};
+        const host = metadata.host || metadata.destinationIP || metadata.destination || '';
+        const chains = Array.isArray(connection.chains) ? connection.chains : [];
+        const outboundTag = chains[chains.length - 1] || '';
+        const hit = this.proxyService.resolveRoutingHit(host, outboundTag);
+        if (!hit) return null;
+        return {
+          id: connection.id || `${host}-${outboundTag}`,
+          host,
+          port: metadata.destinationPort || metadata.dstPort || null,
+          outbound: outboundTag,
+          outboundName: nodeMap.get(outboundTag)?.name || nodeMap.get(outboundTag)?.displayName || nodeMap.get(outboundTag)?.label || nodeMap.get(outboundTag)?.server || outboundTag,
+          kind: hit.kind,
+          name: hit.name,
+          target: hit.target,
+          descriptor: hit.descriptor,
+          chains,
+          rule: connection.rule || null,
+          rulePayload: connection.rulePayload || null
+        };
+      })
+      .filter(Boolean);
   }
 
   async getNodeRecords() {

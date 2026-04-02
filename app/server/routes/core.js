@@ -18,6 +18,13 @@ export function createCoreRoutes({ coreManager }) {
       } catch (error) {
         return json({ ok: false, error: error.message, core: coreManager.getStatus() }, 500);
       }
+    },
+    'GET /api/core/routing-hits': async () => {
+      try {
+        return json({ ok: true, hits: await coreManager.getRoutingHits(), core: coreManager.getStatus() });
+      } catch (error) {
+        return json({ ok: false, error: error.message, hits: [], core: coreManager.getStatus() }, 500);
+      }
     }
   };
 }

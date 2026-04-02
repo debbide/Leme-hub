@@ -134,6 +134,12 @@ export function createAppServer(paths, env = process.env) {
     server.listen(runtime.port, runtime.host, () => {
       coreManager.refreshAutoStartState().catch(() => null);
       coreManager.initializeGeoIp().catch(() => null);
+      coreManager.initializeRulesetDatabase().catch(() => null);
+      if (store.getSettings().systemProxyEnabled) {
+        coreManager.start().catch((error) => {
+          console.error(`[server] failed to auto-start proxy core: ${error.message}`);
+        });
+      }
       console.log(`[${runtime.mode}] local-proxy-client listening on ${runtime.publicOrigin}`);
       resolve({ server, store, coreManager, runtime });
     });

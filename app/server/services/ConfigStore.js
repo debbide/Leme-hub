@@ -20,6 +20,7 @@ const defaultSettings = (paths) => ({
   systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
   activeNodeId: null,
   customRules: [],
+  rulesets: [],
   subscriptions: [],
   groups: [],
   singBoxBinaryPath: process.platform === 'win32'
@@ -145,7 +146,7 @@ export class ConfigStore {
     fs.appendFileSync(this.paths.logPath, `${message}\n`);
   }
 
-  getRecentLogs(limit = 50) {
+  getRecentLogs(limit = 200) {
     try {
       const lines = fs.readFileSync(this.paths.logPath, 'utf8').split(/\r?\n/).filter(Boolean);
       return lines.slice(-limit);

@@ -47,7 +47,7 @@ test('generates vmess config with default packetaddr encoding', () => {
   assert.equal(config.outbounds[0].packet_encoding, 'packetaddr');
 });
 
-test('generates unified system proxy inbounds for active node mode', () => {
+test('generates unified system proxy inbounds for rule routing mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
 
@@ -61,7 +61,9 @@ test('generates unified system proxy inbounds for active node mode', () => {
 
   assert.equal(config.inbounds.some((inbound) => inbound.tag === 'system-socks' && inbound.listen_port === 20100), true);
   assert.equal(config.inbounds.some((inbound) => inbound.tag === 'system-http' && inbound.listen_port === 20101), true);
-  assert.equal(config.route.final, 'out-n1');
+  assert.equal(config.route.final, 'direct');
+  assert.equal(config.experimental.clash_api.external_controller, '127.0.0.1:9095');
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
 });
 
 test('keeps private traffic direct in rule mode', () => {
@@ -77,7 +79,8 @@ test('keeps private traffic direct in rule mode', () => {
   });
 
   assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true && rule.outbound === 'direct'), true);
-  assert.equal(config.route.final, 'out-n1');
+  assert.equal(config.route.final, 'direct');
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
 });
 
 test('sends all traffic to active node in global mode', () => {
@@ -93,6 +96,7 @@ test('sends all traffic to active node in global mode', () => {
   });
 
   assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true), false);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn')), false);
   assert.equal(config.route.final, 'out-n1');
 });
 
@@ -112,25 +116,191 @@ test('forces system traffic direct in direct mode', () => {
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'direct'), true);
 });
 
-test('uses custom rules for system proxy routing in custom mode', () => {
+test('uses manual rules for system proxy routing in rule mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
 
   const config = service.generateConfig({
     activeNodeId: 'n1',
-    proxyMode: 'custom',
+    proxyMode: 'rule',
     systemProxyEnabled: true,
     systemProxyHttpPort: 20101,
     systemProxySocksPort: 20100,
     customRules: [
       { type: 'domain_suffix', value: 'internal.example', action: 'direct' },
-      { type: 'domain_keyword', value: 'stream', action: 'proxy' }
+      { type: 'domain_keyword', value: 'stream', action: 'default' }
     ]
   });
 
-  assert.equal(config.route.rules.some((rule) => rule.domain_suffix?.includes('internal.example') && rule.outbound === 'direct'), true);
-  assert.equal(config.route.rules.some((rule) => rule.domain_keyword?.includes('stream') && rule.outbound === 'out-n1'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-1' && rule.outbound === 'direct'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-2' && rule.outbound === 'out-n1'), true);
   assert.equal(config.route.final, 'direct');
+  assert.equal(config.log.level, 'debug');
+  assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag.startsWith('usr-rule-')), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set && String(rule.rule_set).startsWith('usr-rule-')), true);
+});
+
+test('reports active routing observability labels for rule mode', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const lines = service.getRoutingObservabilityLines({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    customRules: [
+      { type: 'domain_suffix', value: 'corp.local', action: 'direct', note: 'office' }
+    ]
+  });
+
+  assert.equal(lines[0], '[Routing] rule routing active: 1 manual rule(s), active outbound out-n1');
+  assert.equal(lines.some((line) => line.includes('domain_suffix=corp.local -> direct (office)')), true);
+  assert.equal(lines.some((line) => line.includes('unmatched system traffic -> out-n1')), true);
+});
+
+test('reports inactive routing observability labels when mode is not rule', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const lines = service.getRoutingObservabilityLines({
+    activeNodeId: 'n1',
+    proxyMode: 'global',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    customRules: [
+      { type: 'domain', value: 'example.com', action: 'default', note: '' }
+    ]
+  });
+
+  assert.equal(lines[0], '[Routing] rule routing inactive: mode=global');
+  assert.equal(lines.some((line) => line.includes('rule 1: domain=example.com -> default')), true);
+});
+
+test('uses specific node for manual system proxy rule when selected', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    customRules: [
+      { id: 'rule-node', type: 'domain_suffix', value: 'youtube.com', action: 'node', nodeId: 'n2' }
+    ]
+  });
+
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-node' && rule.outbound === 'out-n2'), true);
+});
+
+test('reports inactive routing observability labels when system proxy is disabled', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const lines = service.getRoutingObservabilityLines({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: false,
+    customRules: []
+  });
+
+  assert.deepEqual(lines, [
+    '[Routing] rule routing inactive: system proxy disabled',
+    '[Routing] no manual rules configured',
+    '[Routing] no rulesets configured'
+  ]);
+});
+
+test('generates inline route rule sets mapped to target nodes in rule mode', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    rulesets: [
+      { id: 'rs-ai', kind: 'builtin', presetId: 'ai-services', enabled: true, target: 'node', nodeId: 'n2' },
+      { id: 'rs-work', kind: 'custom', enabled: true, target: 'direct', entries: [{ type: 'domain_suffix', value: 'corp.local' }] }
+    ]
+  });
+
+  assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'usr-rs-rs-ai'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-ai' && rule.outbound === 'out-n2'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-work' && rule.outbound === 'direct'), true);
+});
+
+test('rule mode adds built-in cn direct database rules when files exist', () => {
+  const tempDir = createTempDir();
+  fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geosite-cn.srs'), 'stub');
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geoip-cn.srs'), 'stub');
+
+  const service = new ProxyService({ configDir: tempDir, projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geosite-cn' && ruleset.type === 'local'), true);
+  assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geoip-cn' && ruleset.type === 'local'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn') && rule.outbound === 'direct'), true);
+});
+
+test('rule mode skips built-in cn direct database rules when files are missing', () => {
+  const tempDir = createTempDir();
+  const service = new ProxyService({ configDir: tempDir, projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geosite-cn'), false);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn')), false);
+});
+
+test('keeps per-node socks inbounds isolated from system ruleset routing in rule mode', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    rulesets: [
+      { id: 'rs-youtube', kind: 'builtin', presetId: 'youtube', enabled: true, target: 'node', nodeId: 'n2' }
+    ]
+  });
+
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('in-n1') && rule.rule_set), false);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.rule_set === 'usr-rs-rs-youtube' && rule.outbound === 'out-n2'), true);
 });
 
 test('drops invalid vmess node during config generation', () => {

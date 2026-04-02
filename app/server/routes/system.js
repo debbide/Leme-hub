@@ -15,6 +15,7 @@ export function createSystemRoutes({ store, coreManager, paths }) {
           settings: coreManager.getSettingsSnapshot(),
           core: coreManager.getStatus(),
           geoIp: coreManager.getGeoIpStatus(),
+          rulesetDatabase: coreManager.getRulesetDatabaseStatus(),
           systemProxy
         }
       };
@@ -33,6 +34,23 @@ export function createSystemRoutes({ store, coreManager, paths }) {
         return {
           status: error.status || 500,
           body: { ok: false, error: error.message, geoIp: coreManager.getGeoIpStatus(), core: coreManager.getStatus() }
+        };
+      }
+    },
+    'POST /api/system/rulesets/refresh': async () => {
+      try {
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            rulesetDatabase: await coreManager.refreshRulesetDatabase(),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, rulesetDatabase: coreManager.getRulesetDatabaseStatus(), core: coreManager.getStatus() }
         };
       }
     },
@@ -62,11 +80,17 @@ export function createSystemRoutes({ store, coreManager, paths }) {
       body: {
         ok: true,
         rules: coreManager.getSettingsSnapshot().customRules || [],
+        customRules: coreManager.getSettingsSnapshot().customRules || [],
+        rulesets: coreManager.getSettingsSnapshot().rulesets || [],
+        builtinRulesets: coreManager.getBuiltinRulesets(),
         core: coreManager.getStatus()
       }
     }),
     'PUT /api/system/rules': async ({ body }) => {
-      if (!body || !Array.isArray(body.rules)) {
+      const hasLegacyRules = body && Array.isArray(body.rules);
+      const hasCustomRules = body && Array.isArray(body.customRules);
+      const hasRulesets = body && Array.isArray(body.rulesets);
+      if (!body || (!hasLegacyRules && !hasCustomRules && !hasRulesets)) {
         return {
           status: 400,
           body: { ok: false, error: 'Invalid rules payload' }
@@ -74,13 +98,20 @@ export function createSystemRoutes({ store, coreManager, paths }) {
       }
 
       try {
-        const result = await coreManager.updateSettings({ customRules: body.rules });
+        const result = await coreManager.updateSettings({
+          ...(hasLegacyRules ? { customRules: body.rules } : {}),
+          ...(hasCustomRules ? { customRules: body.customRules } : {}),
+          ...(hasRulesets ? { rulesets: body.rulesets } : {})
+        });
         return {
           status: 200,
           body: {
             ok: true,
             ...result,
             rules: coreManager.getSettingsSnapshot().customRules || [],
+            customRules: coreManager.getSettingsSnapshot().customRules || [],
+            rulesets: coreManager.getSettingsSnapshot().rulesets || [],
+            builtinRulesets: coreManager.getBuiltinRulesets(),
             core: coreManager.getStatus()
           }
         };

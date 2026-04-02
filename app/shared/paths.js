@@ -46,7 +46,11 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
     logPath: path.join(logsDir, DEFAULT_LOG_FILE),
     geoIpDbPath: path.join(geoDir, 'GeoLite2-Country.mmdb'),
     geoIpArchivePath: path.join(geoDir, 'GeoLite2-Country.mmdb.gz'),
-    geoIpMetaPath: path.join(geoDir, 'geoip-meta.json')
+    geoIpMetaPath: path.join(geoDir, 'geoip-meta.json'),
+    rulesDir: path.join(dataDir, 'rules'),
+    geositeCnPath: path.join(dataDir, 'rules', 'geosite-cn.srs'),
+    geoipCnPath: path.join(dataDir, 'rules', 'geoip-cn.srs'),
+    rulesetMetaPath: path.join(dataDir, 'rules', 'ruleset-meta.json')
   };
 }
 

@@ -7,10 +7,13 @@ import axios from 'axios';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
 import {
+  BUILTIN_RULESETS,
   DEFAULT_CONFIG_FILE,
   DEFAULT_PROXY_BASE_PORT,
   DEFAULT_PROXY_LISTEN_HOST
 } from '../shared/constants.js';
+
+const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 
 const toInt = (value, fallback = undefined) => {
   if (value === undefined || value === null || value === '') {
@@ -124,6 +127,58 @@ const normalizeImportedProxyLink = (value) => {
   }
 };
 
+const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
+  const {
+    activeNodeId = null,
+    proxyMode = 'rule',
+    customRules = [],
+    rulesets = [],
+    systemProxyEnabled = false
+  } = runtime;
+
+  const route = config.route || {};
+  const rules = Array.isArray(route.rules) ? route.rules : [];
+  const systemRule = rules.find((rule) => Array.isArray(rule.inbound)
+    && rule.inbound.includes('system-socks')
+    && rule.inbound.includes('system-http'));
+  const systemFallback = rules[rules.length - 1];
+  const activeOutbound = activeNodeId ? `out-${activeNodeId}` : 'direct';
+  const lines = [];
+
+  if (!systemProxyEnabled) {
+    lines.push('[Routing] rule routing inactive: system proxy disabled');
+  } else if (proxyMode !== 'rule') {
+    lines.push(`[Routing] rule routing inactive: mode=${proxyMode}`);
+  } else {
+    lines.push(`[Routing] rule routing active: ${customRules.length} manual rule(s), active outbound ${activeOutbound}`);
+  }
+
+  if (systemProxyEnabled) {
+    const defaultOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
+    const fallbackOutbound = systemFallback?.outbound || systemRule?.outbound || route.final || defaultOutbound;
+    lines.push(`[Routing] unmatched system traffic -> ${fallbackOutbound}`);
+  }
+
+  if (Array.isArray(customRules) && customRules.length) {
+    customRules.forEach((rule, index) => {
+      lines.push(`[Routing] rule ${index + 1}: ${rule.type}=${rule.value} -> ${rule.action}${rule.note ? ` (${rule.note})` : ''}`);
+    });
+  } else {
+    lines.push('[Routing] no manual rules configured');
+  }
+
+  if (Array.isArray(rulesets) && rulesets.length) {
+    rulesets.filter((ruleset) => ruleset.enabled !== false).forEach((ruleset) => {
+      const targetLabel = ruleset.target === 'node' ? `node:${ruleset.nodeId}` : ruleset.target;
+      lines.push(`[Routing] ruleset ${ruleset.name || ruleset.id} -> ${targetLabel}`);
+    });
+  } else {
+    lines.push('[Routing] no rulesets configured');
+  }
+
+  return lines;
+};
+
 export class ProxyService {
   constructor(options = {}) {
     const {
@@ -143,10 +198,17 @@ export class ProxyService {
     this.log = log;
     this.binName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
     this.nodePortMap = new Map();
+    this.routingHitMap = new Map();
+    this.connectionTraceMap = new Map();
     this.configDir = path.resolve(configDir || path.join(this.projectRoot, 'data'));
+    this.rulesDir = path.join(this.configDir, 'rules');
 
     if (!fs.existsSync(this.configDir)) {
       fs.mkdirSync(this.configDir, { recursive: true });
+    }
+
+    if (!fs.existsSync(this.rulesDir)) {
+      fs.mkdirSync(this.rulesDir, { recursive: true });
     }
 
     this.configPath = path.join(this.configDir, configFileName);
@@ -200,6 +262,7 @@ export class ProxyService {
       activeNodeId = null,
       proxyMode = 'rule',
       customRules = [],
+      rulesets = [],
       systemProxyEnabled = false,
       systemProxyHttpPort,
       systemProxySocksPort
@@ -454,7 +517,62 @@ export class ProxyService {
     }
 
     const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
-    const finalOutbound = !systemProxyEnabled || proxyMode === 'custom'
+    this.routingHitMap = new Map();
+    const registerRoutingHit = (tag, meta) => {
+      this.routingHitMap.set(tag, meta);
+      return tag;
+    };
+    const localDatabaseRuleSets = {
+      'geosite-cn': path.join(this.rulesDir, 'geosite-cn.srs'),
+      'geoip-cn': path.join(this.rulesDir, 'geoip-cn.srs')
+    };
+    const resolveManualRuleOutbound = (rule) => {
+      if (rule.action === 'direct') return 'direct';
+      if (rule.action === 'node' && rule.nodeId && validNodes.some((node) => node.id === rule.nodeId)) {
+        return `out-${rule.nodeId}`;
+      }
+      return activeOutbound;
+    };
+
+    const manualRuleSetDefs = customRules.map((rule, index) => ({
+      tag: registerRoutingHit(`usr-rule-${rule.id || index + 1}`, {
+        kind: 'rule',
+        name: rule.note || `${rule.type}=${rule.value}`,
+        target: resolveManualRuleOutbound(rule),
+        descriptor: `${rule.type}=${rule.value}`
+      }),
+      outbound: resolveManualRuleOutbound(rule),
+      rules: [{ [rule.type]: [rule.value] }]
+    }));
+
+    const buildRulesetOutbound = (ruleset) => {
+      if (ruleset.target === 'direct') return 'direct';
+      if (ruleset.target === 'default') return activeOutbound;
+      if (ruleset.target === 'node' && ruleset.nodeId && validNodes.some((node) => node.id === ruleset.nodeId)) {
+        return `out-${ruleset.nodeId}`;
+      }
+      return activeOutbound;
+    };
+
+    const materializedRulesets = rulesets
+      .filter((ruleset) => ruleset && ruleset.enabled !== false)
+      .map((ruleset) => {
+        const builtin = ruleset.kind === 'builtin' && ruleset.presetId ? BUILTIN_RULESET_MAP.get(ruleset.presetId) : null;
+        const entries = builtin ? builtin.entries : (Array.isArray(ruleset.entries) ? ruleset.entries : []);
+        return {
+          ...ruleset,
+          entries,
+          tag: registerRoutingHit(`usr-rs-${ruleset.id}`, {
+            kind: 'ruleset',
+            name: ruleset.name || ruleset.id,
+            target: buildRulesetOutbound(ruleset),
+            descriptor: ruleset.name || ruleset.id
+          }),
+          outbound: buildRulesetOutbound(ruleset)
+        };
+      })
+      .filter((ruleset) => Array.isArray(ruleset.entries) && ruleset.entries.length > 0);
+    const finalOutbound = !systemProxyEnabled || proxyMode === 'rule'
       ? 'direct'
       : proxyMode === 'direct'
         ? 'direct'
@@ -479,30 +597,39 @@ export class ProxyService {
 
     if (systemProxyEnabled) {
       const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
-      if (systemInbounds.length && proxyMode !== 'custom') {
+      if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
         const systemOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
         routeRules.push({
           inbound: systemInbounds,
           outbound: systemOutbound
         });
-      } else if (systemInbounds.length && proxyMode === 'custom') {
-        for (const rule of customRules) {
-          const translatedRule = {
+      } else if (systemInbounds.length && proxyMode === 'rule') {
+        const baseDatabaseTags = Object.entries(localDatabaseRuleSets)
+          .filter(([, filePath]) => fs.existsSync(filePath))
+          .map(([tag]) => tag);
+
+        if (baseDatabaseTags.length) {
+          routeRules.push({
             inbound: systemInbounds,
-            outbound: rule.action === 'direct' ? 'direct' : activeOutbound
-          };
+            rule_set: baseDatabaseTags,
+            outbound: 'direct'
+          });
+        }
 
-          if (rule.type === 'domain') {
-            translatedRule.domain = [rule.value];
-          } else if (rule.type === 'domain_suffix') {
-            translatedRule.domain_suffix = [rule.value];
-          } else if (rule.type === 'domain_keyword') {
-            translatedRule.domain_keyword = [rule.value];
-          } else if (rule.type === 'ip_cidr') {
-            translatedRule.ip_cidr = [rule.value];
-          }
+        for (const ruleSetDef of manualRuleSetDefs) {
+          routeRules.push({
+            inbound: systemInbounds,
+            rule_set: ruleSetDef.tag,
+            outbound: ruleSetDef.outbound
+          });
+        }
 
-          routeRules.push(translatedRule);
+        for (const ruleset of materializedRulesets) {
+          routeRules.push({
+            inbound: systemInbounds,
+            rule_set: ruleset.tag,
+            outbound: ruleset.outbound
+          });
         }
 
         routeRules.push({
@@ -513,15 +640,89 @@ export class ProxyService {
     }
 
     return {
-      log: { level: 'info' },
+      log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
       inbounds,
       outbounds: [...outbounds, { type: 'direct', tag: 'direct' }],
       route: {
+        rule_set: [
+          ...Object.entries(localDatabaseRuleSets)
+            .filter(([, filePath]) => fs.existsSync(filePath))
+            .map(([tag, filePath]) => ({
+              type: 'local',
+              tag,
+              format: 'binary',
+              path: filePath
+            })),
+          ...manualRuleSetDefs.map((ruleset) => ({
+            type: 'inline',
+            tag: ruleset.tag,
+            rules: ruleset.rules
+          })),
+          ...materializedRulesets.map((ruleset) => ({
+              type: 'inline',
+              tag: ruleset.tag,
+              rules: ruleset.entries.map((entry) => ({
+                [entry.type]: [entry.value]
+              }))
+            }))
+        ],
         rules: routeRules,
         auto_detect_interface: true,
         final: finalOutbound
+      },
+      experimental: {
+        clash_api: {
+          external_controller: '127.0.0.1:9095',
+          secret: '',
+          default_mode: proxyMode
+        }
       }
     };
+  }
+
+  getRoutingObservabilityLines(runtime = {}) {
+    return buildRoutingObservabilityLines(runtime, this.generateConfig(runtime));
+  }
+
+  resolveRoutingHit(host, outboundTag) {
+    const value = String(host || '').toLowerCase();
+    if (!value) return null;
+
+    for (const [, meta] of this.routingHitMap.entries()) {
+      if (meta.kind === 'rule') {
+        const descriptor = meta.descriptor || '';
+        const [type, expectedRaw] = descriptor.split('=');
+        const expected = String(expectedRaw || '').toLowerCase();
+        if (!expected) continue;
+        const outboundMatches = meta.target === 'direct' ? outboundTag === 'direct' : outboundTag === meta.target;
+        if (!outboundMatches) continue;
+
+        if ((type === 'domain' && value === expected)
+          || (type === 'domain_suffix' && (value === expected || value.endsWith(`.${expected}`)))
+          || (type === 'domain_keyword' && value.includes(expected))) {
+          return meta;
+        }
+      }
+
+      if (meta.kind === 'ruleset') {
+        const outboundMatches = meta.target === 'direct' ? outboundTag === 'direct' : outboundTag === meta.target;
+        if (!outboundMatches) continue;
+        if (String(meta.descriptor || '').toLowerCase().includes('youtube') && value.includes('youtube')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('google') && value.includes('google')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('github') && value.includes('github')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('telegram') && value.includes('telegram')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('tiktok') && value.includes('tiktok')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('netflix') && value.includes('netflix')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('paypal') && value.includes('paypal')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('steam') && value.includes('steam')) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('microsoft') && (value.includes('microsoft') || value.includes('live.com'))) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('onedrive') && (value.includes('onedrive') || value.includes('1drv.com'))) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('apple') && (value.includes('apple') || value.includes('icloud'))) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('ai') && (value.includes('openai') || value.includes('anthropic') || value.includes('claude.ai') || value.includes('midjourney'))) return meta;
+      }
+    }
+
+    return null;
   }
 
   resolveExecutablePath(explicitPath) {
@@ -595,13 +796,41 @@ export class ProxyService {
 
     const config = this.generateConfig(options.runtime || {});
     this.writeConfig(config);
+    buildRoutingObservabilityLines(options.runtime || {}, config)
+      .forEach((line) => this.log.log(line));
     this.stop();
 
     const execPath = this.resolveExecutablePath(options.binPath);
     this.proxyProcess = spawn(execPath, ['run', '-c', this.configPath]);
 
     this.proxyProcess.stdout.on('data', (data) => {
-      this.log.log(`[Proxy Log] ${data.toString().trim()}`);
+      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
+        const inboundMatch = line.match(/\[(\d+)\]\s+inbound\/(?:http|mixed|socks)\[(system-http|system-socks)\]: inbound connection to ([^:]+):(\d+)/);
+        if (inboundMatch) {
+          const [, connId, inboundTag, host, port] = inboundMatch;
+          this.connectionTraceMap.set(connId, {
+            inboundTag,
+            host,
+            port,
+            createdAt: Date.now()
+          });
+        }
+
+        const outboundMatch = line.match(/\[(\d+)\].*outbound\/[^\[]+\[(out-[^\]]+)\]: outbound connection to ([^:]+):(\d+)/);
+        if (outboundMatch) {
+          const [, connId, outboundTag, host] = outboundMatch;
+          const trace = this.connectionTraceMap.get(connId);
+          if (trace && trace.inboundTag && ['system-http', 'system-socks'].includes(trace.inboundTag)) {
+            const hit = this.resolveRoutingHit(trace.host || host, outboundTag);
+            if (hit) {
+              this.log.log(`[Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
+            }
+          }
+          this.connectionTraceMap.delete(connId);
+        }
+
+        this.log.log(`[Proxy Log] ${line}`);
+      });
     });
 
     this.proxyProcess.stderr.on('data', (data) => {

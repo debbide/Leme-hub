@@ -35,6 +35,9 @@
           <button class="nav-item" data-target="routing-view">
             <i class="ph ph-git-branch nav-icon"></i> 分流路由
           </button>
+          <button class="nav-item" data-target="routing-logs-view">
+            <i class="ph ph-terminal-window nav-icon"></i> 分流日志
+          </button>
           <button class="nav-item" data-target="settings-view">
             <i class="ph ph-gear nav-icon"></i> 全局设置
           </button>
@@ -202,35 +205,99 @@
             <div class="card-header">
               <div class="header-titles">
                 <h1>路由分流规则配置</h1>
-                <p>为主流域名和地域划分出口网络</p>
+                <p>为域名与 IP 段定义走代理或直连的规则</p>
+              </div>
+            </div>
+            <div class="toolbar routing-toolbar">
+              <div class="routing-mode-banner" id="routing-mode-banner">路由状态载入中...</div>
+              <div class="btn-group">
+                <button id="ruleset-db-refresh-btn" type="button">更新规则库</button>
+                <select id="routing-ruleset-preset-select" class="route-select routing-preset-select">
+                  <option value="">添加常用规则集...</option>
+                </select>
+                <button id="routing-add-ruleset" type="button">新增自定义规则集</button>
+                <select id="routing-preset-select" class="route-select routing-preset-select">
+                  <option value="">快速插入手写规则...</option>
+                  <option value="proxy-ai">AI 服务 (代理)</option>
+                  <option value="proxy-dev">开发者服务 (代理)</option>
+                  <option value="direct-cn">国内常见域名 (直连)</option>
+                  <option value="mixed-starter">混合分流起步模板</option>
+                </select>
+                <button id="routing-add-rule" type="button">新增规则</button>
+              </div>
+            </div>
+            <div class="routing-db-status-card">
+              <div class="routing-db-status-copy">
+                <span class="endpoint-label">规则数据库</span>
+                <span class="geoip-status-value" id="routing-db-status">准备中</span>
+                <span class="endpoint-note" id="routing-db-note">用于国内直连 / 国外代理的数据库规则</span>
               </div>
             </div>
             <div class="routing-list flex-fill">
-              <div class="route-item">
-                <div class="route-info">
-                  <div class="route-name"><i class="ph ph-shield-warning" style="margin-right:0.4rem; color:var(--btn-red-text);"></i> 广告拦截 (Ad-Block)</div>
-                  <div class="route-desc">基于 GEOSITE 拦截大量广告追踪域名</div>
-                </div>
-                <select class="route-select"><option>REJECT (拦截)</option></select>
+              <div id="routing-loading" class="state-container">
+                <p class="state-msg">正在加载分流规则...</p>
               </div>
-              <div class="route-item">
-                <div class="route-info">
-                  <div class="route-name"><i class="ph ph-map-pin" style="margin-right:0.4rem; color:var(--text-muted);"></i> 大陆内网 (GeoIP:CN)</div>
-                  <div class="route-desc">识别来自中国大陆的直连网络请求</div>
-                </div>
-                <select class="route-select"><option>DIRECT (直连)</option></select>
+              <div id="routing-error" class="state-container hidden">
+                <p class="state-msg error"></p>
               </div>
-              <div class="route-item">
-                <div class="route-info">
-                  <div class="route-name"><i class="ph ph-globe" style="margin-right:0.4rem; color:var(--accent-base);"></i> 默认全域请求 (Final)</div>
-                  <div class="route-desc">其他所有未命中规则的海外公网流量转交</div>
-                </div>
-                <select class="route-select"><option>Proxy (走默认代理群)</option></select>
+              <div id="routing-empty" class="state-container hidden">
+                <p class="state-msg">还没有规则集或手写规则，可以先添加一个内置规则集并为它选择节点。</p>
               </div>
+              <div id="routing-rules" class="routing-rules hidden"></div>
             </div>
             <footer class="card-footer">
-              <button type="button" class="btn-primary">保存路由表</button>
+              <button type="button" class="btn-primary" id="routing-save-btn">保存路由表</button>
             </footer>
+          </div>
+        </section>
+
+        <section id="routing-logs-view" class="view">
+          <div class="proxy-card full-card">
+            <div class="card-header">
+                <div class="header-titles">
+                  <h1>分流诊断与日志</h1>
+                  <p>只显示系统代理入口下自定义规则与自定义规则集的命中记录</p>
+                </div>
+            </div>
+            <div class="routing-logs-shell flex-fill">
+              <div class="routing-log-summary" id="routing-log-summary">
+                <div class="routing-log-summary-card">
+                  <span class="routing-log-summary-label">当前模式</span>
+                  <span class="routing-log-summary-value" id="routing-log-mode">载入中...</span>
+                </div>
+                <div class="routing-log-summary-card">
+                  <span class="routing-log-summary-label">系统代理</span>
+                  <span class="routing-log-summary-value" id="routing-log-system-proxy">载入中...</span>
+                </div>
+                <div class="routing-log-summary-card">
+                  <span class="routing-log-summary-label">核心状态</span>
+                  <span class="routing-log-summary-value" id="routing-log-core-status">载入中...</span>
+                </div>
+              </div>
+              <div id="routing-observability" class="routing-observability">
+                <div class="observability-header">
+                  <div class="observability-title">
+                    <i class="ph ph-terminal-window"></i> 自定义规则命中日志
+                  </div>
+                  <div class="observability-meta">
+                    <div class="observability-status" id="routing-observability-status">
+                      <span class="status-indicator active"></span> 实时监控中
+                    </div>
+                    <button type="button" class="btn-outline" id="routing-observability-refresh">立即刷新</button>
+                  </div>
+                </div>
+                <div class="routing-log-toolbar">
+                  <div class="routing-log-search-wrap">
+                    <input type="text" id="routing-log-search" class="routing-log-search-input" placeholder="检索命中规则，例如 corp.local / YouTube / GitHub" autocomplete="off">
+                    <button type="button" id="routing-log-search-clear" class="routing-log-search-clear hidden" aria-label="清除日志搜索">×</button>
+                  </div>
+                  <div id="routing-log-result-count" class="routing-log-result-count"></div>
+                </div>
+                <div class="observability-content">
+                  <div id="routing-observability-lines" class="routing-observability-lines"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -322,9 +389,65 @@
       </div>
     </div>
 
+    <!-- Routing Rule Modal -->
+    <div id="routing-rule-modal" class="modal-overlay">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header">
+          <h2 class="modal-title" id="routing-rule-modal-title">新增分流规则</h2>
+          <button type="button" class="btn-icon modal-close-btn" id="routing-rule-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="routing-rule-modal-grid">
+            <label>
+              <span class="modal-field-label">规则类型</span>
+              <select id="routing-rule-modal-type" class="modal-field-input">
+                <option value="domain">精确域名</option>
+                <option value="domain_suffix">域名后缀</option>
+                <option value="domain_keyword">域名关键词</option>
+                <option value="ip_cidr">IP/CIDR</option>
+              </select>
+            </label>
+            <label>
+              <span class="modal-field-label">流量去向</span>
+              <select id="routing-rule-modal-action" class="modal-field-input">
+                <option value="default">默认代理</option>
+                <option value="direct">直连</option>
+                <option value="node">指定节点</option>
+              </select>
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;" id="routing-rule-modal-node-field" class="hidden">
+            <label>
+              <span class="modal-field-label">指定节点</span>
+              <select id="routing-rule-modal-node" class="modal-field-input">
+                <option value="">选择节点</option>
+              </select>
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">匹配内容</span>
+              <input type="text" id="routing-rule-modal-value" class="modal-field-input" placeholder="例如 example.com 或 10.0.0.0/8" autocomplete="off">
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">备注（可选）</span>
+              <input type="text" id="routing-rule-modal-note" class="modal-field-input" placeholder="例如 YouTube 走日本节点" autocomplete="off">
+            </label>
+          </div>
+          <p id="routing-rule-modal-error" class="state-msg error hidden" style="margin-top:0.9rem;"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="routing-rule-modal-cancel">取消</button>
+          <button type="button" class="btn-primary" id="routing-rule-modal-confirm">保存规则</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Bubble Toast Container -->
     <div id="toast-container" class="toast-container"></div>
     
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=20260402c"></script>
   </body>
 </html>

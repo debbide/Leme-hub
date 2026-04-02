@@ -418,7 +418,7 @@ test('updateSettings persists validated custom rules', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
   const result = await manager.updateSettings({
-    routingMode: 'custom',
+    routingMode: 'rule',
     customRules: [
       { type: 'domain_suffix', value: 'corp.local', action: 'direct' },
       { type: 'ip_cidr', value: '10.0.0.0/8', action: 'direct' }
@@ -427,6 +427,20 @@ test('updateSettings persists validated custom rules', async () => {
 
   assert.equal(result.settings.customRules.length, 2);
   assert.equal(result.proxy.customRules[0].type, 'domain_suffix');
+});
+
+test('updateSettings trims custom rule fields and preserves note', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    customRules: [
+      { id: 'rule-a', type: ' domain_suffix ', value: ' corp.local ', action: ' direct ', note: ' office ' }
+    ]
+  });
+
+  assert.deepEqual(result.settings.customRules, [
+    { id: 'rule-a', type: 'domain_suffix', value: 'corp.local', action: 'direct', nodeId: null, note: 'office' }
+  ]);
 });
 
 test('updateSettings rejects unsupported routing mode', async () => {
@@ -441,6 +455,74 @@ test('updateSettings rejects invalid custom rule type', async () => {
   await assert.rejects(() => manager.updateSettings({
     customRules: [{ type: 'geoip', value: 'cn', action: 'direct' }]
   }), /invalid type/);
+});
+
+test('updateSettings rejects invalid ip cidr custom rules', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    customRules: [{ type: 'ip_cidr', value: '300.1.1.0/24', action: 'direct' }]
+  }), /valid IPv4 CIDR/);
+});
+
+test('updateSettings rejects node custom rules without node id', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    customRules: [{ type: 'domain', value: 'youtube.com', action: 'node' }]
+  }), /requires nodeId/);
+});
+
+test('updateSettings rejects duplicate custom rules', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    customRules: [
+      { type: 'domain_suffix', value: 'corp.local', action: 'direct' },
+      { type: 'domain_suffix', value: 'CORP.LOCAL', action: 'direct' }
+    ]
+  }), /duplicates/);
+});
+
+test('updateSettings persists normalized rulesets', async () => {
+  const manager = new CoreManager(createPaths(), createStore([{ id: 'n1', type: 'socks', server: 'one.example', port: 1080 }]));
+
+  const result = await manager.updateSettings({
+    rulesets: [
+      { id: 'rs-ai', kind: 'builtin', presetId: 'ai-services', name: ' AI ', enabled: true, target: 'node', nodeId: 'n1' },
+      { kind: 'custom', name: ' Work ', enabled: true, target: 'direct', entries: [{ type: 'domain_suffix', value: ' corp.local ' }] }
+    ]
+  });
+
+  assert.equal(result.settings.rulesets.length, 2);
+  assert.equal(result.settings.rulesets[0].name, 'AI');
+  assert.equal(result.settings.rulesets[1].entries[0].value, 'corp.local');
+});
+
+test('getBuiltinRulesets exposes common preset catalog', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const builtinRulesets = manager.getBuiltinRulesets();
+
+  assert.equal(builtinRulesets.some((ruleset) => ruleset.id === 'youtube'), true);
+  assert.equal(builtinRulesets.some((ruleset) => ruleset.id === 'telegram'), true);
+  assert.equal(builtinRulesets.some((ruleset) => ruleset.id === 'apple'), true);
+});
+
+test('updateSettings rejects invalid ruleset target', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    rulesets: [{ kind: 'builtin', presetId: 'ai-services', target: 'bogus' }]
+  }), /invalid target/);
+});
+
+test('updateSettings rejects node target ruleset without node id', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    rulesets: [{ kind: 'builtin', presetId: 'ai-services', target: 'node' }]
+  }), /requires nodeId/);
 });
 
 test('getSettingsSnapshot repairs malformed persisted custom rules', () => {
@@ -606,6 +688,26 @@ test('updateSettings auto restarts when active node changes while core is runnin
   assert.equal(restarted, true);
   assert.equal(result.autoRestarted, true);
   assert.equal(result.proxy.activeNodeId, 'n2');
+});
+
+test('updateSettings auto restarts when custom rules change while core is running', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  manager.state.status = 'running';
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+
+  const result = await manager.updateSettings({
+    customRules: [{ type: 'domain', value: 'example.com', action: 'direct', note: 'site' }]
+  });
+
+  assert.equal(restarted, true);
+  assert.equal(result.autoRestarted, true);
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.proxy.customRules[0].value, 'example.com');
 });
 
 test('updateSettings applies auto start registration state', async () => {
