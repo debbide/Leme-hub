@@ -25,6 +25,13 @@ export function createCoreRoutes({ coreManager }) {
       } catch (error) {
         return json({ ok: false, error: error.message, hits: [], core: coreManager.getStatus() }, 500);
       }
+    },
+    'GET /api/core/traffic': async () => {
+      try {
+        return json({ ok: true, traffic: await coreManager.getTrafficSnapshot(), core: coreManager.getStatus() });
+      } catch (error) {
+        return json({ ok: false, error: error.message, traffic: { timestamp: new Date().toISOString(), uploadBytes: 0, downloadBytes: 0, connectionCount: 0 }, core: coreManager.getStatus() }, 500);
+      }
     }
   };
 }

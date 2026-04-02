@@ -7,11 +7,15 @@ test('core routes expose routing hits endpoint', async () => {
   const routes = createCoreRoutes({
     coreManager: {
       getRoutingHits: async () => [{ id: '1', host: 'www.youtube.com', name: 'YouTube 视频', kind: 'ruleset', outbound: 'out-jp' }],
+      getTrafficSnapshot: async () => ({ timestamp: new Date().toISOString(), uploadBytes: 1, downloadBytes: 2, connectionCount: 1 }),
       getStatus: () => ({ status: 'running' })
     }
   });
 
   const response = await routes['GET /api/core/routing-hits']();
+  const traffic = await routes['GET /api/core/traffic']();
   assert.equal(response.body.ok, true);
   assert.equal(response.body.hits[0].host, 'www.youtube.com');
+  assert.equal(traffic.body.ok, true);
+  assert.equal(traffic.body.traffic.downloadBytes, 2);
 });

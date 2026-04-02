@@ -22,6 +22,14 @@ export function createNodeRoutes({ coreManager }) {
       }
     },
 
+    'POST /api/groups/country': async () => {
+      try {
+        return json({ ok: true, ...(await coreManager.groupNodesByCountry()) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
     'POST /api/nodes/import-link': async ({ body }) => {
       const link = body?.link?.trim();
       if (!link) {
@@ -56,6 +64,24 @@ export function createNodeRoutes({ coreManager }) {
 
       try {
         return json({ ok: true, ...(await coreManager.updateNode(nodeId, body)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
+    'PUT /api/nodes/country': async ({ body }) => {
+      const nodeId = body?.id;
+      if (!nodeId) {
+        return json({ ok: false, error: 'Missing node id' }, 400);
+      }
+
+      const countryCode = body?.countryCode ?? null;
+      if (countryCode !== null && !/^[a-z]{2}$/iu.test(String(countryCode).trim())) {
+        return json({ ok: false, error: 'countryCode must be a 2-letter ISO code' }, 400);
+      }
+
+      try {
+        return json({ ok: true, ...(await coreManager.setNodeCountryOverride(nodeId, countryCode)) });
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }

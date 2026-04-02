@@ -16,9 +16,9 @@ export const SINGBOX_REPOSITORY = {
 
 export const ROUTING_MODES = ['rule', 'global', 'direct'];
 export const CUSTOM_RULE_TYPES = ['domain', 'domain_suffix', 'domain_keyword', 'ip_cidr'];
-export const CUSTOM_RULE_ACTIONS = ['default', 'direct', 'node'];
+export const CUSTOM_RULE_ACTIONS = ['default', 'direct', 'node', 'node_group'];
 export const RULESET_KINDS = ['builtin', 'custom'];
-export const RULESET_TARGETS = ['default', 'direct', 'node'];
+export const RULESET_TARGETS = ['default', 'direct', 'node', 'node_group'];
 
 export const BUILTIN_RULESETS = [
   {

@@ -200,6 +200,28 @@ test('uses specific node for manual system proxy rule when selected', () => {
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-node' && rule.outbound === 'out-n2'), true);
 });
 
+test('uses selected node from node group for manual system proxy rule', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n2'], selectedNodeId: 'n2' }],
+    customRules: [
+      { id: 'rule-group', type: 'domain_suffix', value: 'youtube.com', action: 'node_group', nodeGroupId: 'g1' }
+    ]
+  });
+
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-group' && rule.outbound === 'out-n2'), true);
+});
+
 test('reports inactive routing observability labels when system proxy is disabled', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

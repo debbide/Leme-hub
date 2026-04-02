@@ -187,7 +187,8 @@ export class ProxyService {
       proxyListen = process.env.PROXY_LISTEN || DEFAULT_PROXY_LISTEN_HOST,
       basePort = DEFAULT_PROXY_BASE_PORT,
       configFileName = DEFAULT_CONFIG_FILE,
-      log = console
+      log = console,
+      onRoutingHit = null
     } = typeof options === 'string' ? { configDir: options } : options;
 
     this.proxyProcess = null;
@@ -196,6 +197,7 @@ export class ProxyService {
     this.proxyListen = proxyListen;
     this.basePort = basePort;
     this.log = log;
+    this.onRoutingHit = typeof onRoutingHit === 'function' ? onRoutingHit : null;
     this.binName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
     this.nodePortMap = new Map();
     this.routingHitMap = new Map();
@@ -263,6 +265,7 @@ export class ProxyService {
       proxyMode = 'rule',
       customRules = [],
       rulesets = [],
+      nodeGroups = [],
       systemProxyEnabled = false,
       systemProxyHttpPort,
       systemProxySocksPort
@@ -517,6 +520,7 @@ export class ProxyService {
     }
 
     const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
+    const nodeGroupMap = new Map((nodeGroups || []).map((group) => [group.id, group]));
     this.routingHitMap = new Map();
     const registerRoutingHit = (tag, meta) => {
       this.routingHitMap.set(tag, meta);
@@ -531,6 +535,12 @@ export class ProxyService {
       if (rule.action === 'node' && rule.nodeId && validNodes.some((node) => node.id === rule.nodeId)) {
         return `out-${rule.nodeId}`;
       }
+      if (rule.action === 'node_group' && rule.nodeGroupId) {
+        const group = nodeGroupMap.get(rule.nodeGroupId);
+        if (group?.selectedNodeId && validNodes.some((node) => node.id === group.selectedNodeId)) {
+          return `out-${group.selectedNodeId}`;
+        }
+      }
       return activeOutbound;
     };
 
@@ -539,7 +549,9 @@ export class ProxyService {
         kind: 'rule',
         name: rule.note || `${rule.type}=${rule.value}`,
         target: resolveManualRuleOutbound(rule),
-        descriptor: `${rule.type}=${rule.value}`
+        descriptor: `${rule.type}=${rule.value}`,
+        matchType: rule.type,
+        matchValue: rule.value
       }),
       outbound: resolveManualRuleOutbound(rule),
       rules: [{ [rule.type]: [rule.value] }]
@@ -550,6 +562,12 @@ export class ProxyService {
       if (ruleset.target === 'default') return activeOutbound;
       if (ruleset.target === 'node' && ruleset.nodeId && validNodes.some((node) => node.id === ruleset.nodeId)) {
         return `out-${ruleset.nodeId}`;
+      }
+      if (ruleset.target === 'node_group' && ruleset.groupId) {
+        const group = nodeGroupMap.get(ruleset.groupId);
+        if (group?.selectedNodeId && validNodes.some((node) => node.id === group.selectedNodeId)) {
+          return `out-${group.selectedNodeId}`;
+        }
       }
       return activeOutbound;
     };
@@ -566,7 +584,9 @@ export class ProxyService {
             kind: 'ruleset',
             name: ruleset.name || ruleset.id,
             target: buildRulesetOutbound(ruleset),
-            descriptor: ruleset.name || ruleset.id
+            descriptor: ruleset.name || ruleset.id,
+            rulesetId: ruleset.id || null,
+            rulesetPresetId: ruleset.presetId || null
           }),
           outbound: buildRulesetOutbound(ruleset)
         };
@@ -684,7 +704,37 @@ export class ProxyService {
     return buildRoutingObservabilityLines(runtime, this.generateConfig(runtime));
   }
 
-  resolveRoutingHit(host, outboundTag) {
+  resolveRoutingHit(ruleTag, host, outboundTag, options = {}) {
+    const allowHeuristic = Boolean(options.allowHeuristic);
+    const rawTag = String(ruleTag || '').trim();
+    if (rawTag) {
+      const tokens = rawTag.split(/[\s,|;]+/u).filter(Boolean);
+      for (const token of tokens) {
+        const direct = this.routingHitMap.get(token);
+        if (direct) {
+          return {
+            ...direct,
+            matchedTag: token,
+            matchedBy: 'tag'
+          };
+        }
+
+        for (const [registeredTag, meta] of this.routingHitMap.entries()) {
+          if (token.includes(registeredTag) || registeredTag.includes(token)) {
+            return {
+              ...meta,
+              matchedTag: registeredTag,
+              matchedBy: 'tag-fuzzy'
+            };
+          }
+        }
+      }
+    }
+
+    if (!allowHeuristic) {
+      return null;
+    }
+
     const value = String(host || '').toLowerCase();
     if (!value) return null;
 
@@ -700,25 +750,28 @@ export class ProxyService {
         if ((type === 'domain' && value === expected)
           || (type === 'domain_suffix' && (value === expected || value.endsWith(`.${expected}`)))
           || (type === 'domain_keyword' && value.includes(expected))) {
-          return meta;
+          return {
+            ...meta,
+            matchedBy: 'host-heuristic'
+          };
         }
       }
 
       if (meta.kind === 'ruleset') {
         const outboundMatches = meta.target === 'direct' ? outboundTag === 'direct' : outboundTag === meta.target;
         if (!outboundMatches) continue;
-        if (String(meta.descriptor || '').toLowerCase().includes('youtube') && value.includes('youtube')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('google') && value.includes('google')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('github') && value.includes('github')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('telegram') && value.includes('telegram')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('tiktok') && value.includes('tiktok')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('netflix') && value.includes('netflix')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('paypal') && value.includes('paypal')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('steam') && value.includes('steam')) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('microsoft') && (value.includes('microsoft') || value.includes('live.com'))) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('onedrive') && (value.includes('onedrive') || value.includes('1drv.com'))) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('apple') && (value.includes('apple') || value.includes('icloud'))) return meta;
-        if (String(meta.descriptor || '').toLowerCase().includes('ai') && (value.includes('openai') || value.includes('anthropic') || value.includes('claude.ai') || value.includes('midjourney'))) return meta;
+        if (String(meta.descriptor || '').toLowerCase().includes('youtube') && value.includes('youtube')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('google') && value.includes('google')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('github') && value.includes('github')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('telegram') && value.includes('telegram')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('tiktok') && value.includes('tiktok')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('netflix') && value.includes('netflix')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('paypal') && value.includes('paypal')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('steam') && value.includes('steam')) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('microsoft') && (value.includes('microsoft') || value.includes('live.com'))) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('onedrive') && (value.includes('onedrive') || value.includes('1drv.com'))) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('apple') && (value.includes('apple') || value.includes('icloud'))) return { ...meta, matchedBy: 'host-heuristic' };
+        if (String(meta.descriptor || '').toLowerCase().includes('ai') && (value.includes('openai') || value.includes('anthropic') || value.includes('claude.ai') || value.includes('midjourney'))) return { ...meta, matchedBy: 'host-heuristic' };
       }
     }
 
@@ -812,8 +865,19 @@ export class ProxyService {
             inboundTag,
             host,
             port,
+            ruleTag: null,
             createdAt: Date.now()
           });
+        }
+
+        const ruleMatch = line.match(/\[(\d+)\].*match(?:ed)?\s+rule(?:[_\s-]?set)?[^\[]*\[([^\]]+)\]/iu);
+        if (ruleMatch) {
+          const [, connId, ruleTag] = ruleMatch;
+          const trace = this.connectionTraceMap.get(connId);
+          if (trace) {
+            trace.ruleTag = String(ruleTag || '').trim();
+            this.connectionTraceMap.set(connId, trace);
+          }
         }
 
         const outboundMatch = line.match(/\[(\d+)\].*outbound\/[^\[]+\[(out-[^\]]+)\]: outbound connection to ([^:]+):(\d+)/);
@@ -821,9 +885,30 @@ export class ProxyService {
           const [, connId, outboundTag, host] = outboundMatch;
           const trace = this.connectionTraceMap.get(connId);
           if (trace && trace.inboundTag && ['system-http', 'system-socks'].includes(trace.inboundTag)) {
-            const hit = this.resolveRoutingHit(trace.host || host, outboundTag);
+            const hit = this.resolveRoutingHit(trace.ruleTag, trace.host || host, outboundTag, { allowHeuristic: false });
             if (hit) {
-              this.log.log(`[Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
+              const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+              this.log.log(`[${ts}] [Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
+              if (this.onRoutingHit) {
+                try {
+                  this.onRoutingHit({
+                    timestamp: new Date().toISOString(),
+                    host: trace.host || host || null,
+                    port: trace.port ? Number(trace.port) : null,
+                    outbound: outboundTag,
+                    kind: hit.kind,
+                    name: hit.name,
+                    target: hit.target,
+                    descriptor: hit.descriptor,
+                    matchedTag: hit.matchedTag || null,
+                    matchedBy: hit.matchedBy || null,
+                    matchType: hit.matchType || null,
+                    matchValue: hit.matchValue || null
+                  });
+                } catch {
+                  // ignore hook failures to keep proxy runtime stable
+                }
+              }
             }
           }
           this.connectionTraceMap.delete(connId);

@@ -1,4 +1,11 @@
 export function createSystemRoutes({ store, coreManager, paths }) {
+  const getNodeGroups = async () => {
+    if (typeof coreManager.getNodeGroupsResolved === 'function') {
+      return coreManager.getNodeGroupsResolved();
+    }
+    return coreManager.getSettingsSnapshot().nodeGroups || [];
+  };
+
   return {
     'GET /api/system/status': async () => {
       const systemProxy = await coreManager.refreshSystemProxyState();
@@ -75,17 +82,21 @@ export function createSystemRoutes({ store, coreManager, paths }) {
         };
       }
     },
-    'GET /api/system/rules': async () => ({
-      status: 200,
-      body: {
-        ok: true,
-        rules: coreManager.getSettingsSnapshot().customRules || [],
-        customRules: coreManager.getSettingsSnapshot().customRules || [],
-        rulesets: coreManager.getSettingsSnapshot().rulesets || [],
-        builtinRulesets: coreManager.getBuiltinRulesets(),
-        core: coreManager.getStatus()
-      }
-    }),
+    'GET /api/system/rules': async () => {
+      const settings = coreManager.getSettingsSnapshot();
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          rules: settings.customRules || [],
+          customRules: settings.customRules || [],
+          rulesets: settings.rulesets || [],
+          nodeGroups: await getNodeGroups(),
+          builtinRulesets: coreManager.getBuiltinRulesets(),
+          core: coreManager.getStatus()
+        }
+      };
+    },
     'PUT /api/system/rules': async ({ body }) => {
       const hasLegacyRules = body && Array.isArray(body.rules);
       const hasCustomRules = body && Array.isArray(body.customRules);
@@ -111,6 +122,7 @@ export function createSystemRoutes({ store, coreManager, paths }) {
             rules: coreManager.getSettingsSnapshot().customRules || [],
             customRules: coreManager.getSettingsSnapshot().customRules || [],
             rulesets: coreManager.getSettingsSnapshot().rulesets || [],
+            nodeGroups: await getNodeGroups(),
             builtinRulesets: coreManager.getBuiltinRulesets(),
             core: coreManager.getStatus()
           }

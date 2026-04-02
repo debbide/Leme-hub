@@ -42,6 +42,29 @@ test('node routes expose geo ip status alongside enriched node records', async (
   assert.equal(response.body.geoIp.ready, true);
 });
 
+test('node routes expose country grouping and override endpoints', async () => {
+  const routes = createNodeRoutes({
+    coreManager: {
+      getNodeRecords: async () => [],
+      getGroups: () => ['国家/JP'],
+      getStatus: () => ({ status: 'running' }),
+      getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
+      groupNodesByCountry: async () => ({ groupedCount: 2, skippedCount: 1, nodes: [{ id: 'n1', group: '国家/JP' }] }),
+      setNodeCountryOverride: async () => ({ node: { id: 'n1', countryCodeOverride: 'JP' }, nodes: [{ id: 'n1', countryCodeOverride: 'JP' }], groups: ['国家/JP'] })
+    }
+  });
+
+  const groupResponse = await routes['POST /api/groups/country']({ body: {} });
+  const overrideResponse = await routes['PUT /api/nodes/country']({ body: { id: 'n1', countryCode: 'jp' } });
+  const invalidResponse = await routes['PUT /api/nodes/country']({ body: { id: 'n1', countryCode: 'JPN' } });
+
+  assert.equal(groupResponse.body.ok, true);
+  assert.equal(groupResponse.body.groupedCount, 2);
+  assert.equal(overrideResponse.body.ok, true);
+  assert.equal(overrideResponse.body.node.countryCodeOverride, 'JP');
+  assert.equal(invalidResponse.status, 400);
+});
+
 test('system routes expose geo ip status and refresh endpoint', async () => {
   const routes = createSystemRoutes({
     store: {},

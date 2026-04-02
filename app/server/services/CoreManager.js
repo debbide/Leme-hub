@@ -1,11 +1,12 @@
 import fs from 'fs';
+import path from 'path';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
 import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
 import { AutoStartManager } from './AutoStartManager.js';
 import { ConnectionsService } from './ConnectionsService.js';
-import { GeoIpService } from './GeoIpService.js';
+import { GeoIpService, geoFlagFromCountryCode } from './GeoIpService.js';
 import { RulesetDatabaseService } from './RulesetDatabaseService.js';
 import { SystemProxyManager } from './SystemProxyManager.js';
 
@@ -31,6 +32,116 @@ const validatePort = (value, fieldName) => {
   return parsed;
 };
 
+const normalizeCountryCode = (value) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return /^[A-Z]{2}$/u.test(normalized) ? normalized : null;
+};
+
+const buildCountryGroupName = (countryCode) => `国家/${countryCode}`;
+const AUTO_COUNTRY_NODE_GROUP_PREFIX = 'country-auto-';
+const NODE_GROUP_TYPES = ['custom', 'country'];
+const NODE_GROUP_ICON_MODES = ['auto', 'emoji', 'none'];
+const NODE_GROUP_AUTO_TEST_MIN_SEC = 60;
+const NODE_GROUP_AUTO_TEST_MAX_SEC = 3600;
+const NODE_GROUP_AUTO_TEST_DEFAULT_SEC = 300;
+
+const normalizeIsoTimestamp = (value) => {
+  if (!value) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const timestamp = Date.parse(text);
+  return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+};
+
+const normalizeNodeGroupAutoTestIntervalSec = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) {
+    return NODE_GROUP_AUTO_TEST_DEFAULT_SEC;
+  }
+  return Math.min(NODE_GROUP_AUTO_TEST_MAX_SEC, Math.max(NODE_GROUP_AUTO_TEST_MIN_SEC, parsed));
+};
+
+const normalizeNodeGroupLatencyCache = (value) => {
+  const input = value && typeof value === 'object' ? value : {};
+  const inputResults = input.results && typeof input.results === 'object' ? input.results : {};
+  const results = {};
+
+  Object.entries(inputResults).forEach(([nodeId, entry]) => {
+    const id = String(nodeId || '').trim();
+    if (!id || !entry || typeof entry !== 'object') {
+      return;
+    }
+
+    const ok = Boolean(entry.ok);
+    const normalized = {
+      ok,
+      latencyMs: null,
+      error: null,
+      updatedAt: normalizeIsoTimestamp(entry.updatedAt)
+    };
+
+    if (ok) {
+      const latencyMs = Number.parseInt(entry.latencyMs, 10);
+      if (!Number.isInteger(latencyMs) || latencyMs < 0) {
+        return;
+      }
+      normalized.latencyMs = latencyMs;
+    } else {
+      const error = String(entry.error || '').trim();
+      normalized.error = error ? error.slice(0, 160) : 'failed';
+    }
+
+    results[id] = normalized;
+  });
+
+  return {
+    updatedAt: normalizeIsoTimestamp(input.updatedAt),
+    results
+  };
+};
+
+const ROUTING_HIT_HISTORY_LIMIT = 2000;
+const ROUTING_HIT_READ_LIMIT = 300;
+
+const pickConnectionBytes = (connection, keys) => {
+  for (const key of keys) {
+    const value = connection?.[key] ?? connection?.metadata?.[key] ?? connection?.stats?.[key];
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 0;
+};
+
+const pickConnectionTimestamp = (connection) => {
+  const candidates = [
+    connection?.timestamp,
+    connection?.time,
+    connection?.start,
+    connection?.startAt,
+    connection?.startedAt,
+    connection?.createdAt,
+    connection?.metadata?.timestamp,
+    connection?.metadata?.time,
+    connection?.metadata?.start,
+    connection?.metadata?.createdAt
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeIsoTimestamp(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
 const isValidIpv4Cidr = (value) => {
   const match = String(value || '').trim().match(/^(\d{1,3})(?:\.(\d{1,3}))(?:\.(\d{1,3}))(?:\.(\d{1,3}))\/(\d|[12]\d|3[0-2])$/);
   if (!match) {
@@ -40,7 +151,7 @@ const isValidIpv4Cidr = (value) => {
   return match.slice(1, 5).every((part) => Number(part) >= 0 && Number(part) <= 255);
 };
 
-const normalizeCustomRule = (rule, index) => {
+const normalizeCustomRule = (rule, index, nodeGroups = []) => {
   if (!rule || typeof rule !== 'object') {
     throw createHttpError(`customRules[${index}] must be an object`, 400);
   }
@@ -49,6 +160,7 @@ const normalizeCustomRule = (rule, index) => {
   const action = String(rule.action || '').trim();
   const value = String(rule.value || '').trim();
   const nodeId = rule.nodeId == null || rule.nodeId === '' ? null : String(rule.nodeId).trim();
+  const nodeGroupId = rule.nodeGroupId == null || rule.nodeGroupId === '' ? null : String(rule.nodeGroupId).trim();
 
   if (!CUSTOM_RULE_TYPES.includes(type)) {
     throw createHttpError(`customRules[${index}] has invalid type`, 400);
@@ -60,6 +172,12 @@ const normalizeCustomRule = (rule, index) => {
 
   if (action === 'node' && !nodeId) {
     throw createHttpError(`customRules[${index}] target=node requires nodeId`, 400);
+  }
+  if (action === 'node_group' && !nodeGroupId) {
+    throw createHttpError(`customRules[${index}] target=node_group requires nodeGroupId`, 400);
+  }
+  if (action === 'node_group' && nodeGroupId && !nodeGroups.some((group) => group.id === nodeGroupId && group.selectedNodeId)) {
+    throw createHttpError(`customRules[${index}] target=node_group requires a valid selected group node`, 400);
   }
 
   if (!value) {
@@ -75,17 +193,18 @@ const normalizeCustomRule = (rule, index) => {
     type,
     action,
     nodeId,
+    nodeGroupId,
     value,
     note: typeof rule.note === 'string' ? rule.note.trim() : ''
   };
 };
 
-const normalizeCustomRules = (rules) => {
-  const normalizedRules = rules.map((rule, index) => normalizeCustomRule(rule, index));
+const normalizeCustomRules = (rules, nodeGroups = []) => {
+  const normalizedRules = rules.map((rule, index) => normalizeCustomRule(rule, index, nodeGroups));
   const seen = new Map();
 
   normalizedRules.forEach((rule, index) => {
-    const signature = `${rule.type}|${rule.action}|${rule.nodeId || ''}|${rule.value.toLowerCase()}`;
+    const signature = `${rule.type}|${rule.action}|${rule.nodeId || ''}|${rule.nodeGroupId || ''}|${rule.value.toLowerCase()}`;
     if (seen.has(signature)) {
       throw createHttpError(`customRules[${index}] duplicates customRules[${seen.get(signature)}]`, 400);
     }
@@ -93,6 +212,62 @@ const normalizeCustomRules = (rules) => {
   });
 
   return normalizedRules;
+};
+
+const normalizeNodeGroup = (group, index, nodes) => {
+  if (!group || typeof group !== 'object') {
+    throw createHttpError(`nodeGroups[${index}] must be an object`, 400);
+  }
+
+  const id = String(group.id || `node-group-${index + 1}`).trim();
+  const type = NODE_GROUP_TYPES.includes(String(group.type || '').trim())
+    ? String(group.type || '').trim()
+    : 'custom';
+  const countryCode = normalizeCountryCode(group.countryCode);
+  const iconMode = NODE_GROUP_ICON_MODES.includes(String(group.iconMode || '').trim())
+    ? String(group.iconMode || '').trim()
+    : 'auto';
+  const iconEmoji = typeof group.iconEmoji === 'string' ? group.iconEmoji.trim().slice(0, 4) : '';
+  const note = typeof group.note === 'string' ? group.note.trim().slice(0, 200) : '';
+
+  const name = String(group.name || '').trim() || (type === 'country' && countryCode ? buildCountryGroupName(countryCode) : '');
+  if (!name) throw createHttpError(`nodeGroups[${index}] must include a name`, 400);
+
+  const validNodeIds = new Set(nodes.map((node) => node.id));
+  const nodeIds = Array.isArray(group.nodeIds)
+    ? [...new Set(group.nodeIds.map((value) => String(value || '').trim()).filter((id) => validNodeIds.has(id)))]
+    : [];
+
+  const selectedNodeId = group.selectedNodeId == null ? null : String(group.selectedNodeId).trim();
+  if (selectedNodeId && !nodeIds.includes(selectedNodeId)) {
+    throw createHttpError(`nodeGroups[${index}] selectedNodeId must belong to nodeIds`, 400);
+  }
+
+  return {
+    id,
+    name,
+    type,
+    countryCode,
+    iconMode,
+    iconEmoji,
+    note,
+    nodeIds,
+    selectedNodeId: selectedNodeId || nodeIds[0] || null
+  };
+};
+
+const normalizeNodeGroups = (nodeGroups, nodes) => {
+  const normalized = nodeGroups.map((group, index) => normalizeNodeGroup(group, index, nodes));
+  const seenIds = new Set();
+  const seenNames = new Set();
+  normalized.forEach((group, index) => {
+    if (seenIds.has(group.id)) throw createHttpError(`nodeGroups[${index}] duplicates another group id`, 400);
+    const lowerName = group.name.toLowerCase();
+    if (seenNames.has(lowerName)) throw createHttpError(`nodeGroups[${index}] duplicates another group name`, 400);
+    seenIds.add(group.id);
+    seenNames.add(lowerName);
+  });
+  return normalized;
 };
 
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
@@ -122,7 +297,7 @@ const normalizeRulesetEntry = (entry, index, rulesetIndex) => {
   };
 };
 
-const normalizeRuleset = (ruleset, index) => {
+const normalizeRuleset = (ruleset, index, nodeGroups = []) => {
   if (!ruleset || typeof ruleset !== 'object') {
     throw createHttpError(`rulesets[${index}] must be an object`, 400);
   }
@@ -132,6 +307,7 @@ const normalizeRuleset = (ruleset, index) => {
   const id = String(ruleset.id || `ruleset-${index + 1}`).trim();
   const presetId = ruleset.presetId == null ? null : String(ruleset.presetId).trim();
   const nodeId = ruleset.nodeId == null || ruleset.nodeId === '' ? null : String(ruleset.nodeId).trim();
+  const groupId = ruleset.groupId == null || ruleset.groupId === '' ? null : String(ruleset.groupId).trim();
 
   if (!RULESET_KINDS.includes(kind)) {
     throw createHttpError(`rulesets[${index}] has invalid kind`, 400);
@@ -141,6 +317,12 @@ const normalizeRuleset = (ruleset, index) => {
   }
   if (target === 'node' && !nodeId) {
     throw createHttpError(`rulesets[${index}] target=node requires nodeId`, 400);
+  }
+  if (target === 'node_group' && !groupId) {
+    throw createHttpError(`rulesets[${index}] target=node_group requires groupId`, 400);
+  }
+  if (target === 'node_group' && groupId && !nodeGroups.some((group) => group.id === groupId && group.selectedNodeId)) {
+    throw createHttpError(`rulesets[${index}] target=node_group requires a valid selected group node`, 400);
   }
 
   if (kind === 'builtin') {
@@ -156,6 +338,7 @@ const normalizeRuleset = (ruleset, index) => {
       enabled: ruleset.enabled !== false,
       target,
       nodeId,
+      groupId,
       entries: [],
       note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
     };
@@ -183,13 +366,14 @@ const normalizeRuleset = (ruleset, index) => {
     enabled: ruleset.enabled !== false,
     target,
     nodeId,
+    groupId,
     entries,
     note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
   };
 };
 
-const normalizeRulesets = (rulesets) => {
-  const normalized = rulesets.map((ruleset, index) => normalizeRuleset(ruleset, index));
+const normalizeRulesets = (rulesets, nodeGroups = []) => {
+  const normalized = rulesets.map((ruleset, index) => normalizeRuleset(ruleset, index, nodeGroups));
   const seenIds = new Set();
   normalized.forEach((ruleset, index) => {
     if (seenIds.has(ruleset.id)) {
@@ -329,6 +513,11 @@ export class CoreManager {
       log: this.createLogger()
     });
     this.connectionsService = new ConnectionsService();
+    const routingHitHistoryDir = this.paths.logsDir || this.paths.dataDir || this.paths.root;
+    this.routingHitHistoryPath = path.join(routingHitHistoryDir, 'routing-hits.jsonl');
+    if (!fs.existsSync(this.routingHitHistoryPath)) {
+      fs.writeFileSync(this.routingHitHistoryPath, '');
+    }
 
     this.proxyService = new ProxyService({
       configDir: this.paths.dataDir,
@@ -336,7 +525,8 @@ export class CoreManager {
       proxyListen: this.store.getSettings().proxyListenHost,
       basePort: this.store.getSettings().proxyBasePort,
       configFileName: this.paths.configPath.split(/[/\\]/).pop(),
-      log: this.createLogger()
+      log: this.createLogger(),
+      onRoutingHit: (hit) => this.appendRoutingHitHistory(hit)
     });
   }
 
@@ -348,18 +538,94 @@ export class CoreManager {
     };
   }
 
+  normalizeRoutingHitHistoryEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const timestamp = normalizeIsoTimestamp(entry.timestamp) || new Date().toISOString();
+    const host = String(entry.host || '').trim();
+    const kind = String(entry.kind || '').trim();
+    const name = String(entry.name || '').trim();
+    const target = String(entry.target || '').trim();
+    const descriptor = String(entry.descriptor || '').trim();
+    if (!host || !kind || !name || !target) {
+      return null;
+    }
+
+    const outbound = String(entry.outbound || '').trim();
+    const portParsed = Number.parseInt(entry.port, 10);
+
+    return {
+      timestamp,
+      host,
+      port: Number.isInteger(portParsed) && portParsed > 0 ? portParsed : null,
+      outbound,
+      kind,
+      name,
+      target,
+      descriptor,
+      matchedTag: entry.matchedTag ? String(entry.matchedTag).trim() : null,
+      matchedBy: entry.matchedBy ? String(entry.matchedBy).trim() : null,
+      matchType: entry.matchType ? String(entry.matchType).trim() : null,
+      matchValue: entry.matchValue ? String(entry.matchValue).trim() : null,
+      persisted: true
+    };
+  }
+
+  readRoutingHitHistory(limit = ROUTING_HIT_READ_LIMIT) {
+    try {
+      const lines = fs.readFileSync(this.routingHitHistoryPath, 'utf8').split(/\r?\n/).filter(Boolean);
+      const normalized = lines
+        .slice(-Math.max(1, limit))
+        .map((line) => {
+          try {
+            return this.normalizeRoutingHitHistoryEntry(JSON.parse(line));
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+      return normalized;
+    } catch {
+      return [];
+    }
+  }
+
+  appendRoutingHitHistory(entry) {
+    const normalized = this.normalizeRoutingHitHistoryEntry(entry);
+    if (!normalized) {
+      return;
+    }
+
+    try {
+      fs.appendFileSync(this.routingHitHistoryPath, `${JSON.stringify(normalized)}\n`);
+      const lines = fs.readFileSync(this.routingHitHistoryPath, 'utf8').split(/\r?\n/).filter(Boolean);
+      if (lines.length > ROUTING_HIT_HISTORY_LIMIT) {
+        fs.writeFileSync(this.routingHitHistoryPath, `${lines.slice(-ROUTING_HIT_HISTORY_LIMIT).join('\n')}\n`);
+      }
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] Failed to persist routing hit: ${error.message}`);
+    }
+  }
+
   getSettingsSnapshot() {
     const settings = this.store.getSettings();
     const normalizedSubscriptions = Array.isArray(settings.subscriptions)
       ? settings.subscriptions.map(normalizeSubscriptionRecord).filter(Boolean)
       : [];
+    const normalizedNodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec);
+    const normalizedNodeGroupLatencyCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
 
     if (settings.customRules === undefined) {
       return {
         ...settings,
         customRules: [],
         rulesets: [],
-        subscriptions: normalizedSubscriptions
+        nodeGroups: [],
+        subscriptions: normalizedSubscriptions,
+        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
       };
     }
 
@@ -372,13 +638,16 @@ export class CoreManager {
     }
 
     try {
-      const normalizedRules = normalizeCustomRules(settings.customRules);
-      const normalizedRulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets) : [];
+      const nodes = this.store.getNodes();
+      const normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
+      const normalizedRules = normalizeCustomRules(settings.customRules, normalizedNodeGroups);
+      const normalizedRulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets, normalizedNodeGroups) : [];
       if (JSON.stringify(settings.customRules) !== JSON.stringify(normalizedRules)) {
         return this.store.saveSettings({
           ...settings,
           customRules: normalizedRules,
           rulesets: normalizedRulesets,
+          nodeGroups: normalizedNodeGroups,
           subscriptions: normalizedSubscriptions
         });
       }
@@ -388,7 +657,32 @@ export class CoreManager {
           ...settings,
           customRules: normalizedRules,
           rulesets: normalizedRulesets,
+          nodeGroups: normalizedNodeGroups,
           subscriptions: normalizedSubscriptions
+        });
+      }
+
+      if (JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)) {
+        return this.store.saveSettings({
+          ...settings,
+          customRules: normalizedRules,
+          rulesets: normalizedRulesets,
+          nodeGroups: normalizedNodeGroups,
+          subscriptions: normalizedSubscriptions,
+          nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+          nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
+        });
+      }
+
+      if (settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
+        return this.store.saveSettings({
+          ...settings,
+          customRules: normalizedRules,
+          rulesets: normalizedRulesets,
+          nodeGroups: normalizedNodeGroups,
+          subscriptions: normalizedSubscriptions,
+          nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+          nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
         });
       }
 
@@ -396,7 +690,10 @@ export class CoreManager {
         ...settings,
         customRules: normalizedRules,
         rulesets: normalizedRulesets,
-        subscriptions: normalizedSubscriptions
+        nodeGroups: normalizedNodeGroups,
+        subscriptions: normalizedSubscriptions,
+        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
       };
     } catch (error) {
       this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
@@ -404,7 +701,10 @@ export class CoreManager {
         ...settings,
         customRules: [],
         rulesets: [],
-        subscriptions: normalizedSubscriptions
+        nodeGroups: [],
+        subscriptions: normalizedSubscriptions,
+        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
       });
     }
   }
@@ -500,6 +800,7 @@ export class CoreManager {
       },
       customRules: settings.customRules,
       rulesets: settings.rulesets || [],
+      nodeGroups: settings.nodeGroups || [],
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
     };
   }
@@ -629,6 +930,7 @@ export class CoreManager {
       activeNodeId: this.resolveActiveNodeId(settings, nodes),
       customRules: settings.customRules,
       rulesets: settings.rulesets || [],
+      nodeGroups: settings.nodeGroups || [],
       proxyMode: settings.routingMode,
       systemProxyEnabled: !!settings.systemProxyEnabled,
       systemProxyHttpPort: settings.systemProxyHttpPort,
@@ -656,11 +958,31 @@ export class CoreManager {
     if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Array.isArray(next.rulesets)) {
       throw createHttpError('rulesets must be an array', 400);
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && !Array.isArray(next.nodeGroups)) {
+      throw createHttpError('nodeGroups must be an array', 400);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroupAutoTestIntervalSec')) {
+      const parsedIntervalSec = Number.parseInt(patch.nodeGroupAutoTestIntervalSec, 10);
+      if (!Number.isInteger(parsedIntervalSec)) {
+        throw createHttpError('nodeGroupAutoTestIntervalSec must be an integer', 400);
+      }
+      next.nodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(parsedIntervalSec);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroupLatencyCache')) {
+      if (!patch.nodeGroupLatencyCache || typeof patch.nodeGroupLatencyCache !== 'object') {
+        throw createHttpError('nodeGroupLatencyCache must be an object', 400);
+      }
+      next.nodeGroupLatencyCache = normalizeNodeGroupLatencyCache(patch.nodeGroupLatencyCache);
+    }
+
+    const nodeGroups = Array.isArray(next.nodeGroups)
+      ? normalizeNodeGroups(next.nodeGroups, this.store.getNodes())
+      : current.nodeGroups;
     const customRules = Array.isArray(next.customRules)
-      ? normalizeCustomRules(next.customRules)
+      ? normalizeCustomRules(next.customRules, nodeGroups)
       : current.customRules;
     const rulesets = Array.isArray(next.rulesets)
-      ? normalizeRulesets(next.rulesets)
+      ? normalizeRulesets(next.rulesets, nodeGroups)
       : current.rulesets;
 
     if (systemProxySocksPort === systemProxyHttpPort) {
@@ -694,12 +1016,15 @@ export class CoreManager {
       systemProxyHttpPort,
       customRules,
       rulesets,
+      nodeGroups,
       activeNodeId,
-      autoStart: !!next.autoStart
+      autoStart: !!next.autoStart,
+      nodeGroupAutoTestIntervalSec: normalizeNodeGroupAutoTestIntervalSec(next.nodeGroupAutoTestIntervalSec),
+      nodeGroupLatencyCache: normalizeNodeGroupLatencyCache(next.nodeGroupLatencyCache)
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets', 'nodeGroups'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -763,22 +1088,24 @@ export class CoreManager {
   }
 
   async getRoutingHits() {
-    if (this.state.status !== 'running') return [];
+    const history = this.readRoutingHitHistory();
+    if (this.state.status !== 'running') return history;
     const settings = this.store.getSettings();
-    if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return [];
+    if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return history;
 
     const nodeMap = new Map(this.store.getNodes().map((node) => [`out-${node.id}`, node]));
     const connections = await this.connectionsService.getConnections();
-    return connections
+    const liveHits = connections
       .map((connection) => {
         const metadata = connection.metadata || {};
         const host = metadata.host || metadata.destinationIP || metadata.destination || '';
         const chains = Array.isArray(connection.chains) ? connection.chains : [];
         const outboundTag = chains[chains.length - 1] || '';
-        const hit = this.proxyService.resolveRoutingHit(host, outboundTag);
+        const hit = this.proxyService.resolveRoutingHit(connection.rule || connection.rulePayload || null, host, outboundTag, { allowHeuristic: false });
         if (!hit) return null;
         return {
           id: connection.id || `${host}-${outboundTag}`,
+          timestamp: pickConnectionTimestamp(connection),
           host,
           port: metadata.destinationPort || metadata.dstPort || null,
           outbound: outboundTag,
@@ -787,12 +1114,45 @@ export class CoreManager {
           name: hit.name,
           target: hit.target,
           descriptor: hit.descriptor,
+          matchedTag: hit.matchedTag || null,
+          matchedBy: hit.matchedBy || null,
+          matchType: hit.matchType || null,
+          matchValue: hit.matchValue || null,
+          persisted: false,
           chains,
           rule: connection.rule || null,
           rulePayload: connection.rulePayload || null
         };
       })
       .filter(Boolean);
+
+    const merged = [...liveHits, ...history].slice(0, ROUTING_HIT_READ_LIMIT);
+    return merged;
+  }
+
+  async getTrafficSnapshot() {
+    if (this.state.status !== 'running') {
+      return {
+        timestamp: new Date().toISOString(),
+        uploadBytes: 0,
+        downloadBytes: 0,
+        connectionCount: 0
+      };
+    }
+
+    const connections = await this.connectionsService.getConnections();
+    const totals = connections.reduce((acc, connection) => {
+      acc.uploadBytes += pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']);
+      acc.downloadBytes += pickConnectionBytes(connection, ['download', 'downloadBytes', 'down', 'downBytes', 'received', 'rx']);
+      return acc;
+    }, { uploadBytes: 0, downloadBytes: 0 });
+
+    return {
+      timestamp: new Date().toISOString(),
+      uploadBytes: Math.round(totals.uploadBytes),
+      downloadBytes: Math.round(totals.downloadBytes),
+      connectionCount: connections.length
+    };
   }
 
   async getNodeRecords() {
@@ -818,7 +1178,38 @@ export class CoreManager {
       isRunning: this.state.status === 'running'
     }));
 
-    return this.geoIpService.enrichNodes(records);
+    const enriched = await this.geoIpService.enrichNodes(records);
+    return enriched.map((node) => {
+      const countryCodeOverride = normalizeCountryCode(node.countryCodeOverride);
+      if (!countryCodeOverride) {
+        return {
+          ...node,
+          countryOverridden: false
+        };
+      }
+
+      return {
+        ...node,
+        countryCode: countryCodeOverride,
+        countryName: this.resolveCountryName(countryCodeOverride) || node.countryName || countryCodeOverride,
+        flagEmoji: geoFlagFromCountryCode(countryCodeOverride),
+        countryCodeOverride,
+        countryOverridden: true
+      };
+    });
+  }
+
+  resolveCountryName(countryCode) {
+    const normalized = normalizeCountryCode(countryCode);
+    if (!normalized) {
+      return null;
+    }
+
+    try {
+      return new Intl.DisplayNames(['zh-CN', 'en'], { type: 'region' }).of(normalized) || normalized;
+    } catch {
+      return normalized;
+    }
   }
 
   getNodeById(nodeId) {
@@ -850,7 +1241,24 @@ export class CoreManager {
   }
 
   normalizeNodes(nodes) {
-    return assignStableLocalPorts(nodes, this.getSettingsSnapshot().proxyBasePort);
+    const normalizedNodes = (Array.isArray(nodes) ? nodes : []).map((node) => {
+      const normalizedOverride = normalizeCountryCode(node?.countryCodeOverride);
+      if (normalizedOverride) {
+        return {
+          ...node,
+          countryCodeOverride: normalizedOverride
+        };
+      }
+
+      if (!node || typeof node !== 'object' || !Object.prototype.hasOwnProperty.call(node, 'countryCodeOverride')) {
+        return node;
+      }
+
+      const { countryCodeOverride, ...rest } = node;
+      return rest;
+    });
+
+    return assignStableLocalPorts(normalizedNodes, this.getSettingsSnapshot().proxyBasePort);
   }
 
   saveNodes(nodes) {
@@ -985,6 +1393,243 @@ export class CoreManager {
     this.store.saveSettings({ ...settings, groups });
     const savedNodes = this.saveNodes(nodes);
     return this.applyNodeChanges(savedNodes);
+  }
+
+  async groupNodesByCountry() {
+    const nodeRecords = await this.getNodeRecords();
+    const countryByNodeId = new Map(
+      nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
+    );
+
+    let groupedCount = 0;
+    let skippedCount = 0;
+    const nextNodes = this.store.getNodes().map((node) => {
+      const countryCode = countryByNodeId.get(node.id);
+      if (!countryCode) {
+        skippedCount += 1;
+        return node;
+      }
+
+      groupedCount += 1;
+      return {
+        ...node,
+        group: buildCountryGroupName(countryCode)
+      };
+    });
+
+    if (!groupedCount) {
+      throw createHttpError('No nodes with resolvable country information', 400);
+    }
+
+    const savedNodes = this.saveNodes(nextNodes);
+    this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
+    const applied = await this.applyNodeChanges(savedNodes);
+    return {
+      groupedCount,
+      skippedCount,
+      groups: this.getGroups(),
+      nodeGroups: this.getNodeGroups(),
+      ...applied
+    };
+  }
+
+  async setNodeCountryOverride(nodeId, countryCode) {
+    const normalizedOverride = normalizeCountryCode(countryCode);
+    const nodes = this.store.getNodes();
+    const index = nodes.findIndex((node) => node.id === nodeId);
+    if (index === -1) {
+      throw createHttpError('Node not found', 404);
+    }
+
+    const nextNode = {
+      ...nodes[index]
+    };
+    if (normalizedOverride) {
+      nextNode.countryCodeOverride = normalizedOverride;
+    } else {
+      delete nextNode.countryCodeOverride;
+    }
+    nodes[index] = nextNode;
+
+    const savedNodes = this.saveNodes(nodes);
+    const nodeRecords = await this.getNodeRecords();
+    const countryByNodeId = new Map(
+      nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
+    );
+    this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
+    const applied = await this.applyNodeChanges(savedNodes);
+    return {
+      node: applied.nodes.find((item) => item.id === nodeId) || null,
+      groups: this.getGroups(),
+      nodeGroups: this.getNodeGroups(),
+      ...applied
+    };
+  }
+
+  syncAutoCountryNodeGroups(nodes, countryByNodeId = null) {
+    const settings = this.getSettingsSnapshot();
+    const allNodeGroups = Array.isArray(settings.nodeGroups) ? settings.nodeGroups : [];
+    const manualNodeGroups = allNodeGroups.filter((group) => !String(group.id || '').startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX));
+    const existingAutoGroupMap = new Map(
+      allNodeGroups
+        .filter((group) => String(group.id || '').startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX))
+        .map((group) => [group.id, group])
+    );
+
+    let resolvedCountryByNodeId = countryByNodeId;
+    if (!resolvedCountryByNodeId) {
+      resolvedCountryByNodeId = new Map();
+      for (const node of nodes || []) {
+        resolvedCountryByNodeId.set(node.id, normalizeCountryCode(node.countryCodeOverride));
+      }
+    }
+
+    const nodeIdsByCountry = new Map();
+    for (const node of nodes || []) {
+      const code = normalizeCountryCode(resolvedCountryByNodeId.get(node.id));
+      if (!code) continue;
+      if (!nodeIdsByCountry.has(code)) {
+        nodeIdsByCountry.set(code, []);
+      }
+      nodeIdsByCountry.get(code).push(node.id);
+    }
+
+    const autoNodeGroups = Array.from(nodeIdsByCountry.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([countryCode, nodeIds]) => {
+        const id = `${AUTO_COUNTRY_NODE_GROUP_PREFIX}${countryCode.toLowerCase()}`;
+        const existing = existingAutoGroupMap.get(id);
+        const selectedNodeId = nodeIds.includes(existing?.selectedNodeId) ? existing.selectedNodeId : (nodeIds[0] || null);
+        return {
+          id,
+          name: buildCountryGroupName(countryCode),
+          type: 'country',
+          countryCode,
+          iconMode: 'auto',
+          iconEmoji: '',
+          note: '',
+          nodeIds,
+          selectedNodeId
+        };
+      });
+
+    const normalizedNodeGroups = normalizeNodeGroups([...manualNodeGroups, ...autoNodeGroups], nodes || []);
+    this.store.saveSettings({
+      ...settings,
+      nodeGroups: normalizedNodeGroups
+    });
+  }
+
+  getNodeGroups() {
+    return this.getSettingsSnapshot().nodeGroups || [];
+  }
+
+  async getNodeGroupsResolved() {
+    const nodes = this.store.getNodes();
+    if (!nodes.length) {
+      return this.getNodeGroups();
+    }
+
+    try {
+      const nodeRecords = await this.getNodeRecords();
+      const countryByNodeId = new Map(
+        nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
+      );
+      this.syncAutoCountryNodeGroups(nodes, countryByNodeId);
+    } catch {
+      // Keep existing node group state when geo enrichment is unavailable.
+    }
+
+    return this.getNodeGroups();
+  }
+
+  async createNodeGroup(payload = {}) {
+    const type = NODE_GROUP_TYPES.includes(String(payload.type || '').trim())
+      ? String(payload.type || '').trim()
+      : 'custom';
+    const countryCode = normalizeCountryCode(payload.countryCode);
+    const name = String(payload.name || '').trim() || (type === 'country' && countryCode ? buildCountryGroupName(countryCode) : '');
+    if (!name) throw createHttpError('Node group name cannot be empty', 400);
+
+    const iconMode = NODE_GROUP_ICON_MODES.includes(String(payload.iconMode || '').trim())
+      ? String(payload.iconMode || '').trim()
+      : 'auto';
+    const iconEmoji = typeof payload.iconEmoji === 'string' ? payload.iconEmoji.trim().slice(0, 4) : '';
+    const note = typeof payload.note === 'string' ? payload.note.trim().slice(0, 200) : '';
+    const nodeIds = Array.isArray(payload.nodeIds) ? payload.nodeIds : [];
+    const selectedNodeId = payload.selectedNodeId == null ? null : String(payload.selectedNodeId).trim();
+
+    const settings = this.getSettingsSnapshot();
+    const currentGroups = settings.nodeGroups || [];
+    const nextGroups = [...currentGroups, {
+      id: createNodeId(),
+      name,
+      type,
+      countryCode,
+      iconMode,
+      iconEmoji,
+      note,
+      nodeIds,
+      selectedNodeId
+    }];
+    return this.updateSettings({ nodeGroups: nextGroups });
+  }
+
+  async updateNodeGroup(groupId, patch = {}) {
+    if (!groupId) {
+      throw createHttpError('Node group id is required', 400);
+    }
+
+    const settings = this.getSettingsSnapshot();
+    const existing = (settings.nodeGroups || []).find((group) => group.id === groupId);
+    if (!existing) {
+      throw createHttpError('Node group not found', 404);
+    }
+
+    const nextGroup = {
+      ...existing,
+      ...(Object.prototype.hasOwnProperty.call(patch, 'name') ? { name: patch.name } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'type') ? { type: patch.type } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'countryCode') ? { countryCode: patch.countryCode } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'iconMode') ? { iconMode: patch.iconMode } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'iconEmoji') ? { iconEmoji: patch.iconEmoji } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'note') ? { note: patch.note } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'selectedNodeId') ? { selectedNodeId: patch.selectedNodeId } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'nodeIds') ? { nodeIds: patch.nodeIds } : {})
+    };
+
+    const nextGroups = (settings.nodeGroups || []).map((group) => group.id === groupId ? nextGroup : group);
+    return this.updateSettings({ nodeGroups: nextGroups });
+  }
+
+  async deleteNodeGroup(groupId) {
+    const settings = this.getSettingsSnapshot();
+    const nextGroups = (settings.nodeGroups || []).filter((group) => group.id !== groupId);
+    return this.updateSettings({
+      nodeGroups: nextGroups,
+      customRules: (settings.customRules || []).map((rule) => rule.action === 'node_group' && rule.nodeGroupId === groupId ? { ...rule, action: 'default', nodeGroupId: null } : rule),
+      rulesets: (settings.rulesets || []).map((ruleset) => ruleset.target === 'node_group' && ruleset.groupId === groupId ? { ...ruleset, target: 'default', groupId: null } : ruleset)
+    });
+  }
+
+  async updateNodeGroupNodes(groupId, nodeIds) {
+    const settings = this.getSettingsSnapshot();
+    const normalizedIds = Array.isArray(nodeIds) ? nodeIds : [];
+    const nextGroups = (settings.nodeGroups || []).map((group) => {
+      if (group.id !== groupId) return group;
+      return {
+        ...group,
+        nodeIds: normalizedIds,
+        selectedNodeId: normalizedIds.includes(group.selectedNodeId) ? group.selectedNodeId : (normalizedIds[0] || null)
+      };
+    });
+    return this.updateSettings({ nodeGroups: nextGroups });
+  }
+
+  async selectNodeGroupNode(groupId, selectedNodeId) {
+    const settings = this.getSettingsSnapshot();
+    const nextGroups = (settings.nodeGroups || []).map((group) => group.id === groupId ? { ...group, selectedNodeId } : group);
+    return this.updateSettings({ nodeGroups: nextGroups });
   }
 
   async syncSubscription(url) {

@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles.css?v=20260402av">
   </head>
   <body>
     <!-- Tauri Window Drag Region Custom Titlebar -->
@@ -32,17 +32,27 @@
           <button class="nav-item" data-target="proxies-view">
             <i class="ph ph-globe-hemisphere-west nav-icon"></i> 节点代理
           </button>
+          <button class="nav-item" data-target="node-groups-view">
+            <i class="ph ph-stack nav-icon"></i> 节点组
+          </button>
           <button class="nav-item" data-target="routing-view">
             <i class="ph ph-git-branch nav-icon"></i> 分流路由
           </button>
           <button class="nav-item" data-target="routing-logs-view">
-            <i class="ph ph-terminal-window nav-icon"></i> 分流日志
+            <i class="ph ph-terminal-window nav-icon"></i>
+            <span class="nav-item-label">分流日志</span>
+            <span id="routing-log-nav-badge" class="nav-item-badge hidden">0</span>
           </button>
           <button class="nav-item" data-target="settings-view">
             <i class="ph ph-gear nav-icon"></i> 全局设置
           </button>
         </nav>
         
+        <div class="sidebar-proxy-endpoint">
+          <label>默认 HTTP 入口</label>
+          <div class="sidebar-proxy-endpoint-value" id="sidebar-default-proxy">http://127.0.0.1:20101</div>
+        </div>
+
         <div class="sidebar-footer">
           <label>系统代理模式</label>
           <select class="system-proxy-mode">
@@ -59,49 +69,49 @@
         <!-- DASHBOARD VIEW -->
         <section id="dashboard-view" class="view active">
           <div class="dashboard-hero">
-            <div class="power-ring">
-              <button id="master-switch" class="master-switch off">
-                <span class="switch-icon">⏻</span>
-              </button>
-            </div>
-            <h2 id="master-status-text">系统代理已关闭</h2>
-            <div class="dashboard-stats">
-              <div class="stat-box">
-                <span class="stat-label">当前运作节点</span>
-                <select id="dash-active-node-select" class="dash-node-select">
-                  <option value="">载入中...</option>
-                </select>
-              </div>
-              <div class="stat-box">
+            <div class="dashboard-core-grid">
+              <section class="dashboard-hero-card">
+                <div class="hero-switch-col">
+                  <div class="power-ring">
+                    <button id="master-switch" class="master-switch off">
+                      <span class="switch-icon">⏻</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="hero-meta-col">
+                  <span class="hero-meta-label">当前运行节点</span>
+                  <select id="dash-active-node-select" class="dash-node-select">
+                    <option value="">载入中...</option>
+                  </select>
+                  <h2 id="master-status-text">系统代理已关闭</h2>
+                </div>
+              </section>
+
+              <section class="dashboard-tile">
                 <span class="stat-label">运行时间</span>
                 <span class="stat-value" id="dash-uptime">00:00:00</span>
-              </div>
-            </div>
-            <div class="proxy-endpoints-card">
-              <div class="proxy-endpoints-header">
-                <span class="proxy-endpoints-title">本地代理入口</span>
-                <span class="proxy-endpoints-hint">系统代理默认走 HTTP，SOCKS5 可供手动配置</span>
-              </div>
-              <div class="proxy-endpoints-grid">
-                <div class="endpoint-box endpoint-box-primary">
-                  <span class="endpoint-label">默认系统代理 (HTTP)</span>
-                  <span class="endpoint-value" id="dash-default-proxy">http://127.0.0.1:20101</span>
-                  <span class="endpoint-note">用于浏览器和遵循系统代理的软件</span>
+              </section>
+
+              <section class="dashboard-tile dashboard-speed-tile">
+                <div class="speed-tile-head">
+                  <span class="stat-label">实时下载速率</span>
+                  <span class="speed-value" id="dash-speed-value">-- KB/s</span>
                 </div>
-                <div class="endpoint-box">
-                  <span class="endpoint-label">SOCKS5 入口</span>
-                  <span class="endpoint-value" id="dash-http-proxy">socks5://127.0.0.1:20100</span>
-                  <span class="endpoint-note" id="dash-http-note">用于手动代理、分流和兼容 SOCKS5 的客户端</span>
+                <div class="speed-sparkline" aria-hidden="true">
+                  <span style="height:30%"></span>
+                  <span style="height:45%"></span>
+                  <span style="height:38%"></span>
+                  <span style="height:62%"></span>
+                  <span style="height:55%"></span>
+                  <span style="height:68%"></span>
+                  <span style="height:52%"></span>
+                  <span style="height:74%"></span>
+                  <span style="height:60%"></span>
+                  <span style="height:70%"></span>
+                  <span style="height:48%"></span>
+                  <span style="height:58%"></span>
                 </div>
-              </div>
-              <div class="geoip-status-card">
-                <div class="geoip-status-copy">
-                  <span class="endpoint-label">GeoIP 国家库</span>
-                  <span class="geoip-status-value" id="dash-geoip-status">准备中</span>
-                  <span class="endpoint-note" id="dash-geoip-note">首次启动会在后台自动下载，失败时不会影响代理功能</span>
-                </div>
-                <button type="button" id="geoip-refresh-btn" class="geoip-refresh-btn">刷新 GeoIP</button>
-              </div>
+              </section>
             </div>
           </div>
         </section>
@@ -210,27 +220,27 @@
             </div>
             <div class="toolbar routing-toolbar">
               <div class="routing-mode-banner" id="routing-mode-banner">路由状态载入中...</div>
-              <div class="btn-group">
-                <button id="ruleset-db-refresh-btn" type="button">更新规则库</button>
-                <select id="routing-ruleset-preset-select" class="route-select routing-preset-select">
-                  <option value="">添加常用规则集...</option>
-                </select>
-                <button id="routing-add-ruleset" type="button">新增自定义规则集</button>
-                <select id="routing-preset-select" class="route-select routing-preset-select">
-                  <option value="">快速插入手写规则...</option>
-                  <option value="proxy-ai">AI 服务 (代理)</option>
-                  <option value="proxy-dev">开发者服务 (代理)</option>
-                  <option value="direct-cn">国内常见域名 (直连)</option>
-                  <option value="mixed-starter">混合分流起步模板</option>
-                </select>
-                <button id="routing-add-rule" type="button">新增规则</button>
-              </div>
-            </div>
-            <div class="routing-db-status-card">
-              <div class="routing-db-status-copy">
-                <span class="endpoint-label">规则数据库</span>
-                <span class="geoip-status-value" id="routing-db-status">准备中</span>
-                <span class="endpoint-note" id="routing-db-note">用于国内直连 / 国外代理的数据库规则</span>
+              <div class="routing-toolbar-row">
+                <div class="routing-toolbar-maintenance">
+                  <button type="button" id="geoip-refresh-btn" class="btn-outline">刷新 GeoIP</button>
+                  <button id="ruleset-db-refresh-btn" type="button" class="btn-outline">更新规则库</button>
+                  <span class="routing-db-inline-note" id="routing-geoip-note">GeoIP: --</span>
+                  <span class="routing-db-inline-note" id="routing-db-note">上次更新 --</span>
+                </div>
+                <div class="routing-toolbar-actions">
+                  <select id="routing-ruleset-preset-select" class="route-select routing-preset-select">
+                    <option value="">添加常用规则集...</option>
+                  </select>
+                  <button id="routing-add-ruleset" type="button">新增自定义规则集</button>
+                  <select id="routing-preset-select" class="route-select routing-preset-select">
+                    <option value="">快速插入手写规则...</option>
+                    <option value="proxy-ai">AI 服务 (代理)</option>
+                    <option value="proxy-dev">开发者服务 (代理)</option>
+                    <option value="direct-cn">国内常见域名 (直连)</option>
+                    <option value="mixed-starter">混合分流起步模板</option>
+                  </select>
+                  <button id="routing-add-rule" type="button">新增规则</button>
+                </div>
               </div>
             </div>
             <div class="routing-list flex-fill">
@@ -249,6 +259,31 @@
               <button type="button" class="btn-primary" id="routing-save-btn">保存路由表</button>
             </footer>
           </div>
+        </section>
+
+        <section id="node-groups-view" class="view">
+          <div class="node-groups-toolbar">
+            <div class="node-groups-toolbar-meta">
+              <span id="node-groups-last-test" class="node-groups-meta-badge">上次测速: --</span>
+              <span id="node-groups-next-test" class="node-groups-meta-badge">下次测速: --</span>
+            </div>
+            <div class="node-groups-search-wrap">
+              <input id="node-group-search-input" class="node-groups-search-input" type="search" placeholder="搜索国家或分组" autocomplete="off">
+              <span id="node-group-search-count" class="node-groups-search-count"></span>
+            </div>
+            <div class="btn-group">
+              <label class="node-groups-interval-label" for="node-group-auto-interval">自动测速</label>
+              <select id="node-group-auto-interval" class="modal-field-input node-groups-interval-select">
+                <option value="60">1 分钟</option>
+                <option value="180">3 分钟</option>
+                <option value="300">5 分钟</option>
+                <option value="600">10 分钟</option>
+                <option value="900">15 分钟</option>
+              </select>
+              <button id="node-group-add-btn" type="button">新增节点组</button>
+            </div>
+          </div>
+          <div id="node-groups-list" class="routing-rules"></div>
         </section>
 
         <section id="routing-logs-view" class="view">
@@ -291,6 +326,15 @@
                     <input type="text" id="routing-log-search" class="routing-log-search-input" placeholder="检索命中规则，例如 corp.local / YouTube / GitHub" autocomplete="off">
                     <button type="button" id="routing-log-search-clear" class="routing-log-search-clear hidden" aria-label="清除日志搜索">×</button>
                   </div>
+                  <div class="routing-log-view-switch" role="tablist" aria-label="日志视图切换">
+                    <button type="button" id="routing-log-view-stats" class="routing-log-view-btn active" data-routing-view-mode="stats">统计视图</button>
+                    <button type="button" id="routing-log-view-timeline" class="routing-log-view-btn" data-routing-view-mode="timeline">时间轴</button>
+                  </div>
+                  <select id="routing-log-kind-filter" class="route-select routing-log-kind-filter" aria-label="筛选命中类型">
+                    <option value="all">全部类型</option>
+                    <option value="ruleset">仅规则集</option>
+                    <option value="rule">仅手写规则</option>
+                  </select>
                   <div id="routing-log-result-count" class="routing-log-result-count"></div>
                 </div>
                 <div class="observability-content">
@@ -347,6 +391,10 @@
             <label class="modal-field-label" for="edit-node-group">分组（可选）</label>
             <input type="text" id="edit-node-group" class="modal-field-input" placeholder="留空则归入未分组" autocomplete="off">
           </div>
+          <div style="margin-bottom:0.75rem;">
+            <label class="modal-field-label" for="edit-node-country-override">国家代码（可选，ISO2）</label>
+            <input type="text" id="edit-node-country-override" class="modal-field-input" placeholder="例如 JP / US，留空使用 GeoIP" maxlength="2" autocomplete="off">
+          </div>
           <textarea id="edit-json-input" class="json-editor" spellcheck="false"></textarea>
         </div>
         <div class="modal-footer">
@@ -389,6 +437,70 @@
       </div>
     </div>
 
+    <!-- Node Group Config Modal -->
+    <div id="node-group-modal" class="modal-overlay">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header">
+          <h2 class="modal-title" id="node-group-modal-title">新增节点组</h2>
+          <button type="button" class="btn-icon modal-close-btn" id="node-group-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="routing-rule-modal-grid">
+            <label>
+              <span class="modal-field-label">节点组名称</span>
+              <input type="text" id="node-group-modal-name" class="modal-field-input" placeholder="例如 日本分流组" autocomplete="off">
+            </label>
+            <label>
+              <span class="modal-field-label">节点组类型</span>
+              <select id="node-group-modal-type" class="modal-field-input">
+                <option value="custom">自定义组</option>
+                <option value="country">国家组</option>
+              </select>
+            </label>
+          </div>
+          <div class="routing-rule-modal-grid" style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">国家代码（ISO2）</span>
+              <input type="text" id="node-group-modal-country" class="modal-field-input" placeholder="例如 JP / US" maxlength="2" autocomplete="off">
+            </label>
+            <label>
+              <span class="modal-field-label">图标样式</span>
+              <select id="node-group-modal-icon-mode" class="modal-field-input">
+                <option value="auto">自动国旗</option>
+                <option value="emoji">自定义 Emoji</option>
+                <option value="none">不显示图标</option>
+              </select>
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;" id="node-group-modal-emoji-wrap" class="hidden">
+            <label>
+              <span class="modal-field-label">自定义 Emoji</span>
+              <input type="text" id="node-group-modal-icon-emoji" class="modal-field-input" placeholder="例如 🔥 / 🚀" maxlength="4" autocomplete="off">
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">默认生效节点（可选）</span>
+              <select id="node-group-modal-default-node" class="modal-field-input">
+                <option value="">创建后再选择</option>
+              </select>
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">备注（可选）</span>
+              <input type="text" id="node-group-modal-note" class="modal-field-input" placeholder="例如 流媒体优先" maxlength="200" autocomplete="off">
+            </label>
+          </div>
+          <p id="node-group-modal-error" class="state-msg error hidden" style="margin-top:0.9rem;"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="node-group-modal-cancel">取消</button>
+          <button type="button" class="btn-primary" id="node-group-modal-confirm">保存</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Routing Rule Modal -->
     <div id="routing-rule-modal" class="modal-overlay">
       <div class="modal" style="max-width:560px;">
@@ -413,12 +525,13 @@
                 <option value="default">默认代理</option>
                 <option value="direct">直连</option>
                 <option value="node">指定节点</option>
+                <option value="node_group">节点组</option>
               </select>
             </label>
           </div>
           <div style="margin-top:0.9rem;" id="routing-rule-modal-node-field" class="hidden">
             <label>
-              <span class="modal-field-label">指定节点</span>
+              <span class="modal-field-label">指定节点 / 节点组</span>
               <select id="routing-rule-modal-node" class="modal-field-input">
                 <option value="">选择节点</option>
               </select>
@@ -448,6 +561,6 @@
     <!-- Bubble Toast Container -->
     <div id="toast-container" class="toast-container"></div>
     
-    <script type="module" src="/app.js?v=20260402c"></script>
+    <script type="module" src="/app.js?v=20260402av"></script>
   </body>
 </html>

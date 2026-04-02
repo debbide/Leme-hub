@@ -22,11 +22,9 @@ const coreStatusIndicator = document.querySelector('#core-status-indicator');
 const systemProxyModeSelect = document.querySelector('.system-proxy-mode');
 const dashActiveNodeSelect = document.querySelector('#dash-active-node-select');
 const dashUptime = document.querySelector('#dash-uptime');
-const dashDefaultProxy = document.querySelector('#dash-default-proxy');
-const dashHttpProxy = document.querySelector('#dash-http-proxy');
-const dashHttpNote = document.querySelector('#dash-http-note');
-const dashGeoIpStatus = document.querySelector('#dash-geoip-status');
-const dashGeoIpNote = document.querySelector('#dash-geoip-note');
+const dashSpeedValue = document.querySelector('#dash-speed-value');
+const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
+const routingGeoIpNote = document.querySelector('#routing-geoip-note');
 const geoIpRefreshBtn = document.querySelector('#geoip-refresh-btn');
 const autoStartToggle = document.querySelector('#auto-start-toggle');
 const routingModeBanner = document.querySelector('#routing-mode-banner');
@@ -48,7 +46,11 @@ const routingLogSystemProxy = document.querySelector('#routing-log-system-proxy'
 const routingLogCoreStatus = document.querySelector('#routing-log-core-status');
 const routingLogSearchInput = document.querySelector('#routing-log-search');
 const routingLogSearchClearBtn = document.querySelector('#routing-log-search-clear');
+const routingLogKindFilter = document.querySelector('#routing-log-kind-filter');
+const routingLogViewStatsBtn = document.querySelector('#routing-log-view-stats');
+const routingLogViewTimelineBtn = document.querySelector('#routing-log-view-timeline');
 const routingLogResultCount = document.querySelector('#routing-log-result-count');
+const routingLogNavBadge = document.querySelector('#routing-log-nav-badge');
 const routingRuleModal = document.querySelector('#routing-rule-modal');
 const routingRuleModalTitle = document.querySelector('#routing-rule-modal-title');
 const routingRuleModalType = document.querySelector('#routing-rule-modal-type');
@@ -64,9 +66,33 @@ const routingRuleModalCancel = document.querySelector('#routing-rule-modal-cance
 const rulesetDbRefreshBtn = document.querySelector('#ruleset-db-refresh-btn');
 const routingDbStatus = document.querySelector('#routing-db-status');
 const routingDbNote = document.querySelector('#routing-db-note');
+const nodeGroupsList = document.querySelector('#node-groups-list');
+const nodeGroupAddBtn = document.querySelector('#node-group-add-btn');
+const nodeGroupModal = document.querySelector('#node-group-modal');
+const nodeGroupModalTitle = document.querySelector('#node-group-modal-title');
+const nodeGroupModalName = document.querySelector('#node-group-modal-name');
+const nodeGroupModalType = document.querySelector('#node-group-modal-type');
+const nodeGroupModalCountry = document.querySelector('#node-group-modal-country');
+const nodeGroupModalIconMode = document.querySelector('#node-group-modal-icon-mode');
+const nodeGroupModalEmojiWrap = document.querySelector('#node-group-modal-emoji-wrap');
+const nodeGroupModalIconEmoji = document.querySelector('#node-group-modal-icon-emoji');
+const nodeGroupModalDefaultNode = document.querySelector('#node-group-modal-default-node');
+const nodeGroupModalNote = document.querySelector('#node-group-modal-note');
+const nodeGroupModalError = document.querySelector('#node-group-modal-error');
+const nodeGroupModalConfirm = document.querySelector('#node-group-modal-confirm');
+const nodeGroupModalCancel = document.querySelector('#node-group-modal-cancel');
+const nodeGroupModalClose = document.querySelector('#node-group-modal-close');
+const nodeGroupsLastTestEl = document.querySelector('#node-groups-last-test');
+const nodeGroupsNextTestEl = document.querySelector('#node-groups-next-test');
+const nodeGroupAutoIntervalSelect = document.querySelector('#node-group-auto-interval');
+const nodeGroupSearchInput = document.querySelector('#node-group-search-input');
+const nodeGroupSearchCount = document.querySelector('#node-group-search-count');
 
 let currentCoreState = null;
 let uptimeTimer = null;
+let trafficPoller = null;
+let lastTrafficSample = null;
+let speedHistory = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 let geoIpStatus = null;
 let rulesetDatabaseStatus = null;
 let routingRules = [];
@@ -77,17 +103,44 @@ let routingLoaded = false;
 let routingLoadingState = false;
 let routingSavingState = false;
 let routingDirty = false;
+let routingSavedFlashUntil = 0;
 let routingObservabilityEntries = [];
 let routingHits = [];
+let routingHitCountSnapshot = new Map();
+let routingHitFirstSeenMap = new Map();
+let routingLogSeenIds = new Set();
+let routingLogUnreadCount = 0;
+let routingLogBadgeInitialized = false;
 let routingStatusPoller = null;
 let routingLogSearchQuery = '';
+let routingLogKindQuery = 'all';
+let routingLogViewMode = 'stats';
 let routingBuiltinRulesets = [];
 let routingNodeOptions = [];
+let nodeGroups = [];
+let nodeGroupExpandedIds = new Set();
+let editingNodeGroupId = null;
+let nodeGroupLatencyMap = new Map();
+let nodeGroupTestingNodeIds = new Set();
+let nodeGroupTestingGroupIds = new Set();
+let nodeGroupAutoTestTimer = null;
+let nodeGroupAutoTestStatusTimer = null;
+let nodeGroupLastTestAt = null;
+let nodeGroupAutoTestIntervalMs = 5 * 60 * 1000;
+let nodeGroupSavingTestingState = false;
+let nodeGroupAutoSwitchState = new Map();
+let nodeGroupSearchQuery = '';
+let nodeGroupSortByLatency = true;
 let editingRoutingRuleId = null;
 
+const NODE_GROUP_SWITCH_DELTA_MS = 120;
+const NODE_GROUP_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
+const NODE_GROUP_SWITCH_FAIL_THRESHOLD = 3;
+const TRAFFIC_POLL_INTERVAL_MS = 2000;
+
 const ROUTING_RULE_TYPES = ['domain', 'domain_suffix', 'domain_keyword', 'ip_cidr'];
-const ROUTING_RULE_ACTIONS = ['default', 'direct', 'node'];
-const ROUTING_RULESET_TARGETS = ['default', 'direct', 'node'];
+const ROUTING_RULE_ACTIONS = ['default', 'direct', 'node', 'node_group'];
+const ROUTING_RULESET_TARGETS = ['default', 'direct', 'node', 'node_group'];
 let routingRuleCounter = 0;
 let routingRulesetCounter = 0;
 let routingRulesetEntryCounter = 0;
@@ -98,6 +151,7 @@ const createRoutingRuleDraft = (rule = {}) => ({
   value: String(rule.value || ''),
   action: ROUTING_RULE_ACTIONS.includes(rule.action) ? rule.action : 'direct',
   nodeId: String(rule.nodeId || ''),
+  nodeGroupId: String(rule.nodeGroupId || ''),
   note: String(rule.note || '')
 });
 
@@ -116,6 +170,7 @@ const createRoutingRulesetDraft = (ruleset = {}) => ({
   enabled: ruleset.enabled !== false,
   target: ROUTING_RULESET_TARGETS.includes(ruleset.target) ? ruleset.target : 'default',
   nodeId: ruleset.nodeId || '',
+  groupId: ruleset.groupId || '',
   entries: Array.isArray(ruleset.entries) ? ruleset.entries.map((entry) => createRoutingRulesetEntryDraft(entry)) : [],
   note: String(ruleset.note || '')
 });
@@ -158,6 +213,9 @@ const validateRoutingRule = (rule) => {
   }
   if (rule.action === 'node' && !String(rule.nodeId || '').trim()) {
     errors.nodeId = '请选择节点';
+  }
+  if (rule.action === 'node_group' && !String(rule.nodeGroupId || '').trim()) {
+    errors.nodeGroupId = '请选择节点组';
   }
   if (!String(rule.value || '').trim()) {
     errors.value = '匹配内容不能为空';
@@ -229,6 +287,9 @@ const validateRoutingRuleset = (ruleset) => {
   if (ruleset.target === 'node' && !String(ruleset.nodeId || '').trim()) {
     errors.nodeId = '请选择一个节点';
   }
+  if (ruleset.target === 'node_group' && !String(ruleset.groupId || '').trim()) {
+    errors.groupId = '请选择一个节点组';
+  }
   if (ruleset.kind === 'builtin') {
     if (!String(ruleset.presetId || '').trim()) {
       errors.presetId = '请选择内置规则集';
@@ -281,13 +342,21 @@ const normalizeRoutingRule = (rule) => ({
   value: String(rule.value || '').trim(),
   action: String(rule.action || '').trim(),
   nodeId: String(rule.nodeId || '').trim(),
+  nodeGroupId: String(rule.nodeGroupId || '').trim(),
   note: String(rule.note || '').trim()
 });
 
 const updateRoutingSaveState = () => {
   if (!routingSaveBtn) return;
+  const inSavedFlash = !routingDirty && !routingSavingState && Date.now() < routingSavedFlashUntil;
   routingSaveBtn.disabled = routingSavingState || routingLoadingState || !routingDirty;
-  routingSaveBtn.textContent = routingSavingState ? '保存中...' : (routingDirty ? '保存路由表' : '路由表已保存');
+  routingSaveBtn.textContent = routingSavingState
+    ? '保存中...'
+    : routingDirty
+      ? '保存路由表'
+      : inSavedFlash
+        ? '已保存'
+        : '保存路由表';
 };
 
 const renderRoutingRulesetPresetOptions = () => {
@@ -306,12 +375,613 @@ const extractRoutingObservability = (core) => {
 const loadRoutingHits = async () => {
   try {
     const payload = await requestJson('/api/core/routing-hits');
-    routingHits = payload.hits || [];
+    const incomingHits = payload.hits || [];
+    const nextFirstSeen = new Map();
+    routingHits = incomingHits.map((hit) => {
+      const stableId = String(hit.id || `${hit.kind || ''}:${hit.name || ''}:${hit.host || ''}:${hit.port || ''}:${hit.outbound || ''}`);
+      const firstSeen = routingHitFirstSeenMap.get(stableId) || new Date().toISOString();
+      nextFirstSeen.set(stableId, firstSeen);
+      return {
+        ...hit,
+        id: stableId,
+        timestamp: hit.timestamp || firstSeen
+      };
+    });
+    routingHitFirstSeenMap = nextFirstSeen;
+
+    const logsViewActive = document.getElementById('routing-logs-view')?.classList.contains('active');
+    if (!routingLogBadgeInitialized) {
+      markRoutingHitsAsSeen(routingHits);
+      routingLogBadgeInitialized = true;
+      updateRoutingLogNavBadge(false);
+    } else if (logsViewActive) {
+      markRoutingHitsAsSeen(routingHits);
+      updateRoutingLogNavBadge(false);
+    } else {
+      const unseen = routingHits.filter((hit) => hit?.id && !routingLogSeenIds.has(String(hit.id)));
+      routingLogUnreadCount = unseen.length;
+      updateRoutingLogNavBadge(unseen.length > 0);
+    }
+
     routingObservabilityEntries = routingHits.map((hit) => `[Routing Hit] ${hit.kind}:${hit.name} -> ${hit.outboundName || hit.outbound || hit.target} | ${hit.host}`);
     renderRoutingObservability();
   } catch {
     // fall back to log-derived entries
   }
+};
+
+const loadNodeGroups = async () => {
+  if (!nodeGroupsList) return;
+  const payload = await requestJson('/api/node-groups');
+  nodeGroups = payload.nodeGroups || [];
+  nodeGroupExpandedIds = new Set(Array.from(nodeGroupExpandedIds).filter((id) => nodeGroups.some((group) => group.id === id)));
+  nodeGroupAutoSwitchState = new Map(Array.from(nodeGroupAutoSwitchState.entries()).filter(([id]) => nodeGroups.some((group) => group.id === id)));
+  routingNodeOptions = payload.nodes || routingNodeOptions;
+  const testing = payload.nodeGroupTesting || {};
+  const intervalSec = Number.parseInt(testing.intervalSec, 10);
+  if (Number.isInteger(intervalSec) && intervalSec > 0) {
+    nodeGroupAutoTestIntervalMs = intervalSec * 1000;
+    if (nodeGroupAutoIntervalSelect) {
+      nodeGroupAutoIntervalSelect.value = String(intervalSec);
+    }
+  }
+  const latencyCache = testing.latencyCache || {};
+  const cacheResults = latencyCache.results && typeof latencyCache.results === 'object' ? latencyCache.results : {};
+  nodeGroupLatencyMap = new Map(Object.entries(cacheResults));
+  nodeGroupLastTestAt = latencyCache.updatedAt ? new Date(latencyCache.updatedAt) : null;
+  renderNodeGroupTestMeta();
+  renderNodeGroups();
+};
+
+const formatClockTime = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    return '--';
+  }
+  return value.toLocaleTimeString('zh-CN', { hour12: false });
+};
+
+const formatDistance = (targetDate) => {
+  if (!(targetDate instanceof Date) || Number.isNaN(targetDate.getTime())) {
+    return '--';
+  }
+  const diffMs = targetDate.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return '即将';
+  }
+  const totalSec = Math.ceil(diffMs / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min <= 0) {
+    return `${sec} 秒`;
+  }
+  return `${min} 分 ${sec} 秒`;
+};
+
+const renderNodeGroupTestMeta = () => {
+  if (nodeGroupsLastTestEl) {
+    nodeGroupsLastTestEl.textContent = `上次测速: ${formatClockTime(nodeGroupLastTestAt)}`;
+  }
+
+  if (nodeGroupsNextTestEl) {
+    if (!nodeGroupLastTestAt) {
+      nodeGroupsNextTestEl.textContent = '下次测速: 待触发';
+      return;
+    }
+    const nextAt = new Date(nodeGroupLastTestAt.getTime() + nodeGroupAutoTestIntervalMs);
+    nodeGroupsNextTestEl.textContent = `下次测速: ${formatClockTime(nextAt)}（${formatDistance(nextAt)}）`;
+  }
+};
+
+const serializeNodeGroupLatencyCache = () => {
+  const results = {};
+  nodeGroupLatencyMap.forEach((value, key) => {
+    if (!key || !value || typeof value !== 'object') {
+      return;
+    }
+    results[key] = {
+      ok: Boolean(value.ok),
+      latencyMs: value.latencyMs == null ? null : Number.parseInt(value.latencyMs, 10),
+      error: value.error || null,
+      updatedAt: value.updatedAt || new Date().toISOString()
+    };
+  });
+
+  return {
+    updatedAt: nodeGroupLastTestAt ? nodeGroupLastTestAt.toISOString() : null,
+    results
+  };
+};
+
+const persistNodeGroupTestingState = async () => {
+  if (nodeGroupSavingTestingState) {
+    return;
+  }
+  nodeGroupSavingTestingState = true;
+  try {
+    await requestJson('/api/system/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        nodeGroupAutoTestIntervalSec: Math.max(60, Math.round(nodeGroupAutoTestIntervalMs / 1000)),
+        nodeGroupLatencyCache: serializeNodeGroupLatencyCache()
+      })
+    });
+  } catch {
+    // keep UI responsive even when persistence is unavailable
+  } finally {
+    nodeGroupSavingTestingState = false;
+  }
+};
+
+const getNodeGroupSwitchState = (groupId) => {
+  const existing = nodeGroupAutoSwitchState.get(groupId) || {
+    lastSwitchAt: 0,
+    consecutiveCurrentFailures: 0
+  };
+  nodeGroupAutoSwitchState.set(groupId, existing);
+  return existing;
+};
+
+const applyLatencyPrioritySwitch = async (group, testResults = [], options = {}) => {
+  if (!group || !group.id || !Array.isArray(group.nodeIds) || !group.nodeIds.length) {
+    return;
+  }
+
+  const resultById = new Map(testResults.map((item) => [item.id, item]));
+  const candidateResults = group.nodeIds
+    .map((nodeId) => resultById.get(nodeId))
+    .filter((item) => item && item.ok && Number.isFinite(Number(item.latencyMs)))
+    .sort((a, b) => Number(a.latencyMs) - Number(b.latencyMs));
+
+  if (!candidateResults.length) {
+    return;
+  }
+
+  const state = getNodeGroupSwitchState(group.id);
+  const currentId = String(group.selectedNodeId || '');
+  const currentResult = currentId ? resultById.get(currentId) : null;
+  const best = candidateResults[0];
+  let shouldSwitch = false;
+  let reason = '';
+
+  if (!currentId || !group.nodeIds.includes(currentId)) {
+    shouldSwitch = true;
+    reason = 'missing-current';
+  } else if (!currentResult || !currentResult.ok) {
+    state.consecutiveCurrentFailures += 1;
+    if (state.consecutiveCurrentFailures >= NODE_GROUP_SWITCH_FAIL_THRESHOLD && best.id !== currentId) {
+      shouldSwitch = true;
+      reason = 'current-failed';
+    }
+  } else {
+    state.consecutiveCurrentFailures = 0;
+    const now = Date.now();
+    const cooldownPassed = now - state.lastSwitchAt >= NODE_GROUP_SWITCH_COOLDOWN_MS;
+    const gain = Number(currentResult.latencyMs) - Number(best.latencyMs);
+    if (best.id !== currentId && cooldownPassed && gain >= NODE_GROUP_SWITCH_DELTA_MS) {
+      shouldSwitch = true;
+      reason = 'latency-better';
+    }
+  }
+
+  if (!shouldSwitch || best.id === currentId) {
+    return;
+  }
+
+  const payload = await requestJson('/api/node-groups/selection', {
+    method: 'PUT',
+    body: JSON.stringify({ id: group.id, selectedNodeId: best.id })
+  });
+  nodeGroups = payload.nodeGroups || nodeGroups;
+  state.lastSwitchAt = Date.now();
+
+  if (!options.silent) {
+    const bestNode = routingNodeOptions.find((node) => node.id === best.id);
+    showToast(`延时优先切换：${group.name} -> ${bestNode?.name || best.id} (${best.latencyMs} ms)`, 'success');
+  }
+  if (reason) {
+    // reserved for observability/log extension
+  }
+};
+
+const formatNodeGroupLatencyBadge = (nodeId) => {
+  if (nodeGroupTestingNodeIds.has(nodeId)) {
+    return { text: '测试中...', cls: 'is-testing', title: '' };
+  }
+
+  const result = nodeGroupLatencyMap.get(nodeId);
+  if (!result) {
+    return { text: '-- ms', cls: '', title: '' };
+  }
+
+  if (!result.ok) {
+    return { text: '失败', cls: 'is-error', title: result.error || '测速失败' };
+  }
+
+  const latency = Number(result.latencyMs);
+  const cls = latency < 200 ? 'is-good' : (latency <= 500 ? 'is-warn' : 'is-bad');
+  return { text: `${latency} ms`, cls, title: '' };
+};
+
+const applyNodeGroupLatencyResults = (results = []) => {
+  results.forEach((result) => {
+    nodeGroupLatencyMap.set(result.id, {
+      ok: Boolean(result.ok),
+      latencyMs: result.latencyMs,
+      error: result.error || null,
+      updatedAt: new Date().toISOString()
+    });
+  });
+};
+
+const getExistingNodeIdSet = () => new Set((routingNodeOptions || []).map((node) => node.id));
+
+const getEffectiveGroupNodeIds = (group) => {
+  const existing = getExistingNodeIdSet();
+  return (group?.nodeIds || []).filter((id) => id && existing.has(id));
+};
+
+const testNodeGroupNodes = async (groupId, options = {}) => {
+  const group = nodeGroups.find((item) => item.id === groupId);
+  if (!group) {
+    return;
+  }
+  const nodeIds = getEffectiveGroupNodeIds(group);
+  if (!nodeIds.length) {
+    if (!options.silent) showToast('该节点组暂无可测速节点', 'info');
+    return;
+  }
+
+  if (nodeGroupTestingGroupIds.has(groupId)) {
+    return;
+  }
+
+  nodeGroupTestingGroupIds.add(groupId);
+  nodeIds.forEach((id) => nodeGroupTestingNodeIds.add(id));
+  renderNodeGroups();
+
+  try {
+    const payload = await requestJson('/api/nodes/test-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids: nodeIds })
+    });
+    applyNodeGroupLatencyResults(payload.results || []);
+    await applyLatencyPrioritySwitch(group, payload.results || [], options);
+    nodeGroupLastTestAt = new Date();
+    renderNodeGroupTestMeta();
+    persistNodeGroupTestingState();
+    if (payload.core) {
+      updateCoreStatus(payload.core);
+    }
+    if (!options.silent) {
+      const successCount = (payload.results || []).filter((item) => item.ok).length;
+      showToast(`分组测速完成：成功 ${successCount}/${nodeIds.length}`, successCount === nodeIds.length ? 'success' : 'info');
+    }
+  } catch (error) {
+    if (!options.silent) {
+      showToast(`分组测速失败: ${error.message}`, 'error');
+    }
+  } finally {
+    nodeGroupTestingGroupIds.delete(groupId);
+    nodeIds.forEach((id) => nodeGroupTestingNodeIds.delete(id));
+    renderNodeGroups();
+  }
+};
+
+const testSingleNodeInGroup = async (nodeId, options = {}) => {
+  if (!nodeId) {
+    return;
+  }
+  if (nodeGroupTestingNodeIds.has(nodeId)) {
+    return;
+  }
+
+  nodeGroupTestingNodeIds.add(nodeId);
+  renderNodeGroups();
+
+  try {
+    const payload = await requestJson('/api/nodes/test', {
+      method: 'POST',
+      body: JSON.stringify({ id: nodeId })
+    });
+    applyNodeGroupLatencyResults([{ id: nodeId, ok: true, latencyMs: payload.latencyMs }]);
+    nodeGroupLastTestAt = new Date();
+    renderNodeGroupTestMeta();
+    persistNodeGroupTestingState();
+    if (payload.core) {
+      updateCoreStatus(payload.core);
+    }
+    if (!options.silent) {
+      showToast(`节点测速完成：${payload.latencyMs} ms`, 'success');
+    }
+  } catch (error) {
+    applyNodeGroupLatencyResults([{ id: nodeId, ok: false, error: error.message || '未知错误' }]);
+    nodeGroupLastTestAt = new Date();
+    renderNodeGroupTestMeta();
+    persistNodeGroupTestingState();
+    if (!options.silent) {
+      showToast(`节点测速失败: ${error.message || '未知错误'}`, 'error');
+    }
+  } finally {
+    nodeGroupTestingNodeIds.delete(nodeId);
+    renderNodeGroups();
+  }
+};
+
+const stopNodeGroupAutoTest = () => {
+  if (nodeGroupAutoTestTimer) {
+    clearInterval(nodeGroupAutoTestTimer);
+    nodeGroupAutoTestTimer = null;
+  }
+  if (nodeGroupAutoTestStatusTimer) {
+    clearInterval(nodeGroupAutoTestStatusTimer);
+    nodeGroupAutoTestStatusTimer = null;
+  }
+};
+
+const startNodeGroupAutoTest = () => {
+  if (nodeGroupAutoTestTimer) {
+    return;
+  }
+
+  nodeGroupAutoTestTimer = setInterval(() => {
+    nodeGroups.forEach((group) => {
+      if (getEffectiveGroupNodeIds(group).length) {
+        testNodeGroupNodes(group.id, { silent: true });
+      }
+    });
+  }, nodeGroupAutoTestIntervalMs);
+
+  nodeGroupAutoTestStatusTimer = setInterval(() => {
+    renderNodeGroupTestMeta();
+  }, 1000);
+  renderNodeGroupTestMeta();
+};
+
+const runNodeGroupAutoBackfillIfNeeded = async () => {
+  const pendingGroups = nodeGroups.filter((group) => {
+    const effectiveNodeIds = getEffectiveGroupNodeIds(group);
+    if (!effectiveNodeIds.length) {
+      return false;
+    }
+    const hasMeasuredNode = effectiveNodeIds.some((nodeId) => nodeGroupLatencyMap.has(nodeId));
+    return !hasMeasuredNode;
+  });
+
+  for (const group of pendingGroups) {
+    await testNodeGroupNodes(group.id, { silent: true });
+  }
+};
+
+const renderNodeGroups = () => {
+  if (!nodeGroupsList) return;
+  if (!nodeGroups.length) {
+    nodeGroupsList.innerHTML = '<div class="routing-section-empty">还没有节点组，新增后可以把规则指向节点组当前选中节点。</div>';
+    return;
+  }
+  const sortedGroups = [...nodeGroups].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'));
+  const countryNameByCode = new Intl.DisplayNames(['zh-CN', 'en'], { type: 'region' });
+  const parseCountryMeta = (group) => {
+    const name = String(group?.name || '');
+    const id = String(group?.id || '');
+    const fromName = name.match(/^国家\/([A-Za-z]{2})$/u)?.[1];
+    const fromId = id.match(/^country-auto-([a-z]{2})$/u)?.[1];
+    const fromConfig = String(group?.countryCode || '').trim();
+    const code = String(fromConfig || fromName || fromId || '').toUpperCase();
+    if (!/^[A-Z]{2}$/u.test(code)) return null;
+    return {
+      code,
+      flag: flagFromCountryCode(code),
+      name: countryNameByCode.of(code) || code
+    };
+  };
+
+  const isCountryGroup = (group) => {
+    const name = String(group?.name || '');
+    const id = String(group?.id || '');
+    return /^国家\/[A-Za-z]{2}$/u.test(name) || /^country-auto-[a-z]{2}$/u.test(id);
+  };
+  const countryGroups = sortedGroups.filter(isCountryGroup);
+  const customGroups = sortedGroups.filter((group) => !isCountryGroup(group));
+  const orderedGroups = [...countryGroups, ...customGroups];
+  const query = nodeGroupSearchQuery.trim().toLowerCase();
+  const filteredGroups = orderedGroups.filter((group) => {
+    if (!query) {
+      return true;
+    }
+    const haystacks = [
+      getNodeGroupDisplayName(group),
+      group.name,
+      group.note,
+      group.countryCode
+    ].map((value) => String(value || '').toLowerCase());
+    return haystacks.some((value) => value.includes(query));
+  });
+
+  if (nodeGroupSearchCount) {
+    nodeGroupSearchCount.textContent = query
+      ? `${filteredGroups.length}/${orderedGroups.length}`
+      : `${orderedGroups.length}`;
+  }
+
+  if (!filteredGroups.length) {
+    nodeGroupsList.innerHTML = '<div class="routing-section-empty">没有匹配的节点组</div>';
+    return;
+  }
+
+  const renderGroupCard = (group) => {
+        const countryMeta = parseCountryMeta(group);
+        let groupNodes = group.nodeIds
+          .map((nodeId) => routingNodeOptions.find((item) => item.id === nodeId))
+          .filter(Boolean);
+        if (nodeGroupSortByLatency) {
+          groupNodes = groupNodes.slice().sort((a, b) => {
+            const aa = nodeGroupLatencyMap.get(a.id);
+            const bb = nodeGroupLatencyMap.get(b.id);
+            const ar = aa && aa.ok ? Number(aa.latencyMs) : Number.POSITIVE_INFINITY;
+            const br = bb && bb.ok ? Number(bb.latencyMs) : Number.POSITIVE_INFINITY;
+            return ar - br;
+          });
+        }
+        const selectedNode = groupNodes.find((node) => node.id === group.selectedNodeId);
+        const isAutoCountry = /^country-auto-/u.test(String(group.id || ''));
+        const iconMode = String(group.iconMode || 'auto');
+        const iconEmoji = String(group.iconEmoji || '').trim();
+        const groupNote = String(group.note || '').trim();
+        const effectiveNodeIds = getEffectiveGroupNodeIds(group);
+        const totalNodeCount = effectiveNodeIds.length;
+        const testedCount = effectiveNodeIds.filter((nodeId) => nodeGroupLatencyMap.has(nodeId)).length;
+        const healthyCount = effectiveNodeIds.filter((nodeId) => nodeGroupLatencyMap.get(nodeId)?.ok).length;
+        const availabilityRatio = totalNodeCount ? Math.round((healthyCount / totalNodeCount) * 100) : 0;
+        const currentLatencyBadge = selectedNode ? formatNodeGroupLatencyBadge(selectedNode.id) : null;
+        const availabilityClass = availabilityRatio >= 80 ? 'is-good' : availabilityRatio >= 40 ? 'is-warn' : 'is-bad';
+        const iconMarkup = iconMode === 'none'
+          ? '<span class="node-group-country-flag"><span class="node-group-country-flag-fallback">◻</span></span>'
+          : iconMode === 'emoji' && iconEmoji
+            ? `<span class="node-group-country-flag"><span class="node-group-country-flag-fallback" style="display:inline-flex;">${escapeHtml(iconEmoji)}</span></span>`
+            : countryMeta
+              ? `<span class="node-group-country-flag" title="${escapeHtml(countryMeta.code)}">
+                   <img class="node-group-country-flag-img" src="https://flagcdn.com/24x18/${countryMeta.code.toLowerCase()}.png" alt="${escapeHtml(countryMeta.code)}" loading="lazy" decoding="async" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';">
+                   <span class="node-group-country-flag-fallback">${countryMeta.flag || escapeHtml(countryMeta.code)}</span>
+                 </span>`
+              : '<span class="node-group-country-flag"><span class="node-group-country-flag-fallback" style="display:inline-flex;">🌐</span></span>';
+        return `
+          <details class="routing-section node-group-card" data-group-id="${escapeHtml(group.id)}"${nodeGroupExpandedIds.has(group.id) ? ' open' : ''}>
+            <summary class="routing-section-header node-group-card-summary">
+              <div class="node-group-country-head">
+                ${iconMarkup}
+                <div>
+                  <div class="routing-section-title">${escapeHtml(countryMeta ? countryMeta.name : group.name)}</div>
+                  <div class="routing-section-note">${group.nodeIds.length} 个节点${selectedNode ? ` · 当前: ${escapeHtml(selectedNode.name || selectedNode.server || selectedNode.id)}` : ''}</div>
+                  <div class="node-group-health-row">
+                    <span class="node-group-health-pill ${availabilityClass}">可用 ${healthyCount}/${totalNodeCount}</span>
+                    ${currentLatencyBadge ? `<span class="node-group-health-pill ${currentLatencyBadge.cls || ''}">当前 ${escapeHtml(currentLatencyBadge.text)}</span>` : ''}
+                    ${testedCount < totalNodeCount ? `<span class="node-group-health-pill">已测 ${testedCount}/${totalNodeCount}</span>` : ''}
+                  </div>
+                  <div class="node-group-health-bar"><span style="width:${availabilityRatio}%"></span></div>
+                  ${groupNote ? `<div class="routing-section-note">${escapeHtml(groupNote)}</div>` : ''}
+                </div>
+              </div>
+              <div class="routing-ruleset-actions">
+                <button type="button" class="btn-outline node-group-sort-btn ${nodeGroupSortByLatency ? 'is-active' : ''}" data-group-id="${escapeHtml(group.id)}" title="${nodeGroupSortByLatency ? '已按延迟排序' : '按延迟排序'}"><i class="ph ph-sort-ascending"></i></button>
+                <button type="button" class="btn-outline node-group-test-btn" data-group-id="${escapeHtml(group.id)}" title="测试该组节点延迟"><i class="ph ph-activity"></i></button>
+                ${isAutoCountry ? '<span class="routing-chip is-accent">国家组</span>' : `<button type="button" class="btn-outline node-group-edit-btn" data-group-id="${escapeHtml(group.id)}">编辑</button><button type="button" class="btn-outline node-group-delete-btn" data-group-id="${escapeHtml(group.id)}">删除</button>`}
+              </div>
+            </summary>
+            <div class="node-group-preview-strip">
+              ${groupNodes.slice(0, 10).map((node) => {
+                const active = node.id === group.selectedNodeId;
+                return `<span class="node-group-preview-dot${active ? ' is-selected' : ''}" title="${escapeHtml(node.name || node.server || node.id)}"></span>`;
+              }).join('')}
+              ${groupNodes.length > 10 ? `<span class="node-group-preview-more">+${groupNodes.length - 10}</span>` : ''}
+            </div>
+            <div class="routing-rule-card">
+              <div class="routing-section-note">点击节点卡片即可切换当前生效节点</div>
+              <div class="routing-ruleset-entries node-group-node-cards">
+                ${groupNodes.length
+                  ? groupNodes.map((node) => {
+                      const latencyBadge = formatNodeGroupLatencyBadge(node.id);
+                      return `
+                    <article class="node-group-node-card node-group-node-card-select${node.id === group.selectedNodeId ? ' is-selected' : ''}" data-group-id="${escapeHtml(group.id)}" data-node-id="${escapeHtml(node.id)}" role="button" tabindex="0" title="点击设为当前生效节点">
+                      <div class="node-group-node-top">
+                        <span class="node-group-node-name">${escapeHtml(node.name || node.server || node.id)}</span>
+                        <span class="node-group-node-latency ${latencyBadge.cls}" id="group-latency-${escapeHtml(group.id)}-${escapeHtml(node.id)}" title="${escapeHtml(latencyBadge.title)}">${escapeHtml(latencyBadge.text)}</span>
+                      </div>
+                      <div class="node-group-node-meta">${escapeHtml(node.server || '')}${node.port ? `:${escapeHtml(String(node.port))}` : ''}</div>
+                      <div class="node-group-node-meta">${escapeHtml(String((node.type || '').toUpperCase() || 'UNKNOWN'))} · 本地 ${escapeHtml(String(node.localPort || node.local_port || '-'))}${node.id === group.selectedNodeId ? ' · 当前生效' : ''}</div>
+                      <button type="button" class="node-group-node-test-fab" data-node-id="${escapeHtml(node.id)}" title="测试该节点延迟" aria-label="测试该节点延迟">
+                        <i class="ph ph-activity"></i>
+                      </button>
+                      <button type="button" class="node-group-country-override-fab" data-node-id="${escapeHtml(node.id)}" title="校准地区" aria-label="校准地区">
+                        <i class="ph ph-flag-banner"></i>
+                      </button>
+                    </article>`;
+                    }).join('')
+                  : '<div class="routing-section-note">该组暂无节点</div>'}
+              </div>
+            </div>
+          </details>`;
+      };
+
+  nodeGroupsList.innerHTML = `
+    <div class="node-group-cards">
+      ${filteredGroups.map(renderGroupCard).join('')}
+    </div>`;
+
+  nodeGroupsList.querySelectorAll('.node-group-card').forEach((card) => {
+    const groupId = card.dataset.groupId;
+    if (!groupId) return;
+    card.addEventListener('toggle', () => {
+      if (card.open) {
+        nodeGroupExpandedIds.add(groupId);
+      } else {
+        nodeGroupExpandedIds.delete(groupId);
+      }
+    });
+  });
+
+  nodeGroupsList.querySelectorAll('.node-group-node-card-select').forEach((card) => {
+    const handleSelect = async () => {
+      const groupId = card.dataset.groupId;
+      const selectedNodeId = card.dataset.nodeId;
+      if (!groupId || !selectedNodeId) return;
+      await requestJson('/api/node-groups/selection', { method: 'PUT', body: JSON.stringify({ id: groupId, selectedNodeId }) });
+      await loadNodeGroups();
+    };
+    card.addEventListener('click', handleSelect);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleSelect();
+      }
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-country-override-fab').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await setNodeCountryOverride(button.dataset.nodeId);
+      await loadNodeGroups();
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-test-btn').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await testNodeGroupNodes(button.dataset.groupId);
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-sort-btn').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      nodeGroupSortByLatency = !nodeGroupSortByLatency;
+      renderNodeGroups();
+      showToast(nodeGroupSortByLatency ? '已启用按延迟排序' : '已关闭按延迟排序', 'info');
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-node-test-fab').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await testSingleNodeInGroup(button.dataset.nodeId);
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-delete-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await requestJson('/api/node-groups', { method: 'DELETE', body: JSON.stringify({ id: button.dataset.groupId }) });
+      await loadNodeGroups();
+    });
+  });
+  nodeGroupsList.querySelectorAll('.node-group-edit-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const group = nodeGroups.find((item) => item.id === button.dataset.groupId);
+      if (!group) return;
+      const payload = await showNodeGroupConfigModal('edit', group);
+      if (!payload) return;
+      await requestJson('/api/node-groups', { method: 'PUT', body: JSON.stringify({ id: group.id, ...payload }) });
+      await loadNodeGroups();
+    });
+  });
 };
 
 const renderRoutingObservability = () => {
@@ -326,14 +996,19 @@ const renderRoutingObservability = () => {
   if (routingLogMode) {
     const mode = getRoutingMode();
     routingLogMode.textContent = mode === 'rule' ? '规则分流' : mode === 'global' ? '全局接管' : mode === 'direct' ? '直连退出' : mode;
+    routingLogMode.className = `routing-log-summary-value ${mode === 'rule' ? 'is-good' : mode === 'direct' ? 'is-warn' : 'is-muted'}`;
   }
 
   if (routingLogSystemProxy) {
-    routingLogSystemProxy.textContent = currentCoreState?.proxy?.systemProxyEnabled ? '已启用' : '未启用';
+    const enabled = Boolean(currentCoreState?.proxy?.systemProxyEnabled);
+    routingLogSystemProxy.textContent = enabled ? '已启用' : '未启用';
+    routingLogSystemProxy.className = `routing-log-summary-value ${enabled ? 'is-good' : 'is-warn'}`;
   }
 
   if (routingLogCoreStatus) {
-    routingLogCoreStatus.textContent = currentCoreState?.status === 'running' ? '运行中' : '未运行';
+    const running = currentCoreState?.status === 'running';
+    routingLogCoreStatus.textContent = running ? '运行中' : '未运行';
+    routingLogCoreStatus.className = `routing-log-summary-value ${running ? 'is-good' : 'is-bad'}`;
   }
 
   const query = routingLogSearchQuery.trim().toLowerCase();
@@ -345,6 +1020,7 @@ const renderRoutingObservability = () => {
       if (!groupedHits.has(key)) {
         groupedHits.set(key, {
           ...hit,
+          groupKey: key,
           count: 0,
           hosts: new Set(),
           items: []
@@ -357,14 +1033,19 @@ const renderRoutingObservability = () => {
     });
 
     const filteredGroups = Array.from(groupedHits.values()).filter((group) => {
-      const haystacks = [group.name, group.outboundName || group.outbound || group.target, ...Array.from(group.hosts), group.rule || '', group.rulePayload || '']
+      const kindMatch = routingLogKindQuery === 'all' || String(group.kind || '') === routingLogKindQuery;
+      if (!kindMatch) {
+        return false;
+      }
+      const haystacks = [group.name, group.outboundName || group.outbound || group.target, ...Array.from(group.hosts), group.rule || '', group.rulePayload || '', group.matchedTag || '', group.matchType || '', group.matchValue || '']
         .map((value) => String(value || '').toLowerCase());
       return !query || haystacks.some((value) => value.includes(query));
     });
 
     if (routingLogResultCount) {
-      routingLogResultCount.textContent = query
-        ? `显示 ${filteredGroups.reduce((sum, item) => sum + item.count, 0)} / ${routingHits.length} 条命中`
+      const filteredHitCount = filteredGroups.reduce((sum, item) => sum + item.count, 0);
+      routingLogResultCount.textContent = query || routingLogKindQuery !== 'all'
+        ? `显示 ${filteredHitCount} / ${routingHits.length} 条命中`
         : `共 ${routingHits.length} 条命中`;
     }
 
@@ -381,11 +1062,44 @@ const renderRoutingObservability = () => {
       return queryPattern ? escaped.replace(queryPattern, (match) => `<span class="routing-log-highlight">${match}</span>`) : escaped;
     };
 
+    if (routingLogViewMode === 'timeline') {
+      routingHitCountSnapshot = new Map(Array.from(groupedHits.entries()).map(([key, group]) => [key, group.count]));
+      const timelineItems = filteredGroups
+        .flatMap((group) => group.items)
+        .sort((a, b) => {
+          const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+          const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+          return tb - ta;
+        })
+        .slice(0, 80);
+
+      routingObservabilityLines.innerHTML = timelineItems.map((item) => {
+        const timeText = item.timestamp
+          ? new Date(item.timestamp).toLocaleTimeString('zh-CN', { hour12: false })
+          : '--:--:--';
+        return `
+          <div class="routing-timeline-row">
+            <span class="routing-timeline-time">时间 ${highlight(timeText)}</span>
+            <span class="routing-chip is-accent">${highlight(item.kind || '')}</span>
+            <span class="routing-hit-name">${highlight(item.name || '')}</span>
+            <span class="routing-hit-arrow">→</span>
+            <span class="routing-hit-target">${highlight(item.outboundName || item.outbound || item.target || '')}</span>
+            <span class="routing-hit-detail-host">${highlight(item.host || '')}${item.port ? `:${highlight(String(item.port))}` : ''}</span>
+            ${item.matchedTag ? `<span class="routing-hit-detail-meta">tag=${highlight(String(item.matchedTag))}</span>` : ''}
+            ${item.persisted ? '<span class="routing-chip">历史</span>' : ''}
+          </div>`;
+      }).join('');
+      return;
+    }
+
+    const nextCountSnapshot = new Map(Array.from(groupedHits.entries()).map(([key, group]) => [key, group.count]));
     routingObservabilityLines.innerHTML = filteredGroups.map((group, index) => {
       const hosts = Array.from(group.hosts);
       const sampleHosts = hosts.slice(0, 3);
       const moreCount = hosts.length - sampleHosts.length;
       const detailId = `routing-hit-detail-${index}`;
+      const previousCount = routingHitCountSnapshot.get(group.groupKey) || 0;
+      const bumped = group.count > previousCount;
       return `
         <details class="routing-hit-card">
           <summary class="routing-hit-header">
@@ -395,23 +1109,35 @@ const renderRoutingObservability = () => {
               <span class="routing-hit-arrow">→</span>
               <span class="routing-hit-target">${highlight(group.outboundName || group.outbound || group.target)}</span>
             </div>
-            <div class="routing-hit-count">${group.count} 次命中</div>
+            <div class="routing-hit-count${bumped ? ' is-bump' : ''}">${group.count} 次命中</div>
           </summary>
           <div class="routing-hit-hosts">
             ${sampleHosts.map((host) => `<span class="routing-hit-host">${highlight(host)}</span>`).join('')}
             ${moreCount > 0 ? `<span class="routing-hit-host-more">+${moreCount}</span>` : ''}
           </div>
           <div class="routing-hit-details" id="${detailId}">
-            ${group.items.slice(0, 8).map((item) => `
-              <div class="routing-hit-detail-row">
-                <span class="routing-hit-detail-host">${highlight(item.host)}${item.port ? `:${highlight(String(item.port))}` : ''}</span>
-                <span class="routing-hit-detail-meta">${highlight(item.outboundName || item.outbound || item.target)}</span>
-                ${item.rule ? `<span class="routing-hit-detail-meta">rule=${highlight(String(item.rule))}</span>` : ''}
-                ${item.rulePayload ? `<span class="routing-hit-detail-meta">payload=${highlight(String(item.rulePayload))}</span>` : ''}
-              </div>`).join('')}
+            <div class="routing-hit-details-title">最近命中</div>
+            ${group.items
+              .slice()
+              .sort((a, b) => {
+                const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+                const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+                return tb - ta;
+              })
+              .slice(0, 10)
+              .map((item) => `
+                <div class="routing-hit-detail-row">
+                  <span class="routing-hit-detail-host">${highlight(item.host)}${item.port ? `:${highlight(String(item.port))}` : ''}</span>
+                  <span class="routing-hit-detail-meta">${item.timestamp ? highlight(new Date(item.timestamp).toLocaleTimeString('zh-CN', { hour12: false })) : '--:--:--'}</span>
+                  <span class="routing-hit-detail-meta">${highlight(item.outboundName || item.outbound || item.target)}</span>
+                  ${item.matchedTag ? `<span class="routing-hit-detail-meta">tag=${highlight(String(item.matchedTag))}</span>` : ''}
+                  ${item.matchType && item.matchValue ? `<span class="routing-hit-detail-meta">match=${highlight(`${item.matchType}:${item.matchValue}`)}</span>` : ''}
+                  ${item.persisted ? '<span class="routing-chip">历史</span>' : ''}
+                </div>`).join('')}
           </div>
         </details>`;
     }).join('');
+    routingHitCountSnapshot = nextCountSnapshot;
     return;
   }
 
@@ -430,6 +1156,7 @@ const renderRoutingObservability = () => {
       const key = `${kind}:${name}->${target}`;
       if (!groups.has(key)) {
         groups.set(key, {
+          groupKey: key,
           kind,
           name,
           target,
@@ -450,6 +1177,9 @@ const renderRoutingObservability = () => {
   // Filter groups
   const filteredGroups = [];
   groups.forEach(group => {
+    if (routingLogKindQuery !== 'all' && String(group.kind || '') !== routingLogKindQuery) {
+      return;
+    }
     const hostsArray = Array.from(group.hosts);
     const matchesQuery = !query || 
       group.name.toLowerCase().includes(query) || 
@@ -492,12 +1222,51 @@ const renderRoutingObservability = () => {
   };
 
   let html = '';
-  
+
+  if (routingLogViewMode === 'timeline') {
+    const timelineFallbackItems = [];
+    filteredGroups.forEach((group) => {
+      (group.rawLines || []).forEach((line) => {
+        const timeMatch = String(line).match(/(\d{2}:\d{2}:\d{2})/);
+        timelineFallbackItems.push({
+          time: timeMatch ? timeMatch[1] : '--:--:--',
+          kind: group.kind,
+          name: group.name,
+          target: group.target,
+          line
+        });
+      });
+    });
+
+    if (timelineFallbackItems.length) {
+      html += timelineFallbackItems.slice(0, 80).map((item) => `
+        <div class="routing-timeline-row">
+          <span class="routing-timeline-time">时间 ${highlight(item.time)}</span>
+          <span class="routing-chip is-accent">${highlight(item.kind)}</span>
+          <span class="routing-hit-name">${highlight(item.name)}</span>
+          <span class="routing-hit-arrow">→</span>
+          <span class="routing-hit-target">${highlight(item.target)}</span>
+        </div>
+      `).join('');
+    }
+
+    filteredUnparsed.forEach((line) => {
+      const timeMatch = String(line).match(/(\d{2}:\d{2}:\d{2})/);
+      const timeText = timeMatch ? timeMatch[1] : '--:--:--';
+      html += `<div class="routing-timeline-row"><span class="routing-timeline-time">时间 ${highlight(timeText)}</span><span class="routing-log-line">${highlight(line)}</span></div>`;
+    });
+
+    routingObservabilityLines.innerHTML = html;
+    return;
+  }
+
   // Render grouped cards
   filteredGroups.forEach(group => {
     const displayHosts = group.hostsArray.slice(0, 3);
     const moreCount = group.hostsArray.length - 3;
     
+    const previousCount = routingHitCountSnapshot.get(group.groupKey) || 0;
+    const bumped = group.count > previousCount;
     html += `
       <div class="routing-hit-card">
         <div class="routing-hit-header">
@@ -507,7 +1276,7 @@ const renderRoutingObservability = () => {
             <span class="routing-hit-arrow">→</span>
             <span class="routing-hit-target">${highlight(group.target)}</span>
           </div>
-          <div class="routing-hit-count">${group.count} 次命中</div>
+          <div class="routing-hit-count${bumped ? ' is-bump' : ''}">${group.count} 次命中</div>
         </div>
         <div class="routing-hit-hosts">
           ${displayHosts.map(h => `<span class="routing-hit-host">${highlight(h)}</span>`).join('')}
@@ -531,11 +1300,43 @@ const renderRoutingObservability = () => {
   });
 
   routingObservabilityLines.innerHTML = html;
+  routingHitCountSnapshot = new Map(Array.from(groups.entries()).map(([key, group]) => [key, group.count]));
 };
 
 const updateRoutingLogSearchControls = () => {
   if (routingLogSearchClearBtn) {
     routingLogSearchClearBtn.classList.toggle('hidden', !routingLogSearchQuery.trim());
+  }
+};
+
+const updateRoutingLogViewModeButtons = () => {
+  const isStats = routingLogViewMode !== 'timeline';
+  routingLogViewStatsBtn?.classList.toggle('active', isStats);
+  routingLogViewTimelineBtn?.classList.toggle('active', !isStats);
+};
+
+const markRoutingHitsAsSeen = (hits = routingHits) => {
+  hits.forEach((hit) => {
+    if (hit?.id) {
+      routingLogSeenIds.add(String(hit.id));
+    }
+  });
+  routingLogUnreadCount = 0;
+};
+
+const updateRoutingLogNavBadge = (animate = false) => {
+  if (!routingLogNavBadge) {
+    return;
+  }
+  const count = Math.max(0, Number(routingLogUnreadCount) || 0);
+  routingLogNavBadge.classList.toggle('hidden', count === 0);
+  if (count > 0) {
+    routingLogNavBadge.textContent = count > 99 ? '99+' : String(count);
+    if (animate) {
+      routingLogNavBadge.classList.remove('ping');
+      void routingLogNavBadge.offsetWidth;
+      routingLogNavBadge.classList.add('ping');
+    }
   }
 };
 
@@ -561,6 +1362,92 @@ const startRoutingStatusPolling = () => {
     }
     loadSystemStatus();
   }, 8000);
+};
+
+const formatRate = (bytesPerSec) => {
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) {
+    return '0 B/s';
+  }
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  let value = bytesPerSec;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const fixed = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(fixed)} ${units[unit]}`;
+};
+
+const renderSpeedSparkline = () => {
+  const bars = document.querySelectorAll('.speed-sparkline span');
+  if (!bars.length) {
+    return;
+  }
+  const max = Math.max(1, ...speedHistory);
+  bars.forEach((bar, index) => {
+    const v = speedHistory[index] || 0;
+    const pct = Math.max(14, Math.min(100, Math.round((v / max) * 100)));
+    bar.style.height = `${pct}%`;
+  });
+};
+
+const stopTrafficPolling = () => {
+  if (trafficPoller) {
+    clearInterval(trafficPoller);
+    trafficPoller = null;
+  }
+};
+
+const updateSpeedCard = (downloadRate = 0, uploadRate = 0) => {
+  if (dashSpeedValue) {
+    dashSpeedValue.textContent = `↓ ${formatRate(downloadRate)} · ↑ ${formatRate(uploadRate)}`;
+  }
+  speedHistory = [...speedHistory.slice(1), downloadRate];
+  renderSpeedSparkline();
+};
+
+const pollTraffic = async () => {
+  if (!document.getElementById('dashboard-view')?.classList.contains('active')) {
+    return;
+  }
+  if (currentCoreState?.status !== 'running') {
+    lastTrafficSample = null;
+    updateSpeedCard(0, 0);
+    return;
+  }
+
+  try {
+    const payload = await requestJson('/api/core/traffic');
+    const sample = payload.traffic || null;
+    const nowMs = Date.now();
+    if (!sample || !Number.isFinite(Number(sample.uploadBytes)) || !Number.isFinite(Number(sample.downloadBytes))) {
+      return;
+    }
+
+    if (lastTrafficSample) {
+      const elapsedSec = Math.max(0.001, (nowMs - lastTrafficSample.tsMs) / 1000);
+      const downRate = Math.max(0, (Number(sample.downloadBytes) - lastTrafficSample.downloadBytes) / elapsedSec);
+      const upRate = Math.max(0, (Number(sample.uploadBytes) - lastTrafficSample.uploadBytes) / elapsedSec);
+      updateSpeedCard(downRate, upRate);
+    }
+
+    lastTrafficSample = {
+      tsMs: nowMs,
+      uploadBytes: Number(sample.uploadBytes),
+      downloadBytes: Number(sample.downloadBytes)
+    };
+  } catch {
+    // keep previous visual state if polling fails temporarily
+  }
+};
+
+const startTrafficPolling = () => {
+  if (trafficPoller) {
+    return;
+  }
+  pollTraffic();
+  trafficPoller = setInterval(pollTraffic, TRAFFIC_POLL_INTERVAL_MS);
 };
 
 const applyRoutingPreset = (presetId) => {
@@ -638,9 +1525,13 @@ const openRoutingRuleModal = (rule = null) => {
   if (routingRuleModalAction) routingRuleModalAction.value = rule?.action || 'default';
   if (routingRuleModalValue) routingRuleModalValue.value = rule?.value || '';
   if (routingRuleModalNode) {
-    routingRuleModalNode.innerHTML = ['<option value="">选择节点</option>', ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === (rule?.nodeId || '') ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`)].join('');
+    if ((rule?.action || 'default') === 'node_group') {
+      routingRuleModalNode.innerHTML = ['<option value="">选择节点组</option>', ...nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === (rule?.nodeGroupId || '') ? 'selected' : ''}>${escapeHtml(getNodeGroupDisplayName(group))}</option>`)].join('');
+    } else {
+      routingRuleModalNode.innerHTML = ['<option value="">选择节点</option>', ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === (rule?.nodeId || '') ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`)].join('');
+    }
   }
-  if (routingRuleModalNodeField) routingRuleModalNodeField.classList.toggle('hidden', (rule?.action || 'default') !== 'node');
+  if (routingRuleModalNodeField) routingRuleModalNodeField.classList.toggle('hidden', !['node', 'node_group'].includes(rule?.action || 'default'));
   if (routingRuleModalNote) routingRuleModalNote.value = rule?.note || '';
   if (routingRuleModalError) {
     routingRuleModalError.textContent = '';
@@ -657,6 +1548,7 @@ const submitRoutingRuleModal = () => {
     action: routingRuleModalAction?.value,
     value: routingRuleModalValue?.value,
     nodeId: routingRuleModalAction?.value === 'node' ? routingRuleModalNode?.value : '',
+    nodeGroupId: routingRuleModalAction?.value === 'node_group' ? routingRuleModalNode?.value : '',
     note: routingRuleModalNote?.value
   });
   const errors = validateRoutingRule(draft);
@@ -704,6 +1596,9 @@ const renderRoutingModeBanner = () => {
   const coreStatus = currentCoreState?.status || 'stopped';
   routingModeBanner.className = 'routing-mode-banner';
   let copy = '';
+  let keywords = [];
+  let modeLabel = '规则状态';
+  let modeIcon = 'ph ph-compass-tool';
   const actions = [];
 
   if (coreStatus !== 'running') {
@@ -711,25 +1606,47 @@ const renderRoutingModeBanner = () => {
   }
 
   if (!routingRules.length && !routingRulesets.length) {
+    modeLabel = '未配置规则';
+    modeIcon = 'ph ph-path';
     copy = '当前还没有分流规则。可以先新增规则，或者用右上角预设模板快速生成一组起步规则。';
+    keywords = ['分流规则', '预设模板'];
     routingModeBanner.classList.add('is-inactive');
   } else if (!systemProxyEnabled) {
+    modeLabel = '系统代理未启用';
+    modeIcon = 'ph ph-plugs-connected';
     copy = '系统代理当前未启用：规则已经保存，但统一入口没有开启，所以这些规则不会被命中。';
+    keywords = ['系统代理未启用', '不会被命中'];
     routingModeBanner.classList.add('is-direct');
     actions.push('<button type="button" class="btn-primary" data-routing-action="enable-system-proxy-rule">启用系统代理</button>');
   } else if (mode === 'rule') {
+    modeLabel = '规则分流模式';
+    modeIcon = 'ph ph-radar';
     routingModeBanner.classList.add('is-active');
     copy = '当前处于规则分流模式：规则集和手写规则正在参与系统代理统一入口的流量分发。';
+    keywords = ['规则分流模式', '规则集', '手写规则'];
   } else if (mode === 'direct') {
+    modeLabel = '直连退出模式';
+    modeIcon = 'ph ph-arrow-bend-up-left';
     routingModeBanner.classList.add('is-direct');
     copy = '当前处于直连退出模式：规则仍可编辑，但系统代理流量会全部直连，不使用这些规则。';
+    keywords = ['直连退出模式', '全部直连'];
   } else {
+    modeLabel = '全局接管模式';
+    modeIcon = 'ph ph-globe-hemisphere-west';
     routingModeBanner.classList.add('is-inactive');
     copy = '当前处于全局接管模式：规则仍可编辑，但系统代理流量会统一走当前默认节点，不使用这些规则。';
+    keywords = ['全局接管模式', '当前默认节点'];
   }
 
+  let highlightedCopy = escapeHtml(copy);
+  keywords.forEach((keyword) => {
+    const escapedKeyword = escapeRegExp(keyword);
+    highlightedCopy = highlightedCopy.replace(new RegExp(escapedKeyword, 'g'), `<span class="routing-mode-keyword">${escapeHtml(keyword)}</span>`);
+  });
+
   routingModeBanner.innerHTML = `
-    <div class="routing-mode-copy">${escapeHtml(copy)}</div>
+    <div class="routing-mode-head"><i class="${modeIcon}"></i><span>${escapeHtml(modeLabel)}</span></div>
+    <div class="routing-mode-copy">${highlightedCopy}</div>
     ${actions.length ? `<div class="routing-mode-actions">${actions.join('')}</div>` : ''}
   `;
 
@@ -748,6 +1665,10 @@ const renderRoutingModeBanner = () => {
 const renderRoutingRulesetsSection = () => {
   const errorsByRuleset = routingRulesetErrors.rulesetErrors || {};
   const entryErrorsByRuleset = routingRulesetErrors.entryErrors || {};
+  const buildNodeGroupOptions = (selectedGroupId = '') => [
+    '<option value="">选择节点组</option>',
+    ...nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === selectedGroupId ? 'selected' : ''}>${escapeHtml(getNodeGroupDisplayName(group))}</option>`)
+  ].join('');
   const buildNodeOptions = (selectedNodeId = '') => [
     '<option value="">选择节点</option>',
     ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === selectedNodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`)
@@ -771,50 +1692,31 @@ const renderRoutingRulesetsSection = () => {
         const rulesetKindLabel = ruleset.kind === 'builtin' ? '内置规则集' : '自定义规则集';
         return `
           <div class="routing-ruleset-card" data-ruleset-id="${escapeHtml(ruleset.id)}">
-            <div class="routing-ruleset-top">
-              <div>
-                <div class="routing-rule-title">${escapeHtml(ruleset.name || rulesetKindLabel)}</div>
-                <div class="routing-ruleset-meta">
-                  <span class="routing-chip is-accent">${rulesetKindLabel}</span>
-                  <span class="routing-chip ${ruleset.enabled ? 'is-success' : ''}">${ruleset.enabled ? '已启用' : '已停用'}</span>
-                </div>
-              </div>
-              <div class="routing-ruleset-actions">
+            <div class="routing-ruleset-inline">
+              <span class="routing-chip ${ruleset.kind === 'builtin' ? 'is-builtin' : 'is-custom'}">${ruleset.kind === 'builtin' ? '内置' : '自定义'}</span>
+              <input class="routing-input routing-ruleset-name-inline ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
+              <select class="routing-select routing-ruleset-target-inline ${rulesetErrors.target ? 'has-error' : ''}" data-ruleset-field="target" data-ruleset-id="${escapeHtml(ruleset.id)}">
+                <option value="default" ${ruleset.target === 'default' ? 'selected' : ''}>默认代理</option>
+                <option value="direct" ${ruleset.target === 'direct' ? 'selected' : ''}>直连</option>
+                <option value="node" ${ruleset.target === 'node' ? 'selected' : ''}>指定节点</option>
+                <option value="node_group" ${ruleset.target === 'node_group' ? 'selected' : ''}>节点组</option>
+              </select>
+              ${ruleset.target === 'node'
+                ? `<select class="routing-select routing-ruleset-dest-inline ${rulesetErrors.nodeId ? 'has-error' : ''}" data-ruleset-field="nodeId" data-ruleset-id="${escapeHtml(ruleset.id)}">${buildNodeOptions(ruleset.nodeId)}</select>`
+                : ruleset.target === 'node_group'
+                  ? `<select class="routing-select routing-ruleset-dest-inline ${rulesetErrors.groupId ? 'has-error' : ''}" data-ruleset-field="groupId" data-ruleset-id="${escapeHtml(ruleset.id)}">${buildNodeGroupOptions(ruleset.groupId)}</select>`
+                  : '<span class="routing-ruleset-inline-note">不指定目标</span>'}
+              <label class="routing-ruleset-inline-switch">
+                <input type="checkbox" data-ruleset-field="enabled" data-ruleset-id="${escapeHtml(ruleset.id)}" ${ruleset.enabled ? 'checked' : ''}>
+                <span>启用</span>
+              </label>
+              <div class="routing-ruleset-actions routing-ruleset-actions-inline">
                 <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-up-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === 0 ? 'disabled' : ''}>↑</button>
                 <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-down-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === routingRulesets.length - 1 ? 'disabled' : ''}>↓</button>
                 <button type="button" class="btn-outline routing-delete-ruleset-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">删除</button>
               </div>
             </div>
-            <div class="routing-ruleset-grid">
-              <label class="routing-field">
-                <span class="routing-field-label">名称</span>
-                <input class="routing-input ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
-                <span class="routing-field-error">${escapeHtml(rulesetErrors.name || '')}</span>
-              </label>
-              <label class="routing-field">
-                <span class="routing-field-label">规则集来源</span>
-                ${ruleset.kind === 'custom'
-                  ? '<input class="routing-input" value="自定义条目" readonly>'
-                  : '<input class="routing-input" value="内置规则集" readonly>'}
-                <span class="routing-field-error">${escapeHtml(rulesetErrors.presetId || '')}</span>
-              </label>
-              <label class="routing-field">
-                <span class="routing-field-label">流量去向</span>
-                <select class="routing-select ${rulesetErrors.target ? 'has-error' : ''}" data-ruleset-field="target" data-ruleset-id="${escapeHtml(ruleset.id)}">
-                  <option value="default" ${ruleset.target === 'default' ? 'selected' : ''}>默认代理</option>
-                  <option value="direct" ${ruleset.target === 'direct' ? 'selected' : ''}>直连</option>
-                  <option value="node" ${ruleset.target === 'node' ? 'selected' : ''}>指定节点</option>
-                </select>
-                <span class="routing-field-error">${escapeHtml(rulesetErrors.target || '')}</span>
-              </label>
-              <label class="routing-field">
-                <span class="routing-field-label">节点</span>
-                <select class="routing-select ${rulesetErrors.nodeId ? 'has-error' : ''}" data-ruleset-field="nodeId" data-ruleset-id="${escapeHtml(ruleset.id)}" ${ruleset.target === 'node' ? '' : 'disabled'}>
-                  ${buildNodeOptions(ruleset.nodeId)}
-                </select>
-                <span class="routing-field-error">${escapeHtml(rulesetErrors.nodeId || '')}</span>
-              </label>
-            </div>
+            <div class="routing-field-error">${escapeHtml(rulesetErrors.name || rulesetErrors.target || rulesetErrors.nodeId || rulesetErrors.groupId || rulesetErrors.presetId || '')}</div>
             ${ruleset.kind === 'custom' ? `
               <div class="routing-ruleset-entries">
                 <div class="routing-note">自定义规则集条目会按类型和值合并成 sing-box 内联规则集。</div>
@@ -900,6 +1802,7 @@ const renderRoutingRules = () => {
               <option value="default" ${rule.action === 'default' ? 'selected' : ''}>默认代理</option>
               <option value="direct" ${rule.action === 'direct' ? 'selected' : ''}>直连</option>
               <option value="node" ${rule.action === 'node' ? 'selected' : ''}>指定节点</option>
+              <option value="node_group" ${rule.action === 'node_group' ? 'selected' : ''}>节点组</option>
             </select>
             <span class="routing-field-error">${escapeHtml(errors.action || '')}</span>
           </label>
@@ -907,8 +1810,10 @@ const renderRoutingRules = () => {
             <span class="routing-field-label">节点 / 备注</span>
             ${rule.action === 'node'
               ? `<select class="routing-select ${errors.nodeId ? 'has-error' : ''}" data-field="nodeId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点</option>${routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === rule.nodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`).join('')}</select>`
+              : rule.action === 'node_group'
+              ? `<select class="routing-select ${errors.nodeGroupId ? 'has-error' : ''}" data-field="nodeGroupId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点组</option>${nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === rule.nodeGroupId ? 'selected' : ''}>${escapeHtml(getNodeGroupDisplayName(group))}</option>`).join('')}</select>`
               : `<input class="routing-input" data-field="note" data-rule-id="${escapeHtml(rule.id)}" value="${escapeHtml(rule.note)}" placeholder="可选，便于区分规则" autocomplete="off">`}
-            <span class="routing-field-error">${escapeHtml(errors.nodeId || '')}</span>
+            <span class="routing-field-error">${escapeHtml(errors.nodeId || errors.nodeGroupId || '')}</span>
           </label>
         </div>
       </div>`;
@@ -970,6 +1875,16 @@ const renderRoutingRules = () => {
       if (!ruleset) return;
       const field = input.dataset.rulesetField;
       ruleset[field] = field === 'enabled' ? event.target.checked : event.target.value;
+      if (field === 'target') {
+        if (ruleset.target === 'node_group') {
+          ruleset.nodeId = '';
+        } else if (ruleset.target === 'node') {
+          ruleset.groupId = '';
+        } else {
+          ruleset.nodeId = '';
+          ruleset.groupId = '';
+        }
+      }
       if (field === 'presetId' && ruleset.kind === 'builtin') {
         const builtin = getBuiltinRulesetById(ruleset.presetId);
         if (builtin) ruleset.name = builtin.name;
@@ -1066,6 +1981,7 @@ const loadRoutingRules = async (force = false) => {
     const payload = await requestJson('/api/system/rules');
     routingRules = (payload.customRules || payload.rules || []).map((rule) => createRoutingRuleDraft(rule));
     routingRulesets = (payload.rulesets || []).map((ruleset) => createRoutingRulesetDraft(ruleset));
+    nodeGroups = payload.nodeGroups || nodeGroups;
     routingBuiltinRulesets = payload.builtinRulesets || [];
     routingNodeOptions = payload.core?.nodes || currentCoreState?.nodes || [];
     renderRoutingRulesetPresetOptions();
@@ -1100,6 +2016,7 @@ const saveRoutingRules = async () => {
     enabled: ruleset.enabled !== false,
     target: ruleset.target,
     nodeId: ruleset.target === 'node' ? String(ruleset.nodeId || '').trim() : null,
+    groupId: ruleset.target === 'node_group' ? String(ruleset.groupId || '').trim() : null,
     entries: ruleset.kind === 'custom' ? (ruleset.entries || []).map((entry) => normalizeRoutingRulesetEntry(entry)) : [],
     note: String(ruleset.note || '').trim()
   }));
@@ -1123,15 +2040,23 @@ const saveRoutingRules = async () => {
     });
     routingRules = (payload.customRules || payload.rules || []).map((rule) => createRoutingRuleDraft(rule));
     routingRulesets = (payload.rulesets || []).map((ruleset) => createRoutingRulesetDraft(ruleset));
+    nodeGroups = payload.nodeGroups || nodeGroups;
     routingBuiltinRulesets = payload.builtinRulesets || routingBuiltinRulesets;
     routingNodeOptions = payload.core?.nodes || currentCoreState?.nodes || routingNodeOptions;
     renderRoutingRulesetPresetOptions();
     routingRuleErrors = buildRoutingRuleErrors(routingRules);
     routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
     routingDirty = false;
+    routingSavedFlashUntil = Date.now() + 3000;
     updateCoreStatus(payload.core);
     routingObservabilityEntries = extractRoutingObservability(payload.core);
     renderRoutingRules();
+
+    setTimeout(() => {
+      if (Date.now() >= routingSavedFlashUntil) {
+        updateRoutingSaveState();
+      }
+    }, 3100);
 
     if (payload.autoRestarted) {
       showToast('分流规则已保存并自动应用到核心', 'success');
@@ -1157,31 +2082,53 @@ const flagFromCountryCode = (countryCode) => {
   return String.fromCodePoint(...[...normalized].map((char) => 0x1F1E6 + char.charCodeAt(0) - 65));
 };
 
+const nodeGroupDisplayNames = (() => {
+  try {
+    return new Intl.DisplayNames(['zh-CN', 'en'], { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+
+const getNodeGroupDisplayName = (group) => {
+  if (!group || typeof group !== 'object') {
+    return '';
+  }
+
+  const code = String(group.countryCode || '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/u.test(code) && nodeGroupDisplayNames) {
+    return nodeGroupDisplayNames.of(code) || code;
+  }
+
+  const fromName = String(group.name || '').match(/^国家\/([A-Za-z]{2})$/u)?.[1];
+  if (fromName && nodeGroupDisplayNames) {
+    const normalized = fromName.toUpperCase();
+    return nodeGroupDisplayNames.of(normalized) || normalized;
+  }
+
+  return String(group.name || '').trim();
+};
+
 const renderGeoIpStatus = (status = geoIpStatus) => {
   geoIpStatus = status || null;
-  if (!dashGeoIpStatus || !dashGeoIpNote) return;
+  if (!routingGeoIpNote) return;
 
   if (!geoIpStatus) {
-    dashGeoIpStatus.textContent = '未初始化';
-    dashGeoIpNote.textContent = 'GeoIP 状态尚未返回';
+    routingGeoIpNote.textContent = 'GeoIP: --';
     if (geoIpRefreshBtn) geoIpRefreshBtn.disabled = false;
     return;
   }
 
   if (geoIpStatus.pending) {
-    dashGeoIpStatus.textContent = '下载中';
-    dashGeoIpNote.textContent = '正在后台准备国家库，完成后刷新节点列表即可显示国旗';
+    routingGeoIpNote.textContent = 'GeoIP: 更新中...';
   } else if (geoIpStatus.ready) {
-    dashGeoIpStatus.textContent = '已就绪';
-    dashGeoIpNote.textContent = geoIpStatus.downloadedAt
-      ? `本地国家库可用，上次更新时间 ${new Date(geoIpStatus.downloadedAt).toLocaleString('zh-CN')}`
-      : '本地国家库可用';
+    routingGeoIpNote.textContent = geoIpStatus.downloadedAt
+      ? `GeoIP: ${new Date(geoIpStatus.downloadedAt).toLocaleString('zh-CN')}`
+      : 'GeoIP: 已就绪';
   } else if (geoIpStatus.lastError) {
-    dashGeoIpStatus.textContent = '下载失败';
-    dashGeoIpNote.textContent = `GeoIP 下载失败：${geoIpStatus.lastError}`;
+    routingGeoIpNote.textContent = `GeoIP: 失败`;
   } else {
-    dashGeoIpStatus.textContent = '等待下载';
-    dashGeoIpNote.textContent = '首次启动会在后台自动下载国家库';
+    routingGeoIpNote.textContent = 'GeoIP: --';
   }
 
   if (geoIpRefreshBtn) {
@@ -1192,29 +2139,24 @@ const renderGeoIpStatus = (status = geoIpStatus) => {
 
 const renderRulesetDatabaseStatus = (status = rulesetDatabaseStatus) => {
   rulesetDatabaseStatus = status || null;
-  if (!routingDbStatus || !routingDbNote) return;
+  if (!routingDbNote) return;
 
   if (!rulesetDatabaseStatus) {
-    routingDbStatus.textContent = '未初始化';
-    routingDbNote.textContent = '规则库状态尚未返回';
+    routingDbNote.textContent = '上次更新 --';
     if (rulesetDbRefreshBtn) rulesetDbRefreshBtn.disabled = false;
     return;
   }
 
   if (rulesetDatabaseStatus.pending) {
-    routingDbStatus.textContent = '下载中';
-    routingDbNote.textContent = '正在下载 geosite-cn / geoip-cn 规则库';
+    routingDbNote.textContent = '更新中...';
   } else if (rulesetDatabaseStatus.ready) {
-    routingDbStatus.textContent = '已就绪';
     routingDbNote.textContent = rulesetDatabaseStatus.downloadedAt
-      ? `规则库可用，上次更新时间 ${new Date(rulesetDatabaseStatus.downloadedAt).toLocaleString('zh-CN')}`
-      : '规则库可用';
+      ? `上次更新 ${new Date(rulesetDatabaseStatus.downloadedAt).toLocaleString('zh-CN')}`
+      : '上次更新 --';
   } else if (rulesetDatabaseStatus.lastError) {
-    routingDbStatus.textContent = '下载失败';
-    routingDbNote.textContent = `规则库下载失败：${rulesetDatabaseStatus.lastError}`;
+    routingDbNote.textContent = `更新失败：${rulesetDatabaseStatus.lastError}`;
   } else {
-    routingDbStatus.textContent = '等待下载';
-    routingDbNote.textContent = '点击“更新规则库”后即可启用数据库规则';
+    routingDbNote.textContent = '上次更新 --';
   }
 
   if (rulesetDbRefreshBtn) {
@@ -1276,23 +2218,8 @@ const renderProxyEndpoints = (proxyProfile = {}) => {
     port: proxyProfile.unifiedHttpPort || 20101,
     url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 20101}`
   };
-  const httpEndpoint = proxyProfile.systemSocksEndpoint || proxyProfile.httpCompatibilityEndpoint || {
-    protocol: 'socks5',
-    host: listenHost,
-    port: proxyProfile.unifiedSocksPort || 20100,
-    url: `socks5://${listenHost}:${proxyProfile.unifiedSocksPort || 20100}`
-  };
-
-  if (dashDefaultProxy) {
-    dashDefaultProxy.textContent = defaultEndpoint.url;
-  }
-
-  if (dashHttpProxy) {
-    dashHttpProxy.textContent = httpEndpoint.url;
-  }
-
-  if (dashHttpNote) {
-    dashHttpNote.textContent = '用于手动代理、分流和兼容 SOCKS5 的客户端';
+  if (sidebarDefaultProxy) {
+    sidebarDefaultProxy.textContent = defaultEndpoint.url;
   }
 };
 
@@ -1357,6 +2284,7 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.remove('off');
       dashSwitch.classList.add('on');
       dashText.textContent = '系统代理接管中';
+      dashText.className = 'status-pill is-running';
     }
   } else if (core.status === 'running') {
     coreStatusIndicator.classList.add('running');
@@ -1365,6 +2293,7 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
       dashText.textContent = '核心运行中，系统代理未接管';
+      dashText.className = 'status-pill is-idle';
     }
   } else if (core.status === 'crashed') {
     coreStatusIndicator.classList.add('crashed');
@@ -1373,6 +2302,7 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
       dashText.textContent = '引擎已崩溃，请手动重启';
+      dashText.className = 'status-pill is-error';
     }
   } else if (core.status === 'error') {
     coreStatusIndicator.classList.add('error');
@@ -1381,6 +2311,7 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
       dashText.textContent = '引擎运行异常';
+      dashText.className = 'status-pill is-error';
     }
   } else {
     coreStatusIndicator.classList.add('stopped');
@@ -1389,6 +2320,7 @@ const updateCoreStatus = (core) => {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
       dashText.textContent = systemProxy.enabled ? '核心已停止，系统代理仍被外部占用' : '系统代理已关闭';
+      dashText.className = 'status-pill is-off';
     }
   }
 };
@@ -1396,6 +2328,7 @@ const updateCoreStatus = (core) => {
 // Modal Elements
 const editModal = document.querySelector('#edit-modal');
 const editJsonInput = document.querySelector('#edit-json-input');
+const editCountryOverrideInput = document.querySelector('#edit-node-country-override');
 const saveNodeBtn = document.querySelector('#save-node-btn');
 const closeModalBtns = document.querySelectorAll('#close-modal-top, .cancel-modal-btn');
 let currentEditNodeId = null;
@@ -1556,6 +2489,96 @@ const showInputModal = (title, defaultValue = '') => new Promise((resolve) => {
   field.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(field.value); if (e.key === 'Escape') finish(null); }, { once: true });
 });
 
+const showNodeGroupConfigModal = (mode = 'create', group = null) => new Promise((resolve) => {
+  if (!nodeGroupModal) {
+    resolve(null);
+    return;
+  }
+
+  editingNodeGroupId = group?.id || null;
+  nodeGroupModalTitle.textContent = mode === 'edit' ? '编辑节点组' : '新增节点组';
+  nodeGroupModalConfirm.textContent = mode === 'edit' ? '保存配置' : '创建节点组';
+
+  const currentType = String(group?.type || 'custom');
+  nodeGroupModalName.value = String(group?.name || '');
+  nodeGroupModalType.value = currentType === 'country' ? 'country' : 'custom';
+  nodeGroupModalCountry.value = String(group?.countryCode || '').toUpperCase();
+  nodeGroupModalIconMode.value = String(group?.iconMode || 'auto');
+  nodeGroupModalIconEmoji.value = String(group?.iconEmoji || '');
+  nodeGroupModalNote.value = String(group?.note || '');
+
+  const selectedNodeId = String(group?.selectedNodeId || '');
+  nodeGroupModalDefaultNode.innerHTML = [
+    '<option value="">创建后再选择</option>',
+    ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === selectedNodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`)
+  ].join('');
+
+  const updateNodeGroupModalFields = () => {
+    const isCountry = nodeGroupModalType.value === 'country';
+    nodeGroupModalCountry.disabled = !isCountry;
+    if (!isCountry) {
+      nodeGroupModalCountry.value = '';
+    }
+    nodeGroupModalEmojiWrap.classList.toggle('hidden', nodeGroupModalIconMode.value !== 'emoji');
+  };
+
+  updateNodeGroupModalFields();
+  nodeGroupModalError.classList.add('hidden');
+  nodeGroupModal.classList.add('active');
+  setTimeout(() => nodeGroupModalName.focus(), 50);
+
+  const finish = (value) => {
+    nodeGroupModal.classList.remove('active');
+    nodeGroupModalConfirm.onclick = null;
+    nodeGroupModalCancel.onclick = null;
+    nodeGroupModalClose.onclick = null;
+    nodeGroupModalType.onchange = null;
+    nodeGroupModalIconMode.onchange = null;
+    editingNodeGroupId = null;
+    resolve(value);
+  };
+
+  const submit = () => {
+    const name = String(nodeGroupModalName.value || '').trim();
+    const type = nodeGroupModalType.value === 'country' ? 'country' : 'custom';
+    const countryCode = String(nodeGroupModalCountry.value || '').trim().toUpperCase();
+    const iconMode = ['auto', 'emoji', 'none'].includes(nodeGroupModalIconMode.value) ? nodeGroupModalIconMode.value : 'auto';
+    const iconEmoji = String(nodeGroupModalIconEmoji.value || '').trim();
+    const note = String(nodeGroupModalNote.value || '').trim();
+    const selectedNodeId = String(nodeGroupModalDefaultNode.value || '').trim();
+
+    if (!name && !(type === 'country' && countryCode)) {
+      showInlineMessage(nodeGroupModalError, '请填写节点组名称', 'error');
+      return;
+    }
+    if (type === 'country' && countryCode && !/^[A-Z]{2}$/u.test(countryCode)) {
+      showInlineMessage(nodeGroupModalError, '国家代码必须是 2 位字母（如 JP / US）', 'error');
+      return;
+    }
+    if (iconMode === 'emoji' && !iconEmoji) {
+      showInlineMessage(nodeGroupModalError, '图标样式为 Emoji 时请填写图标', 'error');
+      return;
+    }
+
+    const payload = {
+      name,
+      type,
+      countryCode: type === 'country' ? (countryCode || null) : null,
+      iconMode,
+      iconEmoji: iconMode === 'emoji' ? iconEmoji : '',
+      note,
+      selectedNodeId: selectedNodeId || null
+    };
+    finish(payload);
+  };
+
+  nodeGroupModalConfirm.onclick = submit;
+  nodeGroupModalCancel.onclick = () => finish(null);
+  nodeGroupModalClose.onclick = () => finish(null);
+  nodeGroupModalType.onchange = updateNodeGroupModalFields;
+  nodeGroupModalIconMode.onchange = updateNodeGroupModalFields;
+});
+
 const requestJson = async (url, options = {}) => {
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -1598,6 +2621,7 @@ const renderNodeRow = (node, activeNodeId) => {
   const allGroups = [...new Set([...groupsData, ...nodesData.map(n => n.group).filter(Boolean)])];
   const flagEmoji = node.flagEmoji || flagFromCountryCode(node.countryCode);
   const flagTitle = node.countryName || node.countryCode || 'GeoIP 数据准备中';
+  const countryOverrideBadge = node.countryOverridden ? '<span class="pill pill-dark">手动国家</span>' : '';
   const groupMenuItems = [
     `<div class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</div>`,
     ...allGroups.map(g => `<div class="group-menu-item${node.group === g ? ' active' : ''}" data-group="${g}">${g}</div>`)
@@ -1613,7 +2637,7 @@ const renderNodeRow = (node, activeNodeId) => {
             <span class="node-name">${node.name || '未命名节点'}</span>
           </div>
           <span class="node-ip">${maskedIp}</span>
-          <span class="node-port">本地出口: ${localPortStr}</span>
+          <span class="node-port">本地出口: ${localPortStr}</span>${countryOverrideBadge}
         </div>
       </td>
       <td>
@@ -1625,6 +2649,7 @@ const renderNodeRow = (node, activeNodeId) => {
         <div class="row-actions">
           <button type="button" class="row-action-btn share-node-btn" data-id="${node.id}" title="复制代理链接"><i class="ph ph-share-network"></i></button>
           <button type="button" class="row-action-btn test-node-btn" data-id="${node.id}" title="测试延迟"><i class="ph ph-activity"></i></button>
+          <button type="button" class="row-action-btn country-node-btn" data-id="${node.id}" title="修正国家归属"><i class="ph ph-flag-banner"></i></button>
           <button type="button" class="row-action-btn detail-node-btn" data-id="${node.id}" title="编辑详情"><i class="ph ph-pencil-simple"></i></button>
           <div class="move-group-wrap" data-id="${node.id}">
             <button type="button" class="row-action-btn move-group-btn" data-id="${node.id}" title="移至分组"><i class="ph ph-folder-simple-arrow"></i></button>
@@ -1648,6 +2673,39 @@ const copyNodeShareLink = async (id) => {
     showToast('代理链接已复制', 'success');
   } catch (error) {
     showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
+  }
+};
+
+const setNodeCountryOverride = async (id) => {
+  const node = nodesData.find((item) => item.id === id);
+  if (!node) {
+    return;
+  }
+
+  const currentValue = String(node.countryCodeOverride || node.countryCode || '').trim().toUpperCase();
+  const input = await showInputModal('设置国家代码（ISO2，留空清除手动覆盖）', currentValue);
+  if (input === null) {
+    return;
+  }
+
+  const normalized = String(input || '').trim().toUpperCase();
+  if (normalized && !/^[A-Z]{2}$/u.test(normalized)) {
+    showToast('国家代码格式错误，请输入 2 位字母（如 JP / US）', 'error');
+    return;
+  }
+
+  try {
+    const payload = await requestJson('/api/nodes/country', {
+      method: 'PUT',
+      body: JSON.stringify({ id, countryCode: normalized || null })
+    });
+    nodesData = payload.nodes || nodesData;
+    groupsData = payload.groups || groupsData;
+    renderGroupTabs();
+    renderNodesElement();
+    showToast(normalized ? '国家归属已修正' : '已清除手动国家覆盖', 'success');
+  } catch (error) {
+    showToast(`国家归属更新失败: ${error.message}`, 'error');
   }
 };
 
@@ -1719,6 +2777,9 @@ const renderNodesElement = () => {
   });
   nodesTbody.querySelectorAll('.detail-node-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); openEditModal(btn.dataset.id); });
+  });
+  nodesTbody.querySelectorAll('.country-node-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); setNodeCountryOverride(btn.dataset.id); });
   });
 
   nodesTbody.querySelectorAll('.move-group-wrap').forEach(wrap => {
@@ -2193,6 +3254,7 @@ manualAddBtn?.addEventListener('click', () => {
   editJsonInput.value = JSON.stringify(skeleton, null, 2);
   const groupInput = document.querySelector('#edit-node-group');
   if (groupInput) groupInput.value = currentGroup || '';
+  if (editCountryOverrideInput) editCountryOverrideInput.value = '';
   editModal.classList.add('active');
 });
 
@@ -2218,6 +3280,7 @@ const closeModal = () => {
   editJsonInput.value = '';
   const groupInput = document.querySelector('#edit-node-group');
   if (groupInput) groupInput.value = '';
+  if (editCountryOverrideInput) editCountryOverrideInput.value = '';
 };
 
 closeModalBtns.forEach(btn => btn.addEventListener('click', closeModal));
@@ -2229,7 +3292,12 @@ const openEditModal = (id) => {
   if (!node) return;
   currentEditNodeId = id;
   const editData = { ...node };
+  delete editData.countryCode;
+  delete editData.countryName;
+  delete editData.flagEmoji;
+  delete editData.countryOverridden;
   if (editNodeGroupInput) editNodeGroupInput.value = node.group || '';
+  if (editCountryOverrideInput) editCountryOverrideInput.value = node.countryCodeOverride || '';
   editJsonInput.value = JSON.stringify(editData, null, 2);
   editModal.classList.add('active');
 };
@@ -2241,7 +3309,12 @@ saveNodeBtn?.addEventListener('click', async () => {
   try {
     const updatedData = JSON.parse(editJsonInput.value);
     const groupValue = editNodeGroupInput ? editNodeGroupInput.value.trim() || null : undefined;
+    const countryOverrideValue = editCountryOverrideInput ? editCountryOverrideInput.value.trim().toUpperCase() : '';
+    if (countryOverrideValue && !/^[A-Z]{2}$/u.test(countryOverrideValue)) {
+      throw new Error('国家代码格式错误，请填写 2 位字母（如 JP / US）');
+    }
     if (groupValue !== undefined) updatedData.group = groupValue;
+    if (editCountryOverrideInput) updatedData.countryCodeOverride = countryOverrideValue || null;
 
     let path = '/api/nodes';
     let method = 'PUT';
@@ -2291,15 +3364,34 @@ navItems.forEach(btn => {
     const targetId = btn.getAttribute('data-target');
     const targetView = document.getElementById(targetId);
     if (targetView) targetView.classList.add('active');
-    if (targetId === 'routing-view') {
+    if (targetId === 'dashboard-view') {
+      startTrafficPolling();
+      stopRoutingStatusPolling();
+      stopNodeGroupAutoTest();
+    } else if (targetId === 'routing-view') {
       loadSystemStatus();
       loadRoutingRules(true);
       stopRoutingStatusPolling();
+      stopNodeGroupAutoTest();
+      stopTrafficPolling();
+    } else if (targetId === 'node-groups-view') {
+      loadNodeGroups().then(() => {
+        startNodeGroupAutoTest();
+        runNodeGroupAutoBackfillIfNeeded();
+      });
+      stopRoutingStatusPolling();
+      stopTrafficPolling();
     } else if (targetId === 'routing-logs-view') {
       loadSystemStatus();
       startRoutingStatusPolling();
+      stopNodeGroupAutoTest();
+      stopTrafficPolling();
+      markRoutingHitsAsSeen();
+      updateRoutingLogNavBadge(false);
     } else {
       stopRoutingStatusPolling();
+      stopNodeGroupAutoTest();
+      stopTrafficPolling();
     }
   });
 });
@@ -2466,13 +3558,37 @@ routingRuleModalConfirm?.addEventListener('click', submitRoutingRuleModal);
 routingRuleModalClose?.addEventListener('click', closeRoutingRuleModal);
 routingRuleModalCancel?.addEventListener('click', closeRoutingRuleModal);
 routingRuleModalAction?.addEventListener('change', () => {
+  if (routingRuleModalNode) {
+    if (routingRuleModalAction.value === 'node_group') {
+      routingRuleModalNode.innerHTML = ['<option value="">选择节点组</option>', ...nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(getNodeGroupDisplayName(group))}</option>`)].join('');
+    } else if (routingRuleModalAction.value === 'node') {
+      routingRuleModalNode.innerHTML = ['<option value="">选择节点</option>', ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.name || node.server || node.id)}</option>`)].join('');
+    }
+  }
   if (routingRuleModalNodeField) {
-    routingRuleModalNodeField.classList.toggle('hidden', routingRuleModalAction.value !== 'node');
+    routingRuleModalNodeField.classList.toggle('hidden', !['node', 'node_group'].includes(routingRuleModalAction.value));
   }
 });
 
 routingLogSearchInput?.addEventListener('input', (event) => {
   applyRoutingLogSearch(event.target.value || '');
+});
+
+routingLogKindFilter?.addEventListener('change', () => {
+  routingLogKindQuery = routingLogKindFilter.value || 'all';
+  renderRoutingObservability();
+});
+
+routingLogViewStatsBtn?.addEventListener('click', () => {
+  routingLogViewMode = 'stats';
+  updateRoutingLogViewModeButtons();
+  renderRoutingObservability();
+});
+
+routingLogViewTimelineBtn?.addEventListener('click', () => {
+  routingLogViewMode = 'timeline';
+  updateRoutingLogViewModeButtons();
+  renderRoutingObservability();
 });
 
 routingLogSearchClearBtn?.addEventListener('click', () => {
@@ -2487,6 +3603,36 @@ routingLogSearchClearBtn?.addEventListener('click', () => {
 
 geoIpRefreshBtn?.addEventListener('click', refreshGeoIp);
 rulesetDbRefreshBtn?.addEventListener('click', refreshRulesetDatabase);
+nodeGroupAutoIntervalSelect?.addEventListener('change', async () => {
+  const nextIntervalSec = Number.parseInt(nodeGroupAutoIntervalSelect.value, 10);
+  if (!Number.isInteger(nextIntervalSec) || nextIntervalSec < 60) {
+    showToast('自动测速周期无效', 'error');
+    return;
+  }
+
+  nodeGroupAutoTestIntervalMs = nextIntervalSec * 1000;
+  renderNodeGroupTestMeta();
+  await persistNodeGroupTestingState();
+
+  if (document.getElementById('node-groups-view')?.classList.contains('active')) {
+    stopNodeGroupAutoTest();
+    startNodeGroupAutoTest();
+  }
+
+  showToast(`自动测速周期已更新为 ${Math.round(nextIntervalSec / 60)} 分钟`, 'success');
+});
+
+nodeGroupSearchInput?.addEventListener('input', (event) => {
+  nodeGroupSearchQuery = String(event.target?.value || '').trim();
+  renderNodeGroups();
+});
+
+nodeGroupAddBtn?.addEventListener('click', async () => {
+  const payload = await showNodeGroupConfigModal('create');
+  if (!payload) return;
+  await requestJson('/api/node-groups', { method: 'POST', body: JSON.stringify(payload) });
+  await loadNodeGroups();
+});
 
 // Window Titlebar Mocks
 document.getElementById('titlebar-close')?.addEventListener('click', () => {
@@ -2499,5 +3645,7 @@ document.addEventListener('click', () => {
 });
 
 // Init
+updateRoutingLogViewModeButtons();
 loadNodes();
 loadSystemStatus();
+startTrafficPolling();

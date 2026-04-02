@@ -5,6 +5,7 @@ import path from 'path';
 import { ConfigStore } from './services/ConfigStore.js';
 import { CoreManager } from './services/CoreManager.js';
 import { createCoreRoutes } from './routes/core.js';
+import { createNodeGroupRoutes } from './routes/node-groups.js';
 import { createNodeRoutes } from './routes/nodes.js';
 import { createSystemRoutes } from './routes/system.js';
 import { ensureRuntimeDirs } from '../shared/paths.js';
@@ -75,6 +76,7 @@ export function createAppServer(paths, env = process.env) {
   const routes = {
     ...createSystemRoutes({ store, coreManager, paths }),
     ...createCoreRoutes({ coreManager }),
+    ...createNodeGroupRoutes({ coreManager }),
     ...createNodeRoutes({ store, coreManager })
   };
 

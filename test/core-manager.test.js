@@ -439,7 +439,7 @@ test('updateSettings trims custom rule fields and preserves note', async () => {
   });
 
   assert.deepEqual(result.settings.customRules, [
-    { id: 'rule-a', type: 'domain_suffix', value: 'corp.local', action: 'direct', nodeId: null, note: 'office' }
+    { id: 'rule-a', type: 'domain_suffix', value: 'corp.local', action: 'direct', nodeId: null, nodeGroupId: null, note: 'office' }
   ]);
 });
 
@@ -523,6 +523,17 @@ test('updateSettings rejects node target ruleset without node id', async () => {
   await assert.rejects(() => manager.updateSettings({
     rulesets: [{ kind: 'builtin', presetId: 'ai-services', target: 'node' }]
   }), /requires nodeId/);
+});
+
+test('updateSettings persists normalized node groups', async () => {
+  const manager = new CoreManager(createPaths(), createStore([{ id: 'n1', type: 'socks', server: 'one.example', port: 1080 }]));
+
+  const result = await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: ' JP Pool ', nodeIds: ['n1'], selectedNodeId: 'n1' }]
+  });
+
+  assert.equal(result.settings.nodeGroups[0].name, 'JP Pool');
+  assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n1');
 });
 
 test('getSettingsSnapshot repairs malformed persisted custom rules', () => {
@@ -816,4 +827,63 @@ test('testNodes auto starts core and returns per-node results', async () => {
   assert.equal(result.results[0].latencyMs, 88);
   assert.equal(result.results[1].ok, false);
   assert.equal(result.results[1].error, 'connect failed');
+});
+
+test('setNodeCountryOverride normalizes country code and overrides geo result', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: () => 20000,
+    toShareLink: () => null,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    getStatus: () => ({ ready: true, pending: false, lastError: null }),
+    enrichNodes: async (records) => records.map((record) => ({
+      ...record,
+      countryCode: 'US',
+      countryName: 'United States',
+      flagEmoji: '🇺🇸'
+    }))
+  };
+
+  const result = await manager.setNodeCountryOverride('n1', 'jp');
+
+  assert.equal(result.node.countryCodeOverride, 'JP');
+  assert.equal(result.node.countryCode, 'JP');
+  assert.equal(result.node.flagEmoji, '🇯🇵');
+});
+
+test('groupNodesByCountry updates only nodes with country code', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081, group: '手动分组' }
+  ]));
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: (nodeId) => (nodeId === 'n1' ? 20000 : 20001),
+    toShareLink: () => null,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    getStatus: () => ({ ready: true, pending: false, lastError: null }),
+    enrichNodes: async (records) => records.map((record) => ({
+      ...record,
+      countryCode: record.id === 'n1' ? 'JP' : null,
+      countryName: record.id === 'n1' ? 'Japan' : null,
+      flagEmoji: record.id === 'n1' ? '🇯🇵' : null
+    }))
+  };
+
+  const result = await manager.groupNodesByCountry();
+
+  assert.equal(result.groupedCount, 1);
+  assert.equal(result.skippedCount, 1);
+  assert.equal(result.nodes.find((node) => node.id === 'n1')?.group, '国家/JP');
+  assert.equal(result.nodes.find((node) => node.id === 'n2')?.group, '手动分组');
+  assert.equal(result.nodeGroups.some((group) => group.id === 'country-auto-jp'), true);
 });
