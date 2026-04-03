@@ -17,6 +17,30 @@ import {
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
 
+const resolveExistingFilePath = (candidatePath) => {
+  const resolved = path.resolve(candidatePath);
+  if (fs.existsSync(resolved)) {
+    return resolved;
+  }
+
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const parentDir = path.dirname(resolved);
+  if (!fs.existsSync(parentDir)) {
+    return null;
+  }
+
+  const targetName = path.basename(resolved).toLowerCase();
+  try {
+    const match = fs.readdirSync(parentDir).find((entry) => String(entry || '').toLowerCase() === targetName);
+    return match ? path.join(parentDir, match) : null;
+  } catch {
+    return null;
+  }
+};
+
 const toInt = (value, fallback = undefined) => {
   if (value === undefined || value === null || value === '') {
     return fallback;
@@ -528,10 +552,10 @@ export class ProxyService {
       this.routingHitMap.set(tag, meta);
       return tag;
     };
-    const localDatabaseRuleSets = Object.fromEntries(REMOTE_RULESET_CATALOG.map((ruleset) => [
-      ruleset.tag,
-      path.join(this.rulesDir, `${ruleset.tag}.${ruleset.format === 'source' ? 'json' : 'srs'}`)
-    ]));
+    const localDatabaseRuleSets = Object.fromEntries(REMOTE_RULESET_CATALOG.map((ruleset) => {
+      const expectedPath = path.join(this.rulesDir, `${ruleset.tag}.${ruleset.format === 'source' ? 'json' : 'srs'}`);
+      return [ruleset.tag, resolveExistingFilePath(expectedPath) || expectedPath];
+    }));
     const resolveManualRuleOutbound = (rule) => {
       if (rule.action === 'direct') return 'direct';
       if (rule.action === 'node' && rule.nodeId && validNodes.some((node) => node.id === rule.nodeId)) {
@@ -582,7 +606,7 @@ export class ProxyService {
         const remoteRuleSetIds = builtin && Array.isArray(builtin.remoteRuleSetIds) ? builtin.remoteRuleSetIds : [];
         const remoteRuleSetTags = remoteRuleSetIds
           .map((id) => REMOTE_RULESET_MAP.get(id)?.tag || null)
-          .filter((tag) => tag && fs.existsSync(localDatabaseRuleSets[tag]));
+          .filter((tag) => tag && Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
         const outbound = buildRulesetOutbound(ruleset);
         const descriptor = ruleset.name || ruleset.id;
         remoteRuleSetTags.forEach((tag) => {
@@ -644,7 +668,7 @@ export class ProxyService {
         });
       } else if (systemInbounds.length && proxyMode === 'rule') {
         const builtInDatabaseTags = ['geosite-cn', 'geoip-cn']
-          .filter((tag) => fs.existsSync(localDatabaseRuleSets[tag]));
+          .filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
 
         if (builtInDatabaseTags.length) {
           routeRules.push({
@@ -694,7 +718,8 @@ export class ProxyService {
       route: {
         rule_set: [
           ...Object.entries(localDatabaseRuleSets)
-            .filter(([, filePath]) => fs.existsSync(filePath))
+            .map(([tag, filePath]) => [tag, resolveExistingFilePath(filePath)])
+            .filter(([, filePath]) => Boolean(filePath))
             .map(([tag, filePath]) => ({
               type: 'local',
               tag,

@@ -2909,6 +2909,10 @@ const loadNodes = async () => {
 const loadSystemStatus = async () => {
   try {
     const payload = await requestJson('/api/system/status');
+    const runtimePaths = payload.core?.paths;
+    if (runtimePaths?.settingsPath) {
+      console.info('[Leme Hub] runtime paths', runtimePaths);
+    }
     renderGeoIpStatus(payload.geoIp || payload.core?.geoIp || null);
     renderRulesetDatabaseStatus(payload.rulesetDatabase || payload.core?.rulesetDatabase || null);
     updateCoreStatus(payload.core);

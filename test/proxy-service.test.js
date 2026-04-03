@@ -293,6 +293,41 @@ test('resolves routing hits for builtin remote ruleset tags', () => {
   assert.equal(hit?.matchedTag, 'geosite-telegram');
 });
 
+test('uses remote ruleset files with case-insensitive lookup on Windows-style directories', () => {
+  const tempDir = createTempDir();
+  fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'rules', 'GeoSite-Telegram.srs'), 'stub');
+  fs.writeFileSync(path.join(tempDir, 'rules', 'GeoIP-Telegram.srs'), 'stub');
+
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+
+  try {
+    const service = new ProxyService({ configDir: tempDir, projectRoot: process.cwd() });
+    service.setNodes([
+      { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+      { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+    ]);
+
+    const config = service.generateConfig({
+      activeNodeId: 'n1',
+      proxyMode: 'rule',
+      systemProxyEnabled: true,
+      systemProxyHttpPort: 20101,
+      systemProxySocksPort: 20100,
+      rulesets: [
+        { id: 'rs-telegram', kind: 'builtin', presetId: 'telegram', enabled: true, target: 'node', nodeId: 'n2' }
+      ]
+    });
+
+    assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geosite-telegram'), true);
+    assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geoip-telegram'), true);
+    assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-telegram') && rule.outbound === 'out-n2'), true);
+  } finally {
+    Object.defineProperty(process, 'platform', originalPlatform);
+  }
+});
+
 test('rule mode adds built-in cn direct database rules when files exist', () => {
   const tempDir = createTempDir();
   fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });

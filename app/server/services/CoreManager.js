@@ -1055,6 +1055,15 @@ export class CoreManager {
       geoIp: this.getGeoIpStatus(),
       rulesetDatabase: this.getRulesetDatabaseStatus(),
       settings: this.getSettingsSnapshot(),
+      paths: {
+        root: this.paths.root,
+        runtimeRoot: this.paths.runtimeRoot,
+        dataDir: this.paths.dataDir,
+        configPath: this.paths.configPath,
+        settingsPath: this.paths.settingsPath,
+        rulesDir: this.paths.rulesDir,
+        rulesetMetaPath: this.paths.rulesetMetaPath
+      },
       hasConfig: fs.existsSync(this.paths.configPath),
       nodeCount: this.store.getNodes().length,
       nodes: this.store.getNodes(),
