@@ -133,6 +133,11 @@ let nodeGroupSearchQuery = '';
 let nodeGroupSortByLatency = true;
 let editingRoutingRuleId = null;
 
+const REMOTE_RULESET_RUNTIME_LABELS = {
+  present: '已下载',
+  missing: '缺失'
+};
+
 const NODE_GROUP_SWITCH_DELTA_MS = 120;
 const NODE_GROUP_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
 const NODE_GROUP_SWITCH_FAIL_THRESHOLD = 3;
@@ -171,9 +176,53 @@ const createRoutingRulesetDraft = (ruleset = {}) => ({
   target: ROUTING_RULESET_TARGETS.includes(ruleset.target) ? ruleset.target : 'default',
   nodeId: ruleset.nodeId || '',
   groupId: ruleset.groupId || '',
+  remoteRuleSetIds: Array.isArray(ruleset.remoteRuleSetIds) ? [...ruleset.remoteRuleSetIds] : [],
   entries: Array.isArray(ruleset.entries) ? ruleset.entries.map((entry) => createRoutingRulesetEntryDraft(entry)) : [],
   note: String(ruleset.note || '')
 });
+
+const getBuiltinRulesetMeta = (presetId) => routingBuiltinRulesets.find((builtin) => builtin.id === presetId) || null;
+
+const getRulesetFileStatus = (remoteRuleSetId) => {
+  const files = rulesetDatabaseStatus?.files || {};
+  return files[remoteRuleSetId] || null;
+};
+
+const buildRulesetRuntimeMeta = (ruleset) => {
+  const builtin = ruleset.kind === 'builtin' ? getBuiltinRulesetMeta(ruleset.presetId) : null;
+  const remoteIds = Array.isArray(builtin?.remoteRuleSetIds)
+    ? builtin.remoteRuleSetIds
+    : Array.isArray(ruleset.remoteRuleSetIds)
+      ? ruleset.remoteRuleSetIds
+      : [];
+  return remoteIds.map((remoteId) => {
+    const file = getRulesetFileStatus(remoteId);
+    return {
+      id: remoteId,
+      exists: Boolean(file?.exists)
+    };
+  });
+};
+
+const renderRulesetRuntimeMeta = (ruleset) => {
+  if (ruleset.kind !== 'builtin') {
+    return '<span class="routing-runtime-pill is-inline">inline</span>';
+  }
+
+  const runtimeMeta = buildRulesetRuntimeMeta(ruleset);
+  if (!runtimeMeta.length) {
+    return '<span class="routing-runtime-pill is-inline is-muted">无远程映射</span>';
+  }
+
+  return runtimeMeta.map((entry) => {
+    const downloadState = entry.exists ? 'present' : 'missing';
+    return `<span class="routing-runtime-pill is-inline ${entry.exists ? 'is-ready' : 'is-missing'}" title="${escapeHtml(entry.id)}">
+      <span class="routing-runtime-pill-tag">${escapeHtml(entry.id)}</span>
+      <span class="routing-runtime-pill-sep"></span>
+      <span>${REMOTE_RULESET_RUNTIME_LABELS[downloadState]}</span>
+    </span>`;
+  }).join('');
+};
 
 const getRoutingMode = () => currentCoreState?.proxy?.mode || systemProxyModeSelect?.value || 'rule';
 
@@ -1710,6 +1759,7 @@ const renderRoutingRulesetsSection = () => {
                 <input type="checkbox" data-ruleset-field="enabled" data-ruleset-id="${escapeHtml(ruleset.id)}" ${ruleset.enabled ? 'checked' : ''}>
                 <span>启用</span>
               </label>
+              <div class="routing-ruleset-runtime-inline">${renderRulesetRuntimeMeta(ruleset)}</div>
               <div class="routing-ruleset-actions routing-ruleset-actions-inline">
                 <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-up-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === 0 ? 'disabled' : ''}>↑</button>
                 <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-down-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === routingRulesets.length - 1 ? 'disabled' : ''}>↓</button>
