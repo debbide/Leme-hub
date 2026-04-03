@@ -10,10 +10,12 @@ import {
   BUILTIN_RULESETS,
   DEFAULT_CONFIG_FILE,
   DEFAULT_PROXY_BASE_PORT,
-  DEFAULT_PROXY_LISTEN_HOST
+  DEFAULT_PROXY_LISTEN_HOST,
+  REMOTE_RULESET_CATALOG
 } from '../shared/constants.js';
 
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
+const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
 
 const toInt = (value, fallback = undefined) => {
   if (value === undefined || value === null || value === '') {
@@ -526,10 +528,10 @@ export class ProxyService {
       this.routingHitMap.set(tag, meta);
       return tag;
     };
-    const localDatabaseRuleSets = {
-      'geosite-cn': path.join(this.rulesDir, 'geosite-cn.srs'),
-      'geoip-cn': path.join(this.rulesDir, 'geoip-cn.srs')
-    };
+    const localDatabaseRuleSets = Object.fromEntries(REMOTE_RULESET_CATALOG.map((ruleset) => [
+      ruleset.tag,
+      path.join(this.rulesDir, `${ruleset.tag}.${ruleset.format === 'source' ? 'json' : 'srs'}`)
+    ]));
     const resolveManualRuleOutbound = (rule) => {
       if (rule.action === 'direct') return 'direct';
       if (rule.action === 'node' && rule.nodeId && validNodes.some((node) => node.id === rule.nodeId)) {
@@ -577,21 +579,38 @@ export class ProxyService {
       .map((ruleset) => {
         const builtin = ruleset.kind === 'builtin' && ruleset.presetId ? BUILTIN_RULESET_MAP.get(ruleset.presetId) : null;
         const entries = builtin ? builtin.entries : (Array.isArray(ruleset.entries) ? ruleset.entries : []);
+        const remoteRuleSetIds = builtin && Array.isArray(builtin.remoteRuleSetIds) ? builtin.remoteRuleSetIds : [];
+        const remoteRuleSetTags = remoteRuleSetIds
+          .map((id) => REMOTE_RULESET_MAP.get(id)?.tag || null)
+          .filter((tag) => tag && fs.existsSync(localDatabaseRuleSets[tag]));
+        const outbound = buildRulesetOutbound(ruleset);
+        const descriptor = ruleset.name || ruleset.id;
+        remoteRuleSetTags.forEach((tag) => {
+          registerRoutingHit(tag, {
+            kind: 'ruleset',
+            name: ruleset.name || ruleset.id,
+            target: outbound,
+            descriptor,
+            rulesetId: ruleset.id || null,
+            rulesetPresetId: ruleset.presetId || null
+          });
+        });
         return {
           ...ruleset,
           entries,
+          remoteRuleSetTags,
           tag: registerRoutingHit(`usr-rs-${ruleset.id}`, {
             kind: 'ruleset',
             name: ruleset.name || ruleset.id,
-            target: buildRulesetOutbound(ruleset),
-            descriptor: ruleset.name || ruleset.id,
+            target: outbound,
+            descriptor,
             rulesetId: ruleset.id || null,
             rulesetPresetId: ruleset.presetId || null
           }),
-          outbound: buildRulesetOutbound(ruleset)
+          outbound
         };
       })
-      .filter((ruleset) => Array.isArray(ruleset.entries) && ruleset.entries.length > 0);
+      .filter((ruleset) => ruleset.remoteRuleSetTags.length > 0 || (Array.isArray(ruleset.entries) && ruleset.entries.length > 0));
     const finalOutbound = !systemProxyEnabled || proxyMode === 'rule'
       ? 'direct'
       : proxyMode === 'direct'
@@ -624,14 +643,13 @@ export class ProxyService {
           outbound: systemOutbound
         });
       } else if (systemInbounds.length && proxyMode === 'rule') {
-        const baseDatabaseTags = Object.entries(localDatabaseRuleSets)
-          .filter(([, filePath]) => fs.existsSync(filePath))
-          .map(([tag]) => tag);
+        const builtInDatabaseTags = ['geosite-cn', 'geoip-cn']
+          .filter((tag) => fs.existsSync(localDatabaseRuleSets[tag]));
 
-        if (baseDatabaseTags.length) {
+        if (builtInDatabaseTags.length) {
           routeRules.push({
             inbound: systemInbounds,
-            rule_set: baseDatabaseTags,
+            rule_set: builtInDatabaseTags,
             outbound: 'direct'
           });
         }
@@ -645,11 +663,21 @@ export class ProxyService {
         }
 
         for (const ruleset of materializedRulesets) {
-          routeRules.push({
-            inbound: systemInbounds,
-            rule_set: ruleset.tag,
-            outbound: ruleset.outbound
-          });
+          if (ruleset.remoteRuleSetTags.length) {
+            routeRules.push({
+              inbound: systemInbounds,
+              rule_set: ruleset.remoteRuleSetTags,
+              outbound: ruleset.outbound
+            });
+          }
+
+          if (Array.isArray(ruleset.entries) && ruleset.entries.length) {
+            routeRules.push({
+              inbound: systemInbounds,
+              rule_set: ruleset.tag,
+              outbound: ruleset.outbound
+            });
+          }
         }
 
         routeRules.push({
@@ -670,7 +698,7 @@ export class ProxyService {
             .map(([tag, filePath]) => ({
               type: 'local',
               tag,
-              format: 'binary',
+              format: REMOTE_RULESET_CATALOG.find((ruleset) => ruleset.tag === tag)?.format || 'binary',
               path: filePath
             })),
           ...manualRuleSetDefs.map((ruleset) => ({

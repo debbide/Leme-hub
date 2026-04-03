@@ -811,12 +811,13 @@ export class CoreManager {
         id: ruleset.id,
         name: ruleset.name,
         kind: 'builtin',
-      entries: ruleset.entries.map((entry, index) => ({
+        remoteRuleSetIds: Array.isArray(ruleset.remoteRuleSetIds) ? [...ruleset.remoteRuleSetIds] : [],
+        entries: ruleset.entries.map((entry, index) => ({
         id: `${ruleset.id}-entry-${index + 1}`,
         type: entry.type,
         value: entry.value,
         note: entry.note || ''
-      }))
+        }))
       }))
     ];
   }
@@ -1057,7 +1058,7 @@ export class CoreManager {
       hasConfig: fs.existsSync(this.paths.configPath),
       nodeCount: this.store.getNodes().length,
       nodes: this.store.getNodes(),
-      recentLogs: this.store.getRecentLogs(12)
+      recentLogs: this.store.getRecentLogs(200)
     };
   }
 

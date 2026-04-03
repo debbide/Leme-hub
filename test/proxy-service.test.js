@@ -264,6 +264,35 @@ test('generates inline route rule sets mapped to target nodes in rule mode', () 
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-work' && rule.outbound === 'direct'), true);
 });
 
+test('resolves routing hits for builtin remote ruleset tags', () => {
+  const tempDir = createTempDir();
+  fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geosite-telegram.srs'), 'stub');
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geoip-telegram.srs'), 'stub');
+
+  const service = new ProxyService({ configDir: tempDir, projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    rulesets: [
+      { id: 'rs-telegram', kind: 'builtin', presetId: 'telegram', enabled: true, target: 'node', nodeId: 'n2' }
+    ]
+  });
+
+  const hit = service.resolveRoutingHit('geosite-telegram', 'telegram.org', 'out-n2', { allowHeuristic: false });
+  assert.equal(hit?.kind, 'ruleset');
+  assert.equal(hit?.rulesetPresetId, 'telegram');
+  assert.equal(hit?.matchedTag, 'geosite-telegram');
+});
+
 test('rule mode adds built-in cn direct database rules when files exist', () => {
   const tempDir = createTempDir();
   fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });

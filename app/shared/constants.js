@@ -20,10 +20,140 @@ export const CUSTOM_RULE_ACTIONS = ['default', 'direct', 'node', 'node_group'];
 export const RULESET_KINDS = ['builtin', 'custom'];
 export const RULESET_TARGETS = ['default', 'direct', 'node', 'node_group'];
 
+export const REMOTE_RULESET_CATALOG = [
+  {
+    id: 'geosite-fakeipfilter',
+    tag: 'geosite-fakeipfilter',
+    format: 'source',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/qichiyuhub/rule/refs/heads/main/rules/fakeipfilter.json'
+  },
+  {
+    id: 'geosite-ai',
+    tag: 'geosite-ai',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ai-!cn.srs'
+  },
+  {
+    id: 'geosite-youtube',
+    tag: 'geosite-youtube',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/youtube.srs'
+  },
+  {
+    id: 'geosite-google',
+    tag: 'geosite-google',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs'
+  },
+  {
+    id: 'geosite-github',
+    tag: 'geosite-github',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs'
+  },
+  {
+    id: 'geosite-onedrive',
+    tag: 'geosite-onedrive',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/onedrive.srs'
+  },
+  {
+    id: 'geosite-microsoft',
+    tag: 'geosite-microsoft',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/microsoft.srs'
+  },
+  {
+    id: 'geosite-apple',
+    tag: 'geosite-apple',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/apple.srs'
+  },
+  {
+    id: 'geosite-telegram',
+    tag: 'geosite-telegram',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/telegram.srs'
+  },
+  {
+    id: 'geosite-tiktok',
+    tag: 'geosite-tiktok',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/tiktok.srs'
+  },
+  {
+    id: 'geosite-netflix',
+    tag: 'geosite-netflix',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/netflix.srs'
+  },
+  {
+    id: 'geosite-paypal',
+    tag: 'geosite-paypal',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/paypal.srs'
+  },
+  {
+    id: 'geosite-steamcn',
+    tag: 'geosite-steamcn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/steam@cn.srs'
+  },
+  {
+    id: 'geosite-steam',
+    tag: 'geosite-steam',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/steam.srs'
+  },
+  {
+    id: 'geosite-!cn',
+    tag: 'geosite-!cn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/geolocation-!cn.srs'
+  },
+  {
+    id: 'geosite-cn',
+    tag: 'geosite-cn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/cn.srs'
+  },
+  {
+    id: 'geoip-google',
+    tag: 'geoip-google',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs'
+  },
+  {
+    id: 'geoip-apple',
+    tag: 'geoip-apple',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo-lite/geoip/apple.srs'
+  },
+  {
+    id: 'geoip-telegram',
+    tag: 'geoip-telegram',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/telegram.srs'
+  },
+  {
+    id: 'geoip-netflix',
+    tag: 'geoip-netflix',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/netflix.srs'
+  },
+  {
+    id: 'geoip-cn',
+    tag: 'geoip-cn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://github.com/qljsyph/ruleset-icon/raw/refs/heads/main/sing-box/geoip/China-ASN-combined-ip.srs'
+  }
+];
+
 export const BUILTIN_RULESETS = [
   {
     id: 'ai-services',
     name: 'AI 服务',
+    remoteRuleSetIds: ['geosite-ai'],
     entries: [
       { type: 'domain_keyword', value: 'openai' },
       { type: 'domain_keyword', value: 'anthropic' },
@@ -34,6 +164,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'youtube',
     name: 'YouTube 视频',
+    remoteRuleSetIds: ['geosite-youtube'],
     entries: [
       { type: 'domain_keyword', value: 'youtube' },
       { type: 'domain_suffix', value: 'youtube.com' },
@@ -44,6 +175,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'google',
     name: 'Google 服务',
+    remoteRuleSetIds: ['geosite-google', 'geoip-google'],
     entries: [
       { type: 'domain_keyword', value: 'google' },
       { type: 'domain_suffix', value: 'google.com' },
@@ -53,6 +185,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'github',
     name: 'GitHub 开发',
+    remoteRuleSetIds: ['geosite-github'],
     entries: [
       { type: 'domain_keyword', value: 'github' },
       { type: 'domain_suffix', value: 'github.com' },
@@ -62,6 +195,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'telegram',
     name: 'Telegram 通讯',
+    remoteRuleSetIds: ['geosite-telegram', 'geoip-telegram'],
     entries: [
       { type: 'domain_keyword', value: 'telegram' },
       { type: 'domain_suffix', value: 't.me' },
@@ -71,6 +205,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'tiktok',
     name: 'TikTok 短视频',
+    remoteRuleSetIds: ['geosite-tiktok'],
     entries: [
       { type: 'domain_keyword', value: 'tiktok' },
       { type: 'domain_suffix', value: 'tiktok.com' },
@@ -80,6 +215,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'netflix',
     name: 'Netflix 流媒体',
+    remoteRuleSetIds: ['geosite-netflix', 'geoip-netflix'],
     entries: [
       { type: 'domain_keyword', value: 'netflix' },
       { type: 'domain_suffix', value: 'netflix.com' },
@@ -89,6 +225,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'paypal',
     name: 'PayPal 支付',
+    remoteRuleSetIds: ['geosite-paypal'],
     entries: [
       { type: 'domain_keyword', value: 'paypal' },
       { type: 'domain_suffix', value: 'paypal.com' }
@@ -97,6 +234,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'steam',
     name: 'Steam 游戏',
+    remoteRuleSetIds: ['geosite-steam', 'geosite-steamcn'],
     entries: [
       { type: 'domain_keyword', value: 'steam' },
       { type: 'domain_suffix', value: 'steampowered.com' },
@@ -106,6 +244,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'microsoft',
     name: 'Microsoft 服务',
+    remoteRuleSetIds: ['geosite-microsoft'],
     entries: [
       { type: 'domain_keyword', value: 'microsoft' },
       { type: 'domain_suffix', value: 'microsoft.com' },
@@ -115,6 +254,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'onedrive',
     name: 'OneDrive 网盘',
+    remoteRuleSetIds: ['geosite-onedrive'],
     entries: [
       { type: 'domain_keyword', value: 'onedrive' },
       { type: 'domain_suffix', value: 'onedrive.live.com' },
@@ -124,6 +264,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'apple',
     name: 'Apple 服务',
+    remoteRuleSetIds: ['geosite-apple', 'geoip-apple'],
     entries: [
       { type: 'domain_keyword', value: 'apple' },
       { type: 'domain_suffix', value: 'apple.com' },
@@ -133,6 +274,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'foreign-sites',
     name: '常见国外站点',
+    remoteRuleSetIds: ['geosite-!cn'],
     entries: [
       { type: 'domain_suffix', value: 'com' },
       { type: 'domain_suffix', value: 'net' },
@@ -142,6 +284,7 @@ export const BUILTIN_RULESETS = [
   {
     id: 'cn-domains',
     name: '国内常见域名',
+    remoteRuleSetIds: ['geosite-cn', 'geoip-cn'],
     entries: [
       { type: 'domain_suffix', value: 'cn' },
       { type: 'domain_keyword', value: 'baidu' },

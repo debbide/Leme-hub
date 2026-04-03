@@ -5,7 +5,8 @@ import {
   DEFAULT_CONFIG_FILE,
   DEFAULT_LOG_FILE,
   DEFAULT_NODES_FILE,
-  DEFAULT_SETTINGS_FILE
+  DEFAULT_SETTINGS_FILE,
+  REMOTE_RULESET_CATALOG
 } from './constants.js';
 
 const defaultProjectRoot = path.resolve(process.cwd());
@@ -31,6 +32,12 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
 
   [dataDir, logsDir, binDir, geoDir].forEach(ensureDir);
 
+  const rulesDir = path.join(dataDir, 'rules');
+  const remoteRulesetPaths = Object.fromEntries(REMOTE_RULESET_CATALOG.map((ruleset) => [
+    ruleset.id,
+    path.join(rulesDir, `${ruleset.tag}.${ruleset.format === 'source' ? 'json' : 'srs'}`)
+  ]));
+
   return {
     root,
     runtimeRoot,
@@ -47,10 +54,11 @@ export function resolveProjectPaths(projectRoot = defaultProjectRoot, options = 
     geoIpDbPath: path.join(geoDir, 'GeoLite2-Country.mmdb'),
     geoIpArchivePath: path.join(geoDir, 'GeoLite2-Country.mmdb.gz'),
     geoIpMetaPath: path.join(geoDir, 'geoip-meta.json'),
-    rulesDir: path.join(dataDir, 'rules'),
-    geositeCnPath: path.join(dataDir, 'rules', 'geosite-cn.srs'),
-    geoipCnPath: path.join(dataDir, 'rules', 'geoip-cn.srs'),
-    rulesetMetaPath: path.join(dataDir, 'rules', 'ruleset-meta.json')
+    rulesDir,
+    geositeCnPath: remoteRulesetPaths['geosite-cn'],
+    geoipCnPath: remoteRulesetPaths['geoip-cn'],
+    rulesetMetaPath: path.join(rulesDir, 'ruleset-meta.json'),
+    remoteRulesetPaths
   };
 }
 

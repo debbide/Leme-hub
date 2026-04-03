@@ -3,20 +3,16 @@ import { pipeline } from 'stream/promises';
 
 import axios from 'axios';
 
+import { REMOTE_RULESET_CATALOG } from '../../shared/constants.js';
+
 const RULESET_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const RULESET_USER_AGENT = 'Leme-Hub/0.1';
-const RULESET_SOURCES = [
-  {
-    id: 'geosite-cn',
-    url: 'https://testingcf.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs',
-    targetPathKey: 'geositeCnPath'
-  },
-  {
-    id: 'geoip-cn',
-    url: 'https://testingcf.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs',
-    targetPathKey: 'geoipCnPath'
-  }
-];
+const RULESET_SOURCES = REMOTE_RULESET_CATALOG.map((ruleset) => ({
+  id: ruleset.id,
+  tag: ruleset.tag,
+  format: ruleset.format,
+  url: ruleset.url
+}));
 
 export class RulesetDatabaseService {
   constructor(paths, options = {}) {
@@ -57,7 +53,7 @@ export class RulesetDatabaseService {
 
   loadLocalState() {
     const files = Object.fromEntries(RULESET_SOURCES.map((source) => {
-      const filePath = this.paths[source.targetPathKey];
+      const filePath = this.paths.remoteRulesetPaths?.[source.id];
       return [source.id, { exists: fs.existsSync(filePath), path: filePath }];
     }));
 
@@ -82,7 +78,10 @@ export class RulesetDatabaseService {
       fs.mkdirSync(this.paths.rulesDir, { recursive: true });
 
       for (const source of RULESET_SOURCES) {
-        const targetPath = this.paths[source.targetPathKey];
+        const targetPath = this.paths.remoteRulesetPaths?.[source.id];
+        if (!targetPath) {
+          throw new Error(`Missing local path for ruleset ${source.id}`);
+        }
         const tmpPath = `${targetPath}.tmp`;
         const response = await axios.get(source.url, {
           responseType: 'stream',
@@ -109,7 +108,11 @@ export class RulesetDatabaseService {
     } finally {
       this.state.pending = false;
       RULESET_SOURCES.forEach((source) => {
-        const tmpPath = `${this.paths[source.targetPathKey]}.tmp`;
+        const targetPath = this.paths.remoteRulesetPaths?.[source.id];
+        if (!targetPath) {
+          return;
+        }
+        const tmpPath = `${targetPath}.tmp`;
         if (fs.existsSync(tmpPath)) {
           fs.rmSync(tmpPath, { force: true });
         }

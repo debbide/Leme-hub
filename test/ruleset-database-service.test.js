@@ -7,6 +7,7 @@ import path from 'path';
 import axios from 'axios';
 
 import { RulesetDatabaseService } from '../app/server/services/RulesetDatabaseService.js';
+import { REMOTE_RULESET_CATALOG } from '../app/shared/constants.js';
 
 const createPaths = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'leme-ruleset-db-'));
@@ -16,6 +17,10 @@ const createPaths = () => {
     rulesDir,
     geositeCnPath: path.join(rulesDir, 'geosite-cn.srs'),
     geoipCnPath: path.join(rulesDir, 'geoip-cn.srs'),
+    remoteRulesetPaths: Object.fromEntries(REMOTE_RULESET_CATALOG.map((ruleset) => [
+      ruleset.id,
+      path.join(rulesDir, `${ruleset.tag}.${ruleset.format === 'source' ? 'json' : 'srs'}`)
+    ])),
     rulesetMetaPath: path.join(rulesDir, 'ruleset-meta.json')
   };
 };
@@ -51,4 +56,5 @@ test('RulesetDatabaseService downloads both ruleset files', async () => {
   assert.equal(fs.existsSync(paths.geositeCnPath), true);
   assert.equal(fs.existsSync(paths.geoipCnPath), true);
   assert.equal(status.ready, true);
+  assert.equal(Object.keys(status.files).length, REMOTE_RULESET_CATALOG.length);
 });
