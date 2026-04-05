@@ -225,6 +225,81 @@ test('importProxyLink merges parsed nodes through CoreManager', async () => {
   assert.equal(result.node.localPort, 20001);
   assert.equal(result.restartRequired, false);
   assert.equal(result.importedCount, 1);
+  assert.equal(result.parsedCount, 1);
+});
+
+test('importProxyLink reports zero imported nodes when the node already exists', async () => {
+  const existingNode = { id: 'n1', type: 'socks', server: 'dup.example', port: 1080 };
+  const manager = new CoreManager(createPaths(), createStore([existingNode]));
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([{ type: 'socks', server: 'dup.example', port: 1080 }]),
+    parseProxyLink: () => ({ type: 'socks', server: 'dup.example', port: 1080 }),
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const result = await manager.importProxyLink('socks://dup');
+
+  assert.equal(result.importedCount, 0);
+  assert.equal(result.parsedCount, 1);
+  assert.equal(result.nodes.length, 1);
+});
+
+test('importProxyLink keeps nodes that differ on important transport fields', async () => {
+  const existingNode = {
+    id: 'n1',
+    type: 'trojan',
+    server: 'same.example',
+    port: 443,
+    password: 'secret',
+    sni: 'a.example.com',
+    transport: 'ws',
+    wsPath: '/a'
+  };
+  const manager = new CoreManager(createPaths(), createStore([existingNode]));
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([{
+      type: 'trojan',
+      server: 'same.example',
+      port: 443,
+      password: 'secret',
+      sni: 'b.example.com',
+      transport: 'ws',
+      wsPath: '/b'
+    }]),
+    parseProxyLink: () => ({
+      type: 'trojan',
+      server: 'same.example',
+      port: 443,
+      password: 'secret',
+      sni: 'b.example.com',
+      transport: 'ws',
+      wsPath: '/b'
+    }),
+    setNodes() {},
+    getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const result = await manager.importProxyLink('trojan://secret@same.example:443?sni=b.example.com&type=ws&path=%2Fb#new');
+
+  assert.equal(result.importedCount, 1);
+  assert.equal(result.parsedCount, 1);
+  assert.equal(result.nodes.length, 2);
+  assert.equal(result.nodes.some((node) => node.sni === 'b.example.com' && node.wsPath === '/b'), true);
 });
 
 test('importProxyLink splits multi-line links and persists all parsed nodes through CoreManager', async () => {
