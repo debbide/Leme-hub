@@ -13,6 +13,11 @@ export const bindSystemEvents = ({
   updateRestartWarning,
   getCurrentCoreState,
   autoStartToggle,
+  dnsRemoteServerInput,
+  dnsDirectServerInput,
+  dnsBootstrapServerInput,
+  dnsFinalSelect,
+  dnsStrategySelect,
   renderRoutingModeBanner,
 }) => {
   if (masterSwitch) {
@@ -122,4 +127,28 @@ export const bindSystemEvents = ({
       }
     });
   }
+
+  const bindDnsInput = (input, buildPatch) => {
+    if (!input) return;
+    input.addEventListener('change', async () => {
+      const value = input.value;
+      try {
+        const payload = await requestJson('/api/system/settings', {
+          method: 'PUT',
+          body: JSON.stringify(buildPatch(value))
+        });
+        if (payload.core) updateCoreStatus(payload.core);
+        renderRoutingModeBanner();
+        showToast(payload.autoRestarted ? 'DNS 设置已更新并自动应用' : 'DNS 设置已更新', 'success');
+      } catch (error) {
+        showToast(`DNS 设置失败: ${error.message}`, 'error');
+      }
+    });
+  };
+
+  bindDnsInput(dnsRemoteServerInput, (value) => ({ dnsRemoteServer: String(value || '').trim() }));
+  bindDnsInput(dnsDirectServerInput, (value) => ({ dnsDirectServer: String(value || '').trim() }));
+  bindDnsInput(dnsBootstrapServerInput, (value) => ({ dnsBootstrapServer: String(value || '').trim() }));
+  bindDnsInput(dnsFinalSelect, (value) => ({ dnsFinal: value }));
+  bindDnsInput(dnsStrategySelect, (value) => ({ dnsStrategy: value }));
 };

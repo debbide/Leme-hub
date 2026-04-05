@@ -385,6 +385,49 @@
                 </div>
                 <button class="btn-outline">检查更新</button>
               </div>
+              <div class="route-item settings-dns-item">
+                <div class="route-info">
+                  <div class="route-name">远程 DNS</div>
+                  <div class="route-desc">用于远程/代理方向的 DNS，支持 DoH 或 UDP 地址</div>
+                </div>
+                <input type="text" id="dns-remote-server" class="modal-field-input settings-input" placeholder="例如 https://cloudflare-dns.com/dns-query" autocomplete="off">
+              </div>
+              <div class="route-item settings-dns-item">
+                <div class="route-info">
+                  <div class="route-name">直连 DNS</div>
+                  <div class="route-desc">用于国内/直连方向的 DNS，支持 DoH 或 UDP 地址</div>
+                </div>
+                <input type="text" id="dns-direct-server" class="modal-field-input settings-input" placeholder="例如 https://dns.alidns.com/dns-query" autocomplete="off">
+              </div>
+              <div class="route-item settings-dns-item">
+                <div class="route-info">
+                  <div class="route-name">Bootstrap DNS</div>
+                  <div class="route-desc">用于解析 DoH 域名本身，通常填 UDP DNS</div>
+                </div>
+                <input type="text" id="dns-bootstrap-server" class="modal-field-input settings-input" placeholder="例如 223.5.5.5" autocomplete="off">
+              </div>
+              <div class="route-item settings-dns-item">
+                <div class="route-info">
+                  <div class="route-name">最终 DNS</div>
+                  <div class="route-desc">未命中 DNS 规则时默认使用的 DNS 出口</div>
+                </div>
+                <select id="dns-final-select" class="modal-field-input settings-input">
+                  <option value="dns-remote">远程 DNS</option>
+                  <option value="dns-local">直连 DNS</option>
+                </select>
+              </div>
+              <div class="route-item settings-dns-item">
+                <div class="route-info">
+                  <div class="route-name">DNS 策略</div>
+                  <div class="route-desc">控制 IPv4 / IPv6 优先级</div>
+                </div>
+                <select id="dns-strategy-select" class="modal-field-input settings-input">
+                  <option value="prefer_ipv4">prefer_ipv4</option>
+                  <option value="ipv4_only">ipv4_only</option>
+                  <option value="prefer_ipv6">prefer_ipv6</option>
+                  <option value="ipv6_only">ipv6_only</option>
+                </select>
+              </div>
             </div>
           </div>
           </div>

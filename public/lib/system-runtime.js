@@ -1,4 +1,4 @@
-export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, renderRulesetDatabaseStatus, updateCoreStatus, setRoutingNodeOptions, extractRoutingObservability, renderRoutingObservability, loadRoutingHits, showToast }) => {
+export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, renderRulesetDatabaseStatus, updateCoreStatus, setRoutingNodeOptions, extractRoutingObservability, renderRoutingObservability, loadRoutingHits, showToast, applySettingsSnapshot }) => {
   try {
     const payload = await requestJson('/api/system/status');
     const runtimePaths = payload.core?.paths;
@@ -8,6 +8,9 @@ export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, 
     renderGeoIpStatus(payload.geoIp || payload.core?.geoIp || null);
     renderRulesetDatabaseStatus(payload.rulesetDatabase || payload.core?.rulesetDatabase || null);
     updateCoreStatus(payload.core);
+    if (typeof applySettingsSnapshot === 'function') {
+      applySettingsSnapshot(payload.settings || payload.core?.settings || null);
+    }
     setRoutingNodeOptions(payload.core?.nodes || null);
     const observabilityEntries = extractRoutingObservability(payload.core);
     renderRoutingObservability(observabilityEntries);
@@ -15,6 +18,18 @@ export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, 
   } catch (error) {
     showToast(`系统状态加载失败: ${error.message}`, 'error');
   }
+};
+
+export const applySystemSettingsSnapshot = ({ settings, autoStartToggle, dnsRemoteServerInput, dnsDirectServerInput, dnsBootstrapServerInput, dnsFinalSelect, dnsStrategySelect }) => {
+  if (!settings || typeof settings !== 'object') return;
+  if (autoStartToggle && typeof settings.autoStart === 'boolean') {
+    autoStartToggle.checked = !!settings.autoStart;
+  }
+  if (dnsRemoteServerInput) dnsRemoteServerInput.value = settings.dnsRemoteServer || '';
+  if (dnsDirectServerInput) dnsDirectServerInput.value = settings.dnsDirectServer || '';
+  if (dnsBootstrapServerInput) dnsBootstrapServerInput.value = settings.dnsBootstrapServer || '';
+  if (dnsFinalSelect) dnsFinalSelect.value = settings.dnsFinal || 'dns-remote';
+  if (dnsStrategySelect) dnsStrategySelect.value = settings.dnsStrategy || 'prefer_ipv4';
 };
 
 export const refreshGeoIpData = async ({ geoIpRefreshBtn, requestJson, renderGeoIpStatus, getGeoIpStatus, loadNodes, showToast }) => {

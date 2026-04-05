@@ -292,6 +292,11 @@ export class ProxyService {
       customRules = [],
       rulesets = [],
       nodeGroups = [],
+      dnsRemoteServer = 'https://cloudflare-dns.com/dns-query',
+      dnsDirectServer = 'https://dns.alidns.com/dns-query',
+      dnsBootstrapServer = '223.5.5.5',
+      dnsFinal = 'dns-remote',
+      dnsStrategy = 'prefer_ipv4',
       systemProxyEnabled = false,
       systemProxyHttpPort,
       systemProxySocksPort
@@ -711,10 +716,65 @@ export class ProxyService {
       }
     }
 
+    const buildDnsServer = (tag, raw, detour = '', domainResolver = '') => {
+      const value = String(raw || '').trim();
+      if (!value) {
+        return { type: 'local', tag };
+      }
+      try {
+        const parsed = new URL(value);
+        const scheme = String(parsed.protocol || '').replace(':', '').toLowerCase();
+        const host = parsed.hostname;
+        const port = parsed.port ? Number.parseInt(parsed.port, 10) : (scheme === 'https' ? 443 : 53);
+        if (scheme === 'https') {
+          const server = {
+            type: 'https',
+            tag,
+            server: host,
+            server_port: port,
+            path: parsed.pathname || '/dns-query'
+          };
+          if (detour) server.detour = detour;
+          if (domainResolver) server.domain_resolver = domainResolver;
+          return server;
+        }
+        const server = {
+          type: 'udp',
+          tag,
+          server: host,
+          server_port: port || 53
+        };
+        if (detour) server.detour = detour;
+        if (domainResolver) server.domain_resolver = domainResolver;
+        return server;
+      } catch {
+        const [host, portText] = value.includes(':') ? value.split(':') : [value, '53'];
+        return {
+          type: 'udp',
+          tag,
+          server: host,
+          server_port: Number.parseInt(portText, 10) || 53
+        };
+      }
+    };
+
+    const dnsRuleSetTags = ['geosite-cn', 'geoip-cn'].filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
+
     return {
       log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
       inbounds,
       outbounds: [...outbounds, { type: 'direct', tag: 'direct' }],
+      dns: {
+        servers: [
+          buildDnsServer('dns-bootstrap', dnsBootstrapServer),
+          buildDnsServer('dns-remote', dnsRemoteServer, String(activeOutbound || '').trim(), 'dns-bootstrap'),
+          buildDnsServer('dns-local', dnsDirectServer, '', 'dns-bootstrap')
+        ],
+        rules: dnsRuleSetTags.length ? [{ rule_set: dnsRuleSetTags, server: 'dns-local' }] : [],
+        final: String(dnsFinal || '').trim() === 'dns-local' ? 'dns-local' : 'dns-remote',
+        strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4',
+        independent_cache: true
+      },
       route: {
         rule_set: [
           ...Object.entries(localDatabaseRuleSets)

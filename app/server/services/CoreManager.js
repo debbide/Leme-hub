@@ -932,6 +932,11 @@ export class CoreManager {
       customRules: settings.customRules,
       rulesets: settings.rulesets || [],
       nodeGroups: settings.nodeGroups || [],
+      dnsRemoteServer: settings.dnsRemoteServer,
+      dnsDirectServer: settings.dnsDirectServer,
+      dnsBootstrapServer: settings.dnsBootstrapServer,
+      dnsFinal: settings.dnsFinal,
+      dnsStrategy: settings.dnsStrategy,
       proxyMode: settings.routingMode,
       systemProxyEnabled: !!settings.systemProxyEnabled,
       systemProxyHttpPort: settings.systemProxyHttpPort,
@@ -948,6 +953,34 @@ export class CoreManager {
 
     if (next.routingMode && !ROUTING_MODES.includes(next.routingMode)) {
       throw createHttpError('Invalid routing mode', 400);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'dnsFinal')) {
+      const dnsFinal = String(next.dnsFinal || '').trim();
+      if (!['dns-remote', 'dns-local'].includes(dnsFinal)) {
+        throw createHttpError('dnsFinal must be dns-remote or dns-local', 400);
+      }
+      next.dnsFinal = dnsFinal;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'dnsStrategy')) {
+      const dnsStrategy = String(next.dnsStrategy || '').trim();
+      if (!['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(dnsStrategy)) {
+        throw createHttpError('dnsStrategy is invalid', 400);
+      }
+      next.dnsStrategy = dnsStrategy;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'dnsRemoteServer')) {
+      next.dnsRemoteServer = String(next.dnsRemoteServer || '').trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'dnsDirectServer')) {
+      next.dnsDirectServer = String(next.dnsDirectServer || '').trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'dnsBootstrapServer')) {
+      next.dnsBootstrapServer = String(next.dnsBootstrapServer || '').trim();
     }
 
     const proxyBasePort = validatePort(next.proxyBasePort, 'proxyBasePort');
@@ -1025,7 +1058,7 @@ export class CoreManager {
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets', 'nodeGroups'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 

@@ -1,6 +1,11 @@
 import fs from 'fs';
 
 import {
+  DEFAULT_DNS_BOOTSTRAP_SERVER,
+  DEFAULT_DNS_DIRECT_SERVER,
+  DEFAULT_DNS_FINAL,
+  DEFAULT_DNS_REMOTE_SERVER,
+  DEFAULT_DNS_STRATEGY,
   DEFAULT_PROXY_BASE_PORT,
   DEFAULT_PROXY_LISTEN_HOST,
   DEFAULT_SYSTEM_PROXY_HTTP_PORT,
@@ -18,6 +23,11 @@ const defaultSettings = (paths) => ({
   autoStart: false,
   systemProxySocksPort: DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
   systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
+  dnsRemoteServer: DEFAULT_DNS_REMOTE_SERVER,
+  dnsDirectServer: DEFAULT_DNS_DIRECT_SERVER,
+  dnsBootstrapServer: DEFAULT_DNS_BOOTSTRAP_SERVER,
+  dnsFinal: DEFAULT_DNS_FINAL,
+  dnsStrategy: DEFAULT_DNS_STRATEGY,
   activeNodeId: null,
   customRules: [],
   rulesets: [],

@@ -1096,6 +1096,15 @@ input[type="checkbox"] {
   flex-direction: column;
 }
 
+.settings-dns-item {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.settings-input {
+  width: min(420px, 100%);
+}
+
 .routing-toolbar {
   flex-direction: column;
   align-items: stretch;

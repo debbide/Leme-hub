@@ -14,6 +14,11 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
     systemProxyEnabled: false,
     systemProxySocksPort: 20100,
     systemProxyHttpPort: 20101,
+    dnsRemoteServer: 'https://cloudflare-dns.com/dns-query',
+    dnsDirectServer: 'https://dns.alidns.com/dns-query',
+    dnsBootstrapServer: '223.5.5.5',
+    dnsFinal: 'dns-remote',
+    dnsStrategy: 'prefer_ipv4',
     activeNodeId: null,
     routingMode: 'rule',
     subscriptions: [],
@@ -534,6 +539,24 @@ test('updateSettings persists normalized node groups', async () => {
 
   assert.equal(result.settings.nodeGroups[0].name, 'JP Pool');
   assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n1');
+});
+
+test('updateSettings persists dns settings', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    dnsRemoteServer: 'https://dns.google/dns-query',
+    dnsDirectServer: 'https://dns.alidns.com/dns-query',
+    dnsBootstrapServer: '119.29.29.29',
+    dnsFinal: 'dns-local',
+    dnsStrategy: 'ipv4_only'
+  });
+
+  assert.equal(result.settings.dnsRemoteServer, 'https://dns.google/dns-query');
+  assert.equal(result.settings.dnsDirectServer, 'https://dns.alidns.com/dns-query');
+  assert.equal(result.settings.dnsBootstrapServer, '119.29.29.29');
+  assert.equal(result.settings.dnsFinal, 'dns-local');
+  assert.equal(result.settings.dnsStrategy, 'ipv4_only');
 });
 
 test('getSettingsSnapshot repairs malformed persisted custom rules', () => {

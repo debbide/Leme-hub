@@ -66,6 +66,27 @@ test('generates unified system proxy inbounds for rule routing mode', () => {
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
 });
 
+test('generates dns block with configured servers', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    dnsRemoteServer: 'https://dns.google/dns-query',
+    dnsDirectServer: 'https://dns.alidns.com/dns-query',
+    dnsBootstrapServer: '223.5.5.5',
+    dnsFinal: 'dns-local',
+    dnsStrategy: 'ipv4_only'
+  });
+
+  assert.equal(config.dns.final, 'dns-local');
+  assert.equal(config.dns.strategy, 'ipv4_only');
+  assert.equal(Array.isArray(config.dns.servers), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-remote' && server.server === 'dns.google'), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-local' && server.server === 'dns.alidns.com'), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-bootstrap' && server.server === '223.5.5.5'), true);
+});
+
 test('keeps private traffic direct in rule mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

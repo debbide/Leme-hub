@@ -14,7 +14,7 @@ import { closeRoutingRuleModal as closeRoutingRuleModalView, openRoutingRuleModa
 import { bindRoutingEvents } from './lib/routing-bindings.js';
 import { loadRoutingRulesData, saveRoutingRulesData, showRoutingError as showRoutingErrorView } from './lib/routing-dataflow.js';
 import { bindSystemEvents } from './lib/system-bindings.js';
-import { loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
+import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
 import { extractRoutingObservability, renderRoutingObservability as renderRoutingObservabilityView } from './lib/routing-observability.js';
 import { markRoutingHitsAsSeen as markRoutingHitsAsSeenView, renderRoutingModeBanner as renderRoutingModeBannerView, updateRoutingLogNavBadge as updateRoutingLogNavBadgeView, updateRoutingLogSearchControls as updateRoutingLogSearchControlsView, updateRoutingLogViewModeButtons as updateRoutingLogViewModeButtonsView } from './lib/routing-ui.js';
 import { bindAppMiscEvents, bindWindowChromeFallbacks, runInitialAppBootstrap } from './lib/app-init.js';
@@ -50,6 +50,11 @@ const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
 const routingGeoIpNote = document.querySelector('#routing-geoip-note');
 const geoIpRefreshBtn = document.querySelector('#geoip-refresh-btn');
 const autoStartToggle = document.querySelector('#auto-start-toggle');
+const dnsRemoteServerInput = document.querySelector('#dns-remote-server');
+const dnsDirectServerInput = document.querySelector('#dns-direct-server');
+const dnsBootstrapServerInput = document.querySelector('#dns-bootstrap-server');
+const dnsFinalSelect = document.querySelector('#dns-final-select');
+const dnsStrategySelect = document.querySelector('#dns-strategy-select');
 const routingModeBanner = document.querySelector('#routing-mode-banner');
 const routingRulesContainer = document.querySelector('#routing-rules');
 const routingLoading = document.querySelector('#routing-loading');
@@ -1259,6 +1264,15 @@ const loadSystemStatus = () => loadSystemRuntimeStatus({
   renderGeoIpStatus,
   renderRulesetDatabaseStatus,
   updateCoreStatus,
+  applySettingsSnapshot: (settings) => applySystemSettingsSnapshot({
+    settings,
+    autoStartToggle,
+    dnsRemoteServerInput,
+    dnsDirectServerInput,
+    dnsBootstrapServerInput,
+    dnsFinalSelect,
+    dnsStrategySelect,
+  }),
   setRoutingNodeOptions: (value) => { if (value) routingNodeOptions = value; },
   extractRoutingObservability,
   renderRoutingObservability: (entries) => {
