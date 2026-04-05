@@ -69,23 +69,6 @@
         <!-- DASHBOARD VIEW -->
         <section id="dashboard-view" class="view active">
           <div class="page-shell dashboard-shell">
-            <header class="page-intro dashboard-intro">
-              <div class="page-intro-copy">
-                <span class="page-eyebrow">系统总览</span>
-                <h1 class="page-title">代理控制台</h1>
-                <p class="page-description">在这里查看当前代理状态、切换默认节点，并快速确认核心是否正在接管系统流量。</p>
-              </div>
-              <div class="page-inline-meta">
-                <div class="page-meta-card">
-                  <span class="page-meta-label">默认入口</span>
-                  <span class="page-meta-value">HTTP / SOCKS</span>
-                </div>
-                <div class="page-meta-card">
-                  <span class="page-meta-label">当前模式</span>
-                  <span class="page-meta-value">系统代理</span>
-                </div>
-              </div>
-            </header>
             <div class="dashboard-hero">
               <div class="dashboard-core-grid">
                 <section class="dashboard-hero-card">
@@ -147,24 +130,6 @@
               </div>
             </header>
 
-            <section class="page-summary-grid proxies-summary-grid" aria-label="节点页摘要">
-              <article class="page-summary-card">
-                <span class="page-summary-label">当前焦点</span>
-                <strong class="page-summary-value">节点导入与切换</strong>
-                <p class="page-summary-note">先导入或同步订阅，再搜索、分组并应用生效。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">主操作</span>
-                <strong class="page-summary-value">导入 · 同步 · 测试</strong>
-                <p class="page-summary-note">把高频动作放在节点列表上方，减少查找成本。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">生效方式</span>
-                <strong class="page-summary-value">应用并重启核心</strong>
-                <p class="page-summary-note">完成调整后，用底部主按钮统一提交变更。</p>
-              </article>
-            </section>
-
             <!-- Hidden Legacy Status Section -->
             <div id="legacy-status" class="hidden"></div>
             
@@ -202,10 +167,6 @@
             <!-- Toolbar Section -->
             <div class="toolbar section-toolbar proxies-toolbar">
               <div class="toolbar-block toolbar-block-primary">
-                <div class="toolbar-block-head">
-                  <span class="toolbar-title">节点列表</span>
-                  <span class="toolbar-subtitle">搜索、筛选并准备生效配置</span>
-                </div>
                 <div style="display:flex;align-items:center;gap:0.5rem;flex:1;">
                 <div class="node-count" id="node-count-label">节点数: 0</div>
                 <input type="text" id="node-search" class="node-search-input" placeholder="搜索节点名 / 地址..." autocomplete="off">
@@ -264,23 +225,6 @@
                 <p>为域名与 IP 段定义走代理或直连的规则</p>
               </div>
             </div>
-            <section class="page-summary-grid routing-summary-grid" aria-label="路由页摘要">
-              <article class="page-summary-card">
-                <span class="page-summary-label">配置顺序</span>
-                <strong class="page-summary-value">先看模式，再增规则</strong>
-                <p class="page-summary-note">先确认当前路由状态，再决定添加规则或规则集。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">维护项</span>
-                <strong class="page-summary-value">GeoIP · 规则库</strong>
-                <p class="page-summary-note">数据库刷新属于辅助维护，不应淹没主流程。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">主提交</span>
-                <strong class="page-summary-value">保存路由表</strong>
-                <p class="page-summary-note">新增和编辑只是草稿，底部保存按钮才是真正生效入口。</p>
-              </article>
-            </section>
             <div class="toolbar routing-toolbar">
               <div class="routing-mode-banner" id="routing-mode-banner">路由状态载入中...</div>
               <div class="routing-toolbar-row">
@@ -327,13 +271,6 @@
 
         <section id="node-groups-view" class="view">
           <div class="page-shell node-groups-shell">
-          <header class="page-intro compact-page-intro">
-            <div class="page-intro-copy">
-              <span class="page-eyebrow">节点分组</span>
-              <h1 class="page-title">自动测速与分组切换</h1>
-              <p class="page-description">按国家或业务目标组织节点组，并通过自动测速维持默认节点选择。</p>
-            </div>
-          </header>
           <div class="node-groups-toolbar section-toolbar">
             <div class="node-groups-toolbar-meta">
               <span id="node-groups-last-test" class="node-groups-meta-badge">上次测速: --</span>
@@ -368,18 +305,6 @@
                   <p>只显示系统代理入口下自定义规则与自定义规则集的命中记录</p>
                 </div>
             </div>
-            <section class="page-summary-grid logs-summary-grid" aria-label="日志页摘要">
-              <article class="page-summary-card">
-                <span class="page-summary-label">查看重点</span>
-                <strong class="page-summary-value">模式 · 系统代理 · 核心状态</strong>
-                <p class="page-summary-note">先看顶部三项摘要，再进入命中日志细查。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">主任务</span>
-                <strong class="page-summary-value">搜索并筛选命中</strong>
-                <p class="page-summary-note">通过搜索、视图切换和类型过滤快速定位问题。</p>
-              </article>
-            </section>
             <div class="routing-logs-shell flex-fill">
               <div class="routing-log-summary" id="routing-log-summary">
                 <div class="routing-log-summary-card">
@@ -442,18 +367,6 @@
                 <p>本地系统环境变量的调校</p>
               </div>
             </div>
-            <section class="page-summary-grid settings-summary-grid" aria-label="设置页摘要">
-              <article class="page-summary-card">
-                <span class="page-summary-label">启动行为</span>
-                <strong class="page-summary-value">开机自启与常驻</strong>
-                <p class="page-summary-note">控制系统登录后是否自动守护代理客户端。</p>
-              </article>
-              <article class="page-summary-card">
-                <span class="page-summary-label">核心维护</span>
-                <strong class="page-summary-value">Sing-Box 更新</strong>
-                <p class="page-summary-note">统一在设置页查看当前核心版本与更新入口。</p>
-              </article>
-            </section>
             <div class="settings-list flex-fill">
               <div class="route-item">
                 <div class="route-info">
