@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing release tag to publish/update (for example v0.1.16)
+        description: Existing release tag to publish/update (for example v1.2.2)
         required: false
         type: string
       release_version:
