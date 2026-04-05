@@ -124,7 +124,7 @@ export const renderRoutingRulesetsSection = ({
           <div class="routing-section-note">这些规则集只对系统代理入口生效，可绑定默认代理、直连或指定节点。</div>
         </div>
       </div>
-      ${routingRulesets.length ? routingRulesets.map((ruleset, index) => {
+      ${routingRulesets.length ? routingRulesets.filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset, index) => {
         const rulesetErrors = errorsByRuleset[ruleset.id] || {};
         const entryErrors = entryErrorsByRuleset[ruleset.id] || {};
         return `

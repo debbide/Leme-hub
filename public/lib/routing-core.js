@@ -191,6 +191,10 @@ export const normalizeRoutingRule = (rule) => ({
 export const getBuiltinRulesetById = (routingBuiltinRulesets, presetId) => routingBuiltinRulesets.find((ruleset) => ruleset.id === presetId) || null;
 
 export const renderRulesetRuntimeMeta = ({ ruleset, routingBuiltinRulesets, rulesetDatabaseStatus, escapeHtml }) => {
+  if (!ruleset || typeof ruleset !== 'object') {
+    return '<span class="routing-runtime-pill is-inline is-muted">无效规则集</span>';
+  }
+
   if (ruleset.kind !== 'builtin') {
     return '<span class="routing-runtime-pill is-inline">inline</span>';
   }

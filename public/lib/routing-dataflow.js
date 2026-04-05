@@ -52,8 +52,8 @@ export const loadRoutingRulesData = async ({
 
   try {
     const payload = await requestJson('/api/system/rules');
-    const nextRules = (payload.customRules || payload.rules || []).map((rule) => createRoutingRuleDraft(rule));
-    const nextRulesets = (payload.rulesets || []).map((ruleset) => createRoutingRulesetDraft(ruleset));
+    const nextRules = (payload.customRules || payload.rules || []).filter((rule) => rule && typeof rule === 'object').map((rule) => createRoutingRuleDraft(rule));
+    const nextRulesets = (payload.rulesets || []).filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset) => createRoutingRulesetDraft(ruleset));
     setRoutingRules(nextRules);
     setRoutingRulesets(nextRulesets);
     setNodeGroups(payload.nodeGroups || nodeGroups);
@@ -145,8 +145,8 @@ export const saveRoutingRulesData = async ({
       method: 'PUT',
       body: JSON.stringify({ customRules: normalized, rulesets: normalizedRulesets })
     });
-    const nextRules = (payload.customRules || payload.rules || []).map((rule) => createRoutingRuleDraft(rule));
-    const nextRulesets = (payload.rulesets || []).map((ruleset) => createRoutingRulesetDraft(ruleset));
+    const nextRules = (payload.customRules || payload.rules || []).filter((rule) => rule && typeof rule === 'object').map((rule) => createRoutingRuleDraft(rule));
+    const nextRulesets = (payload.rulesets || []).filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset) => createRoutingRulesetDraft(ruleset));
     setRoutingRules(nextRules);
     setRoutingRulesets(nextRulesets);
     setNodeGroups(payload.nodeGroups || nodeGroups);

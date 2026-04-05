@@ -63,6 +63,22 @@ textarea {
   font: inherit;
 }
 
+select,
+option,
+optgroup {
+  color: var(--text-main);
+}
+
+select {
+  color-scheme: dark;
+}
+
+option,
+optgroup {
+  background-color: #161621;
+  color: var(--text-main);
+}
+
 button,
 input,
 select,
