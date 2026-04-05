@@ -47,10 +47,17 @@ const defaultSettings = (paths) => ({
 
 const normalizeSettings = (paths, settings = {}) => {
   const defaults = defaultSettings(paths);
-  return {
+  const normalized = {
     ...defaults,
     ...settings
   };
+
+  if (normalized.systemProxySocksPort === 20100 && normalized.systemProxyHttpPort === 20101) {
+    normalized.systemProxySocksPort = DEFAULT_SYSTEM_PROXY_SOCKS_PORT;
+    normalized.systemProxyHttpPort = DEFAULT_SYSTEM_PROXY_HTTP_PORT;
+  }
+
+  return normalized;
 };
 
 export class ConfigStore {
