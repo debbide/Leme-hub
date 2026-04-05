@@ -531,9 +531,10 @@ export class ProxyService {
           }
         }
 
-        if (outbound.tls && outbound.tls.utls) {
-          delete outbound.tls.utls;
-        }
+      }
+
+      if ((node.type === 'tuic' || node.type === 'hysteria2') && outbound.tls && outbound.tls.utls) {
+        delete outbound.tls.utls;
       }
 
       return outbound;
