@@ -66,6 +66,22 @@ test('generates unified system proxy inbounds for rule routing mode', () => {
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
 });
 
+test('skips reserved system proxy ports when assigning node local ports', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd(), basePort: 20099 });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 },
+    { id: 'n3', type: 'socks', server: '127.0.0.3', port: 1082 },
+    { id: 'n4', type: 'socks', server: '127.0.0.4', port: 1083 }
+  ]);
+
+  const ports = ['n1', 'n2', 'n3', 'n4'].map((id) => service.getLocalPort(id));
+
+  assert.equal(ports.includes(20100), false);
+  assert.equal(ports.includes(20101), false);
+  assert.deepEqual(ports, [20099, 20102, 20103, 20104]);
+});
+
 test('generates dns block with configured servers', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
