@@ -523,39 +523,6 @@ const startTrafficPolling = () => startTrafficPollingView({
   TRAFFIC_POLL_INTERVAL_MS,
 });
 
-const applyRoutingPreset = (presetId) => {
-  switch (presetId) {
-    case 'proxy-ai':
-      return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'proxy', note: 'OpenAI' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'anthropic', action: 'proxy', note: 'Anthropic' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'claude.ai', action: 'proxy', note: 'Claude' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'midjourney.com', action: 'proxy', note: 'Midjourney' })
-      ];
-    case 'proxy-dev':
-      return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'proxy', note: 'GitHub' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'stackoverflow.com', action: 'proxy', note: 'StackOverflow' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'docker.com', action: 'proxy', note: 'Docker' })
-      ];
-    case 'direct-cn':
-      return [
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'cn', action: 'direct', note: '中国域名后缀' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'baidu', action: 'direct', note: '百度' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'taobao', action: 'direct', note: '淘宝' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'qq', action: 'direct', note: '腾讯' })
-      ];
-    case 'mixed-starter':
-      return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'proxy', note: 'AI 服务走代理' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'proxy', note: '开发平台走代理' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'cn', action: 'direct', note: '国内域名直连' })
-      ];
-    default:
-      return [];
-  }
-};
-
 const moveRoutingRule = (ruleId, offset) => {
   const index = routingRules.findIndex((rule) => rule.id === ruleId);
   const targetIndex = index + offset;
