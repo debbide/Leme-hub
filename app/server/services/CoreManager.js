@@ -20,26 +20,7 @@ const getNodeSignature = (node) => [
   node.port || '',
   node.uuid || '',
   node.password || '',
-  node.method || '',
-  node.username || '',
-  node.security || '',
-  node.sni || '',
-  node.transport || '',
-  node.network || '',
-  node.wsHost || '',
-  node.wsPath || '',
-  node.serviceName || '',
-  node.plugin || '',
-  node.plugin_opts || '',
-  node.obfs || '',
-  node.obfs_password || '',
-  node.up_mbps || '',
-  node.down_mbps || '',
-  node.alpn || '',
-  node.fp || '',
-  node.pbk || '',
-  node.sid || '',
-  node.flow || ''
+  node.method || ''
 ].join('|');
 
 const validatePort = (value, fieldName) => {
@@ -1354,19 +1335,11 @@ export class CoreManager {
       ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
       ...(group ? { group } : {})
     }));
-    const beforeNodes = this.store.getNodes();
-    const beforeIds = new Set(beforeNodes.map((node) => node.id));
-    const beforeSignatures = new Set(beforeNodes.map(getNodeSignature));
-    const actuallyNewNodes = nodes.filter((node) => {
-      const withId = node.id ? node : { ...node, id: createNodeId() };
-      return !beforeIds.has(withId.id) && !beforeSignatures.has(getNodeSignature(withId));
-    });
     const savedNodes = this.mergeAndSaveNodes(nodes);
     const applied = await this.applyNodeChanges(savedNodes);
     return {
       node: applied.nodes.find((item) => item.id === nodes[0].id),
-      importedCount: actuallyNewNodes.length,
-      parsedCount: nodes.length,
+      importedCount: nodes.length,
       ...applied
     };
   }
