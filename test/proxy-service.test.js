@@ -77,9 +77,9 @@ test('skips reserved system proxy ports when assigning node local ports', () => 
 
   const ports = ['n1', 'n2', 'n3', 'n4'].map((id) => service.getLocalPort(id));
 
-  assert.equal(ports.includes(20100), false);
-  assert.equal(ports.includes(20101), false);
-  assert.deepEqual(ports, [20099, 20102, 20103, 20104]);
+  assert.equal(ports.includes(18998), false);
+  assert.equal(ports.includes(18999), false);
+  assert.deepEqual(ports, [20099, 20100, 20101, 20102]);
 });
 
 test('generates dns block with configured servers', () => {

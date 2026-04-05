@@ -258,7 +258,7 @@ export class ProxyService {
   updatePortMap() {
     this.nodePortMap.clear();
     const usedPorts = new Set();
-    const reservedPorts = new Set([20100, 20101]);
+    const reservedPorts = new Set([18998, 18999]);
 
     reservedPorts.forEach((port) => {
       if (Number.isInteger(port) && port > 0) {

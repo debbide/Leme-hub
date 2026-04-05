@@ -12,8 +12,8 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
     proxyListenHost: '127.0.0.1',
     proxyBasePort: 20000,
     systemProxyEnabled: false,
-    systemProxySocksPort: 20100,
-    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 18998,
+    systemProxyHttpPort: 18999,
     dnsRemoteServer: 'https://cloudflare-dns.com/dns-query',
     dnsDirectServer: 'https://dns.alidns.com/dns-query',
     dnsBootstrapServer: '223.5.5.5',
@@ -213,9 +213,9 @@ test('assignStableLocalPorts skips reserved system proxy ports', () => {
   const assigned = assignStableLocalPorts(nodes, 20099);
   const ports = assigned.map((node) => node.local_port);
 
-  assert.equal(ports.includes(20100), false);
-  assert.equal(ports.includes(20101), false);
-  assert.deepEqual(ports, [20099, 20102, 20103, 20104]);
+  assert.equal(ports.includes(18998), false);
+  assert.equal(ports.includes(18999), false);
+  assert.deepEqual(ports, [20099, 20100, 20101, 20102]);
 });
 
 test('importProxyLink merges parsed nodes through CoreManager', async () => {
@@ -662,20 +662,20 @@ test('getStatus exposes http default and socks manual endpoints', () => {
   assert.deepEqual(status.proxy.systemDefaultEndpoint, {
     protocol: 'http',
     host: '127.0.0.1',
-    port: 20101,
-    url: 'http://127.0.0.1:20101'
+    port: 18999,
+    url: 'http://127.0.0.1:18999'
   });
   assert.deepEqual(status.proxy.httpCompatibilityEndpoint, {
     protocol: 'socks5',
     host: '127.0.0.1',
-    port: 20100,
-    url: 'socks5://127.0.0.1:20100'
+    port: 18998,
+    url: 'socks5://127.0.0.1:18998'
   });
   assert.deepEqual(status.proxy.systemSocksEndpoint, {
     protocol: 'socks5',
     host: '127.0.0.1',
-    port: 20100,
-    url: 'socks5://127.0.0.1:20100'
+    port: 18998,
+    url: 'socks5://127.0.0.1:18998'
   });
 });
 
@@ -698,8 +698,8 @@ test('applySystemProxy uses current unified proxy ports', async () => {
   const status = await manager.applySystemProxy();
 
   assert.equal(status.enabled, true);
-  assert.equal(status.http.port, 20101);
-  assert.equal(status.socks.port, 20100);
+  assert.equal(status.http.port, 18999);
+  assert.equal(status.socks.port, 18998);
 });
 
 test('disableSystemProxy clears desired system proxy setting', async () => {
@@ -754,8 +754,8 @@ test('unexpected process exit disables system proxy when desired', async () => {
       enabled: true,
       mode: 'manual',
       provider: 'mock',
-      http: { host: '127.0.0.1', port: 20101 },
-      socks: { host: '127.0.0.1', port: 20100 },
+      http: { host: '127.0.0.1', port: 18999 },
+      socks: { host: '127.0.0.1', port: 18998 },
       supported: true,
       lastError: null
     }),
