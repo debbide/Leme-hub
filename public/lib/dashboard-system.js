@@ -17,8 +17,8 @@ export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy })
   const defaultEndpoint = proxyProfile.systemDefaultEndpoint || {
     protocol: 'http',
     host: listenHost,
-    port: proxyProfile.unifiedHttpPort || 20101,
-    url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 20101}`
+    port: proxyProfile.unifiedHttpPort || 18999,
+    url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 18999}`
   };
   if (sidebarDefaultProxy) {
     sidebarDefaultProxy.textContent = defaultEndpoint.url;
