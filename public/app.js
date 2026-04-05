@@ -1308,7 +1308,16 @@ const importLink = (event) => importNodeLink({
   currentGroup,
   requestJson,
   setNodesData: (value) => { nodesData = value || []; },
+  resetNodeFilters: () => {
+    nodeSearchQuery = '';
+    activeGroupTab = null;
+    currentGroup = null;
+    if (nodeSearchInput) {
+      nodeSearchInput.value = '';
+    }
+  },
   renderNodesElement,
+  renderGroupTabs,
   syncNodeMutationFeedback,
   showInlineMessage,
   nodesError,
@@ -1320,7 +1329,16 @@ const syncSub = (event) => syncSubscriptionNodes({
   syncForm,
   requestJson,
   setNodesData: (value) => { nodesData = value || []; },
+  resetNodeFilters: () => {
+    nodeSearchQuery = '';
+    activeGroupTab = null;
+    currentGroup = null;
+    if (nodeSearchInput) {
+      nodeSearchInput.value = '';
+    }
+  },
   renderNodesElement,
+  renderGroupTabs,
   syncNodeMutationFeedback,
   showInlineMessage,
   nodesError,
