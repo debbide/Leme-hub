@@ -9,7 +9,7 @@ export const bindSystemEvents = ({
   loadSystemStatus,
   dashActiveNodeSelect,
   renderSystemProxyNodeOptions,
-  nodesData,
+  getNodesData,
   updateRestartWarning,
   getCurrentCoreState,
   autoStartToggle,
@@ -89,7 +89,7 @@ export const bindSystemEvents = ({
         });
         const coreData = payload.core || payload;
         updateCoreStatus(coreData);
-        renderSystemProxyNodeOptions(nodesData, coreData.proxy?.activeNodeId);
+        renderSystemProxyNodeOptions(getNodesData(), coreData.proxy?.activeNodeId);
         updateRestartWarning(payload.restartRequired);
         if (payload.autoRestarted) {
           showToast('系统代理节点已切换并自动应用', 'success');

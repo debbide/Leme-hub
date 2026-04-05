@@ -30,9 +30,9 @@ export const bindRoutingEvents = ({
   routingRuleModalCancel,
   routingRuleModalAction,
   routingRuleModalNode,
-  nodeGroups,
+  getNodeGroups,
   getNodeGroupDisplayName,
-  routingNodeOptions,
+  getRoutingNodeOptions,
   escapeHtml,
   routingRuleModalNodeField,
   routingLogSearchInput,
@@ -98,9 +98,9 @@ export const bindRoutingEvents = ({
   routingRuleModalAction?.addEventListener('change', () => {
     if (routingRuleModalNode) {
       if (routingRuleModalAction.value === 'node_group') {
-        routingRuleModalNode.innerHTML = ['<option value="">选择节点组</option>', ...nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(getNodeGroupDisplayName(group))}</option>`)].join('');
+        routingRuleModalNode.innerHTML = ['<option value="">选择节点组</option>', ...getNodeGroups().map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(getNodeGroupDisplayName(group))}</option>`)].join('');
       } else if (routingRuleModalAction.value === 'node') {
-        routingRuleModalNode.innerHTML = ['<option value="">选择节点</option>', ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.name || node.server || node.id)}</option>`)].join('');
+        routingRuleModalNode.innerHTML = ['<option value="">选择节点</option>', ...getRoutingNodeOptions().map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.name || node.server || node.id)}</option>`)].join('');
       }
     }
     if (routingRuleModalNodeField) {
