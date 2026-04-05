@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { CoreManager } from '../app/server/services/CoreManager.js';
+import { assignStableLocalPorts, CoreManager } from '../app/server/services/CoreManager.js';
 
 const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]) => {
   let nodes = [...initialNodes];
@@ -200,6 +200,22 @@ test('start rolls back proxy process when system proxy apply fails', async () =>
 
   await assert.rejects(() => manager.start(), /apply failed/);
   assert.deepEqual(calls, ['stop']);
+});
+
+test('assignStableLocalPorts skips reserved system proxy ports', () => {
+  const nodes = [
+    { id: 'n1', local_port: null },
+    { id: 'n2', local_port: null },
+    { id: 'n3', local_port: null },
+    { id: 'n4', local_port: null }
+  ];
+
+  const assigned = assignStableLocalPorts(nodes, 20099);
+  const ports = assigned.map((node) => node.local_port);
+
+  assert.equal(ports.includes(20100), false);
+  assert.equal(ports.includes(20101), false);
+  assert.deepEqual(ports, [20099, 20102, 20103, 20104]);
 });
 
 test('importProxyLink merges parsed nodes through CoreManager', async () => {

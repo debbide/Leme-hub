@@ -407,7 +407,10 @@ const normalizeSubscriptionRecord = (record, index) => {
 
 export const assignStableLocalPorts = (nodes, basePort) => {
   const occupied = new Set();
+  const reservedPorts = new Set([20100, 20101]);
   let nextPort = basePort;
+
+  reservedPorts.forEach((port) => occupied.add(port));
 
   for (const node of nodes) {
     const parsed = Number.parseInt(node.local_port, 10);
