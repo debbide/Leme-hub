@@ -1312,9 +1312,8 @@ const importLink = (event) => importNodeLink({
     nodeSearchQuery = '';
     activeGroupTab = null;
     currentGroup = null;
-    if (nodeSearchInput) {
-      nodeSearchInput.value = '';
-    }
+    const nodeSearchField = document.querySelector('#node-search');
+    if (nodeSearchField) nodeSearchField.value = '';
   },
   renderNodesElement,
   renderGroupTabs,
@@ -1333,9 +1332,8 @@ const syncSub = (event) => syncSubscriptionNodes({
     nodeSearchQuery = '';
     activeGroupTab = null;
     currentGroup = null;
-    if (nodeSearchInput) {
-      nodeSearchInput.value = '';
-    }
+    const nodeSearchField = document.querySelector('#node-search');
+    if (nodeSearchField) nodeSearchField.value = '';
   },
   renderNodesElement,
   renderGroupTabs,
