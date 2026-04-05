@@ -456,6 +456,21 @@ const mergeUniqueNodes = (existingNodes, incomingNodes) => {
   return merged;
 };
 
+const appendNodes = (existingNodes, incomingNodes) => [...existingNodes, ...incomingNodes];
+
+const countPotentialDuplicateNodes = (existingNodes, incomingNodes) => {
+  const seenIds = new Set(existingNodes.map((node) => node.id));
+  const seenSignatures = new Set(existingNodes.map(getNodeSignature));
+  return incomingNodes.reduce((count, node) => {
+    const withId = node.id ? node : { ...node, id: createNodeId() };
+    const signature = getNodeSignature(withId);
+    if (seenIds.has(withId.id) || seenSignatures.has(signature)) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
+};
+
 export class CoreManager {
   constructor(paths, store, options = {}) {
     this.paths = paths;
@@ -1335,11 +1350,14 @@ export class CoreManager {
       ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
       ...(group ? { group } : {})
     }));
-    const savedNodes = this.mergeAndSaveNodes(nodes);
+    const existingNodes = this.store.getNodes();
+    const duplicateCount = countPotentialDuplicateNodes(existingNodes, nodes);
+    const savedNodes = this.saveNodes(appendNodes(existingNodes, nodes));
     const applied = await this.applyNodeChanges(savedNodes);
     return {
       node: applied.nodes.find((item) => item.id === nodes[0].id),
       importedCount: nodes.length,
+      duplicateCount,
       ...applied
     };
   }

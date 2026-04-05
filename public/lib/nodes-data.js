@@ -67,7 +67,8 @@ export const importNodeLink = async ({
     });
     setNodesData(payload.nodes || []);
     renderNodesElement();
-    syncNodeMutationFeedback(payload, `已导入 ${payload.importedCount || 1} 个节点`);
+    const duplicateNote = payload.duplicateCount > 0 ? `，其中 ${payload.duplicateCount} 个与现有节点相似` : '';
+    syncNodeMutationFeedback(payload, `已导入 ${payload.importedCount || 1} 个节点${duplicateNote}`);
     importUrlInput.value = '';
     importForm.classList.add('hidden');
   } catch (error) {

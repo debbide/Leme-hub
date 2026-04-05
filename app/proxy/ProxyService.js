@@ -505,6 +505,9 @@ export class ProxyService {
         }
         applyIfPresent(outbound, 'up_mbps', node.up_mbps);
         applyIfPresent(outbound, 'down_mbps', node.down_mbps);
+        applyIfPresent(outbound, 'heartbeat', node.heartbeat);
+        applyIfPresent(outbound, 'udp_over_stream', node.udp_over_stream);
+        applyIfPresent(outbound, 'zero_rtt_handshake', node.zero_rtt_handshake);
       }
 
       if (node.type === 'tuic') {
@@ -531,6 +534,10 @@ export class ProxyService {
         if (outbound.tls && outbound.tls.utls) {
           delete outbound.tls.utls;
         }
+      }
+
+      if (node.type === 'hysteria2' && outbound.tls && outbound.tls.utls) {
+        delete outbound.tls.utls;
       }
 
       return outbound;

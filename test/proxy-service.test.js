@@ -656,6 +656,9 @@ test('emits hysteria2 and tuic advanced outbound fields', () => {
       obfs_password: 'mask',
       up_mbps: 10,
       down_mbps: 50,
+      heartbeat: '10s',
+      udp_over_stream: true,
+      zero_rtt_handshake: true,
       security: 'tls'
     },
     {
@@ -681,6 +684,10 @@ test('emits hysteria2 and tuic advanced outbound fields', () => {
   assert.equal(hy2.obfs.password, 'mask');
   assert.equal(hy2.up_mbps, 10);
   assert.equal(hy2.down_mbps, 50);
+  assert.equal(hy2.heartbeat, '10s');
+  assert.equal(hy2.udp_over_stream, true);
+  assert.equal(hy2.zero_rtt_handshake, true);
+  assert.equal(hy2.tls?.utls, undefined);
   assert.equal(tuic.congestion_control, 'cubic');
   assert.equal(tuic.udp_relay_mode, 'native');
   assert.equal(tuic.heartbeat, '10s');

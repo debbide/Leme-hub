@@ -225,6 +225,55 @@ test('importProxyLink merges parsed nodes through CoreManager', async () => {
   assert.equal(result.node.localPort, 20001);
   assert.equal(result.restartRequired, false);
   assert.equal(result.importedCount, 1);
+  assert.equal(result.duplicateCount, 0);
+});
+
+test('importProxyLink keeps similar manual nodes and reports duplicate count', async () => {
+  const existingNode = { id: 'n1', type: 'trojan', server: 'same.example', port: 443, password: 'secret', sni: 'a.example.com' };
+  const manager = new CoreManager(createPaths(), createStore([existingNode]));
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([{ type: 'trojan', server: 'same.example', port: 443, password: 'secret', sni: 'b.example.com' }]),
+    parseProxyLink: () => ({ type: 'trojan', server: 'same.example', port: 443, password: 'secret', sni: 'b.example.com' }),
+    setNodes() {},
+    getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const result = await manager.importProxyLink('trojan://secret@same.example:443?sni=b.example.com#new');
+
+  assert.equal(result.importedCount, 1);
+  assert.equal(result.duplicateCount, 1);
+  assert.equal(result.nodes.length, 2);
+});
+
+test('importProxyLink reports duplicateCount for manual imports without blocking save', async () => {
+  const existingNode = { id: 'n1', type: 'socks', server: 'dup.example', port: 1080 };
+  const manager = new CoreManager(createPaths(), createStore([existingNode]));
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([{ type: 'socks', server: 'dup.example', port: 1080 }]),
+    parseProxyLink: () => ({ type: 'socks', server: 'dup.example', port: 1080 }),
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const result = await manager.importProxyLink('socks://dup');
+
+  assert.equal(result.importedCount, 1);
+  assert.equal(result.duplicateCount, 1);
+  assert.equal(result.nodes.length, 2);
 });
 
 test('importProxyLink splits multi-line links and persists all parsed nodes through CoreManager', async () => {
