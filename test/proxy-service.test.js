@@ -87,6 +87,20 @@ test('generates dns block with configured servers', () => {
   assert.equal(config.dns.servers.some((server) => server.tag === 'dns-bootstrap' && server.server === '223.5.5.5'), true);
 });
 
+test('uses remote default domain resolver and local outbound resolver for hostnames', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: 'example.com', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    dnsRemoteServer: 'https://dns.google/dns-query',
+    dnsDirectServer: 'https://dns.alidns.com/dns-query'
+  });
+
+  assert.equal(config.route.default_domain_resolver, 'dns-remote');
+  assert.equal(config.outbounds[0].domain_resolver, 'dns-local');
+});
+
 test('keeps private traffic direct in rule mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

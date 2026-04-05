@@ -341,6 +341,10 @@ export class ProxyService {
         server_port: node.port
       };
 
+      if (node.server && !net.isIP(String(node.server))) {
+        outbound.domain_resolver = 'dns-local';
+      }
+
       if (node.password) {
         outbound.password = node.password;
       }
@@ -801,6 +805,7 @@ export class ProxyService {
         ],
         rules: routeRules,
         auto_detect_interface: true,
+        default_domain_resolver: 'dns-remote',
         final: finalOutbound
       },
       experimental: {
