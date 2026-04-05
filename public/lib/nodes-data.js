@@ -47,9 +47,7 @@ export const importNodeLink = async ({
   currentGroup,
   requestJson,
   setNodesData,
-  resetNodeFilters,
   renderNodesElement,
-  renderGroupTabs,
   syncNodeMutationFeedback,
   showInlineMessage,
   nodesError,
@@ -68,12 +66,6 @@ export const importNodeLink = async ({
       body: JSON.stringify({ link, group: currentGroup || undefined })
     });
     setNodesData(payload.nodes || []);
-    if (typeof resetNodeFilters === 'function') {
-      resetNodeFilters();
-    }
-    if (typeof renderGroupTabs === 'function') {
-      renderGroupTabs();
-    }
     renderNodesElement();
     syncNodeMutationFeedback(payload, `已导入 ${payload.importedCount || 1} 个节点`);
     importUrlInput.value = '';
@@ -92,9 +84,7 @@ export const syncSubscriptionNodes = async ({
   syncForm,
   requestJson,
   setNodesData,
-  resetNodeFilters,
   renderNodesElement,
-  renderGroupTabs,
   syncNodeMutationFeedback,
   showInlineMessage,
   nodesError,
@@ -113,12 +103,6 @@ export const syncSubscriptionNodes = async ({
       body: JSON.stringify({ url })
     });
     setNodesData(payload.nodes || []);
-    if (typeof resetNodeFilters === 'function') {
-      resetNodeFilters();
-    }
-    if (typeof renderGroupTabs === 'function') {
-      renderGroupTabs();
-    }
     renderNodesElement();
     syncNodeMutationFeedback(payload);
     syncUrlInput.value = '';
