@@ -505,9 +505,6 @@ export class ProxyService {
         }
         applyIfPresent(outbound, 'up_mbps', node.up_mbps);
         applyIfPresent(outbound, 'down_mbps', node.down_mbps);
-        applyIfPresent(outbound, 'heartbeat', node.heartbeat);
-        applyIfPresent(outbound, 'udp_over_stream', node.udp_over_stream);
-        applyIfPresent(outbound, 'zero_rtt_handshake', node.zero_rtt_handshake);
       }
 
       if (node.type === 'tuic') {
