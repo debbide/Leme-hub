@@ -26,7 +26,7 @@ export const openRoutingRuleModal = ({
 }) => {
   setEditingRoutingRuleId(rule?.id || null);
   if (routingRuleModalTitle) {
-    routingRuleModalTitle.textContent = rule ? '编辑分流规则' : '新增分流规则';
+    routingRuleModalTitle.textContent = rule ? '编辑规则' : '新增规则';
   }
   if (routingRuleModalType) routingRuleModalType.value = rule?.type || 'domain_suffix';
   if (routingRuleModalAction) routingRuleModalAction.value = rule?.action || 'default';
@@ -95,93 +95,142 @@ export const submitRoutingRuleModal = ({
   renderRoutingRules();
 };
 
-export const renderRoutingRulesetsSection = ({
-  routingRulesets,
-  routingRulesetErrors,
-  routingBuiltinRulesets,
-  routingNodeOptions,
-  nodeGroups,
-  getNodeGroupDisplayName,
-  renderRulesetRuntimeMeta,
-  escapeHtml,
-}) => {
-  const errorsByRuleset = routingRulesetErrors.rulesetErrors || {};
-  const entryErrorsByRuleset = routingRulesetErrors.entryErrors || {};
-  const buildNodeGroupOptions = (selectedGroupId = '') => [
-    '<option value="">选择节点组</option>',
-    ...nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === selectedGroupId ? 'selected' : ''}>${escapeHtml(getNodeGroupDisplayName(group))}</option>`)
-  ].join('');
-  const buildNodeOptions = (selectedNodeId = '') => [
-    '<option value="">选择节点</option>',
-    ...routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === selectedNodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`)
-  ].join('');
+const renderRuleRow = ({ row, escapeHtml }) => {
+  const { data: rule, summary } = row;
+  const errors = row.errors || {};
+  const targetError = errors.nodeId || errors.nodeGroupId || '';
 
   return `
-    <div class="routing-section">
-      <div class="routing-section-header">
-        <div>
-          <div class="routing-section-title">规则集分流</div>
-          <div class="routing-section-note">这些规则集只对系统代理入口生效，可绑定默认代理、直连或指定节点。</div>
+    <div class="routing-unified-row" data-row-kind="rule" data-rule-id="${escapeHtml(rule.id)}">
+      <div class="routing-unified-main">
+        <div class="routing-unified-handle">
+          <button type="button" class="btn-outline routing-action-btn routing-move-up-btn" data-rule-id="${escapeHtml(rule.id)}" ${row.isFirst ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn-outline routing-action-btn routing-move-down-btn" data-rule-id="${escapeHtml(rule.id)}" ${row.isLast ? 'disabled' : ''}>↓</button>
+        </div>
+        <div class="routing-unified-type">
+          <span class="routing-chip is-accent">手动</span>
+          <span class="routing-chip">${escapeHtml(summary.typeLabel)}</span>
+        </div>
+        <label class="routing-field routing-unified-field routing-unified-match">
+          <span class="routing-field-label">匹配</span>
+          <input class="routing-input ${errors.value ? 'has-error' : ''}" data-field="value" data-rule-id="${escapeHtml(rule.id)}" value="${escapeHtml(rule.value)}" placeholder="${rule.type === 'ip_cidr' ? '10.0.0.0/8' : 'example.com'}" autocomplete="off">
+          <span class="routing-field-error">${escapeHtml(errors.value || '')}</span>
+        </label>
+        <label class="routing-field routing-unified-field routing-unified-target">
+          <span class="routing-field-label">类型</span>
+          <select class="routing-select ${errors.type ? 'has-error' : ''}" data-field="type" data-rule-id="${escapeHtml(rule.id)}">
+            <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>域名</option>
+            <option value="domain_suffix" ${rule.type === 'domain_suffix' ? 'selected' : ''}>后缀</option>
+            <option value="domain_keyword" ${rule.type === 'domain_keyword' ? 'selected' : ''}>关键词</option>
+            <option value="ip_cidr" ${rule.type === 'ip_cidr' ? 'selected' : ''}>CIDR</option>
+          </select>
+          <span class="routing-field-error">${escapeHtml(errors.type || '')}</span>
+        </label>
+        <label class="routing-field routing-unified-field routing-unified-target">
+          <span class="routing-field-label">去向</span>
+          <select class="routing-select ${errors.action ? 'has-error' : ''}" data-field="action" data-rule-id="${escapeHtml(rule.id)}">
+            <option value="default" ${rule.action === 'default' ? 'selected' : ''}>默认代理</option>
+            <option value="direct" ${rule.action === 'direct' ? 'selected' : ''}>直连</option>
+            <option value="node" ${rule.action === 'node' ? 'selected' : ''}>指定节点</option>
+            <option value="node_group" ${rule.action === 'node_group' ? 'selected' : ''}>节点组</option>
+          </select>
+          <span class="routing-field-error">${escapeHtml(errors.action || '')}</span>
+        </label>
+        <div class="routing-field routing-unified-field routing-unified-dest">
+          <span class="routing-field-label">目标</span>
+          ${rule.action === 'node'
+            ? `<select class="routing-select ${errors.nodeId ? 'has-error' : ''}" data-field="nodeId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点</option>${row.routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === rule.nodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`).join('')}</select>`
+            : rule.action === 'node_group'
+              ? `<select class="routing-select ${errors.nodeGroupId ? 'has-error' : ''}" data-field="nodeGroupId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点组</option>${row.nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === rule.nodeGroupId ? 'selected' : ''}>${escapeHtml(row.getNodeGroupDisplayName(group))}</option>`).join('')}</select>`
+              : `<input class="routing-input" data-field="note" data-rule-id="${escapeHtml(rule.id)}" value="${escapeHtml(rule.note)}" placeholder="备注" autocomplete="off">`}
+          <span class="routing-field-error">${escapeHtml(targetError)}</span>
+        </div>
+        <div class="routing-unified-meta">${summary.metaLabel ? `<span class="routing-inline-note">${escapeHtml(summary.metaLabel)}</span>` : ''}</div>
+        <div class="routing-unified-actions">
+          <button type="button" class="btn-outline routing-edit-btn" data-rule-id="${escapeHtml(rule.id)}">编辑</button>
+          <button type="button" class="btn-outline routing-delete-btn" data-rule-id="${escapeHtml(rule.id)}">删除</button>
         </div>
       </div>
-      ${routingRulesets.length ? routingRulesets.filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset, index) => {
-        const rulesetErrors = errorsByRuleset[ruleset.id] || {};
-        const entryErrors = entryErrorsByRuleset[ruleset.id] || {};
-        return `
-          <div class="routing-ruleset-card" data-ruleset-id="${escapeHtml(ruleset.id)}">
-            <div class="routing-ruleset-inline">
-              <span class="routing-chip ${ruleset.kind === 'builtin' ? 'is-builtin' : 'is-custom'}">${ruleset.kind === 'builtin' ? '内置' : '自定义'}</span>
-              <input class="routing-input routing-ruleset-name-inline ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
-              <select class="routing-select routing-ruleset-target-inline ${rulesetErrors.target ? 'has-error' : ''}" data-ruleset-field="target" data-ruleset-id="${escapeHtml(ruleset.id)}">
-                <option value="default" ${ruleset.target === 'default' ? 'selected' : ''}>默认代理</option>
-                <option value="direct" ${ruleset.target === 'direct' ? 'selected' : ''}>直连</option>
-                <option value="node" ${ruleset.target === 'node' ? 'selected' : ''}>指定节点</option>
-                <option value="node_group" ${ruleset.target === 'node_group' ? 'selected' : ''}>节点组</option>
-              </select>
-              ${ruleset.target === 'node'
-                ? `<select class="routing-select routing-ruleset-dest-inline ${rulesetErrors.nodeId ? 'has-error' : ''}" data-ruleset-field="nodeId" data-ruleset-id="${escapeHtml(ruleset.id)}">${buildNodeOptions(ruleset.nodeId)}</select>`
-                : ruleset.target === 'node_group'
-                  ? `<select class="routing-select routing-ruleset-dest-inline ${rulesetErrors.groupId ? 'has-error' : ''}" data-ruleset-field="groupId" data-ruleset-id="${escapeHtml(ruleset.id)}">${buildNodeGroupOptions(ruleset.groupId)}</select>`
-                  : '<span class="routing-ruleset-inline-note">不指定目标</span>'}
-              <label class="routing-ruleset-inline-switch">
-                <input type="checkbox" data-ruleset-field="enabled" data-ruleset-id="${escapeHtml(ruleset.id)}" ${ruleset.enabled ? 'checked' : ''}>
-                <span>启用</span>
-              </label>
-              <div class="routing-ruleset-runtime-inline">${renderRulesetRuntimeMeta(ruleset)}</div>
-              <div class="routing-ruleset-actions routing-ruleset-actions-inline">
-                <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-up-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === 0 ? 'disabled' : ''}>↑</button>
-                <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-down-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${index === routingRulesets.length - 1 ? 'disabled' : ''}>↓</button>
-                <button type="button" class="btn-outline routing-delete-ruleset-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">删除</button>
-              </div>
-            </div>
-            <div class="routing-field-error">${escapeHtml(rulesetErrors.name || rulesetErrors.target || rulesetErrors.nodeId || rulesetErrors.groupId || rulesetErrors.presetId || '')}</div>
-            ${ruleset.kind === 'custom' ? `
-              <div class="routing-ruleset-entries">
-                <div class="routing-note">自定义规则集条目会按类型和值合并成 sing-box 内联规则集。</div>
-                <div class="routing-field-error">${escapeHtml(rulesetErrors.entries || '')}</div>
-                ${(ruleset.entries || []).map((entry) => {
-                  const entryError = entryErrors[entry.id] || {};
-                  return `
-                    <div class="routing-ruleset-entry" data-ruleset-entry-id="${escapeHtml(entry.id)}">
-                      <select class="routing-select ${entryError.type ? 'has-error' : ''}" data-ruleset-entry-field="type" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}">
-                        <option value="domain" ${entry.type === 'domain' ? 'selected' : ''}>精确域名</option>
-                        <option value="domain_suffix" ${entry.type === 'domain_suffix' ? 'selected' : ''}>域名后缀</option>
-                        <option value="domain_keyword" ${entry.type === 'domain_keyword' ? 'selected' : ''}>域名关键词</option>
-                        <option value="ip_cidr" ${entry.type === 'ip_cidr' ? 'selected' : ''}>IP/CIDR</option>
-                      </select>
-                      <input class="routing-input ${entryError.value ? 'has-error' : ''}" data-ruleset-entry-field="value" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}" value="${escapeHtml(entry.value)}" placeholder="例如 corp.local 或 10.0.0.0/8">
-                      <div class="routing-ruleset-entry-actions">
-                        <button type="button" class="btn-outline routing-delete-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}">删除</button>
-                      </div>
-                    </div>
-                    <div class="routing-field-error">${escapeHtml(entryError.type || entryError.value || '')}</div>`;
-                }).join('')}
+    </div>`;
+};
+
+const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
+  const { data: ruleset, summary } = row;
+  const rulesetErrors = (row.rulesetErrors?.rulesetErrors || {})[ruleset.id] || {};
+  const entryErrors = (row.rulesetErrors?.entryErrors || {})[ruleset.id] || {};
+  const destError = rulesetErrors.nodeId || rulesetErrors.groupId || '';
+
+  return `
+    <div class="routing-unified-row" data-row-kind="ruleset" data-ruleset-id="${escapeHtml(ruleset.id)}">
+      <div class="routing-unified-main">
+        <div class="routing-unified-handle">
+          <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-up-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${row.isFirst ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-down-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${row.isLast ? 'disabled' : ''}>↓</button>
+        </div>
+        <div class="routing-unified-type">
+          <span class="routing-chip ${ruleset.kind === 'builtin' ? 'is-builtin' : 'is-custom'}">${ruleset.kind === 'builtin' ? '内置' : '自定义'}</span>
+          <span class="routing-chip">规则集</span>
+        </div>
+        <label class="routing-field routing-unified-field routing-unified-match">
+          <span class="routing-field-label">名称</span>
+          <input class="routing-input ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
+          <span class="routing-field-error">${escapeHtml(rulesetErrors.name || rulesetErrors.presetId || '')}</span>
+        </label>
+        <label class="routing-field routing-unified-field routing-unified-target">
+          <span class="routing-field-label">去向</span>
+          <select class="routing-select ${rulesetErrors.target ? 'has-error' : ''}" data-ruleset-field="target" data-ruleset-id="${escapeHtml(ruleset.id)}">
+            <option value="default" ${ruleset.target === 'default' ? 'selected' : ''}>默认代理</option>
+            <option value="direct" ${ruleset.target === 'direct' ? 'selected' : ''}>直连</option>
+            <option value="node" ${ruleset.target === 'node' ? 'selected' : ''}>指定节点</option>
+            <option value="node_group" ${ruleset.target === 'node_group' ? 'selected' : ''}>节点组</option>
+          </select>
+          <span class="routing-field-error">${escapeHtml(rulesetErrors.target || '')}</span>
+        </label>
+        <div class="routing-field routing-unified-field routing-unified-dest">
+          <span class="routing-field-label">目标</span>
+          ${ruleset.target === 'node'
+            ? `<select class="routing-select ${rulesetErrors.nodeId ? 'has-error' : ''}" data-ruleset-field="nodeId" data-ruleset-id="${escapeHtml(ruleset.id)}"><option value="">选择节点</option>${row.routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === ruleset.nodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`).join('')}</select>`
+            : ruleset.target === 'node_group'
+              ? `<select class="routing-select ${rulesetErrors.groupId ? 'has-error' : ''}" data-ruleset-field="groupId" data-ruleset-id="${escapeHtml(ruleset.id)}"><option value="">选择节点组</option>${row.nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === ruleset.groupId ? 'selected' : ''}>${escapeHtml(row.getNodeGroupDisplayName(group))}</option>`).join('')}</select>`
+              : `<div class="routing-unified-static">${escapeHtml(summary.targetLabel)}</div>`}
+          <span class="routing-field-error">${escapeHtml(destError)}</span>
+        </div>
+        <div class="routing-unified-meta">
+          <label class="routing-ruleset-inline-switch">
+            <input type="checkbox" data-ruleset-field="enabled" data-ruleset-id="${escapeHtml(ruleset.id)}" ${ruleset.enabled ? 'checked' : ''}>
+            <span>启用</span>
+          </label>
+          <div class="routing-ruleset-runtime-inline">${renderRulesetRuntimeMeta({ ruleset, routingBuiltinRulesets: row.routingBuiltinRulesets, rulesetDatabaseStatus: row.rulesetDatabaseStatus, escapeHtml })}</div>
+        </div>
+        <div class="routing-unified-actions">
+          <button type="button" class="btn-outline routing-delete-ruleset-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">删除</button>
+        </div>
+      </div>
+      ${ruleset.kind === 'custom' ? `
+        <div class="routing-unified-subrows">
+          <div class="routing-inline-note">${escapeHtml(summary.metaLabel || '0 条')}</div>
+          <div class="routing-field-error">${escapeHtml(rulesetErrors.entries || '')}</div>
+          ${(ruleset.entries || []).map((entry) => {
+            const entryError = entryErrors[entry.id] || {};
+            return `
+              <div class="routing-ruleset-entry" data-ruleset-entry-id="${escapeHtml(entry.id)}">
+                <select class="routing-select ${entryError.type ? 'has-error' : ''}" data-ruleset-entry-field="type" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}">
+                  <option value="domain" ${entry.type === 'domain' ? 'selected' : ''}>域名</option>
+                  <option value="domain_suffix" ${entry.type === 'domain_suffix' ? 'selected' : ''}>后缀</option>
+                  <option value="domain_keyword" ${entry.type === 'domain_keyword' ? 'selected' : ''}>关键词</option>
+                  <option value="ip_cidr" ${entry.type === 'ip_cidr' ? 'selected' : ''}>CIDR</option>
+                </select>
+                <input class="routing-input ${entryError.value ? 'has-error' : ''}" data-ruleset-entry-field="value" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}" value="${escapeHtml(entry.value)}" placeholder="规则值" autocomplete="off">
                 <div class="routing-ruleset-entry-actions">
-                  <button type="button" class="btn-outline routing-add-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">新增条目</button>
+                  <button type="button" class="btn-outline routing-delete-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" data-ruleset-entry-id="${escapeHtml(entry.id)}">删除</button>
                 </div>
-              </div>` : ''}
-          </div>`;
-      }).join('') : '<div class="routing-section-empty">还没有规则集。你可以先添加一个内置规则集并指定它走哪个节点。</div>'}
+              </div>
+              <div class="routing-field-error">${escapeHtml(entryError.type || entryError.value || '')}</div>`;
+          }).join('')}
+          <div class="routing-ruleset-entry-actions">
+            <button type="button" class="btn-outline routing-add-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">新增条目</button>
+          </div>
+        </div>` : ''}
     </div>`;
 };
 
@@ -194,11 +243,14 @@ export const renderRoutingRules = ({
   routingRules,
   routingRulesets,
   routingRuleErrors,
-  nodeGroups,
+  routingRulesetErrors,
+  routingBuiltinRulesets,
   routingNodeOptions,
+  nodeGroups,
+  unifiedRows,
   escapeHtml,
   getNodeGroupDisplayName,
-  renderRoutingRulesetsSection,
+  renderRulesetRuntimeMeta,
   updateRoutingSaveState,
   renderRoutingModeBanner,
   onRuleFieldChange,
@@ -228,73 +280,41 @@ export const renderRoutingRules = ({
       return;
     }
 
-    const manualRulesMarkup = routingRules.length ? routingRules.map((rule, index) => {
-      const errors = routingRuleErrors[rule.id] || {};
-      return `
-      <div class="routing-rule-card" data-rule-id="${escapeHtml(rule.id)}">
-        <div class="routing-rule-head">
-          <div>
-            <div class="routing-rule-title">规则 ${index + 1}</div>
-            <div class="routing-note">按列表顺序匹配，命中后走对应动作。</div>
-          </div>
-          <div class="routing-rule-actions">
-            <div class="routing-action-group">
-              <button type="button" class="btn-outline routing-action-btn routing-move-up-btn" data-rule-id="${escapeHtml(rule.id)}" ${index === 0 ? 'disabled' : ''}>↑</button>
-              <button type="button" class="btn-outline routing-action-btn routing-move-down-btn" data-rule-id="${escapeHtml(rule.id)}" ${index === routingRules.length - 1 ? 'disabled' : ''}>↓</button>
-            </div>
-            <button type="button" class="btn-outline routing-edit-btn" data-rule-id="${escapeHtml(rule.id)}">编辑</button>
-            <button type="button" class="btn-outline routing-delete-btn" data-rule-id="${escapeHtml(rule.id)}">删除规则</button>
-          </div>
-        </div>
-        <div class="routing-rule-grid">
-          <label class="routing-field">
-            <span class="routing-field-label">规则类型</span>
-            <select class="routing-select ${errors.type ? 'has-error' : ''}" data-field="type" data-rule-id="${escapeHtml(rule.id)}">
-              <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>精确域名</option>
-              <option value="domain_suffix" ${rule.type === 'domain_suffix' ? 'selected' : ''}>域名后缀</option>
-              <option value="domain_keyword" ${rule.type === 'domain_keyword' ? 'selected' : ''}>域名关键词</option>
-              <option value="ip_cidr" ${rule.type === 'ip_cidr' ? 'selected' : ''}>IP/CIDR</option>
-            </select>
-            <span class="routing-field-error">${escapeHtml(errors.type || '')}</span>
-          </label>
-          <label class="routing-field">
-            <span class="routing-field-label">匹配内容</span>
-            <input class="routing-input ${errors.value ? 'has-error' : ''}" data-field="value" data-rule-id="${escapeHtml(rule.id)}" value="${escapeHtml(rule.value)}" placeholder="${rule.type === 'ip_cidr' ? '例如 10.0.0.0/8' : '例如 example.com'}" autocomplete="off">
-            <span class="routing-field-error">${escapeHtml(errors.value || '')}</span>
-          </label>
-          <label class="routing-field">
-            <span class="routing-field-label">动作</span>
-            <select class="routing-select ${errors.action ? 'has-error' : ''}" data-field="action" data-rule-id="${escapeHtml(rule.id)}">
-              <option value="default" ${rule.action === 'default' ? 'selected' : ''}>默认代理</option>
-              <option value="direct" ${rule.action === 'direct' ? 'selected' : ''}>直连</option>
-              <option value="node" ${rule.action === 'node' ? 'selected' : ''}>指定节点</option>
-              <option value="node_group" ${rule.action === 'node_group' ? 'selected' : ''}>节点组</option>
-            </select>
-            <span class="routing-field-error">${escapeHtml(errors.action || '')}</span>
-          </label>
-          <label class="routing-field">
-            <span class="routing-field-label">节点 / 备注</span>
-            ${rule.action === 'node'
-              ? `<select class="routing-select ${errors.nodeId ? 'has-error' : ''}" data-field="nodeId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点</option>${routingNodeOptions.map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === rule.nodeId ? 'selected' : ''}>${escapeHtml(node.name || node.server || node.id)}</option>`).join('')}</select>`
-              : rule.action === 'node_group'
-                ? `<select class="routing-select ${errors.nodeGroupId ? 'has-error' : ''}" data-field="nodeGroupId" data-rule-id="${escapeHtml(rule.id)}"><option value="">选择节点组</option>${nodeGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${group.id === rule.nodeGroupId ? 'selected' : ''}>${escapeHtml(getNodeGroupDisplayName(group))}</option>`).join('')}</select>`
-                : `<input class="routing-input" data-field="note" data-rule-id="${escapeHtml(rule.id)}" value="${escapeHtml(rule.note)}" placeholder="可选，便于区分规则" autocomplete="off">`}
-            <span class="routing-field-error">${escapeHtml(errors.nodeId || errors.nodeGroupId || '')}</span>
-          </label>
-        </div>
-      </div>`;
-    }).join('') : '<div class="routing-section-empty">还没有手写域名/IP 规则。需要做精细覆盖时再新增即可。</div>';
+    const rulesetCount = unifiedRows.filter((row) => row.kind === 'ruleset').length;
+    const ruleCount = unifiedRows.filter((row) => row.kind === 'rule').length;
 
-    routingRulesContainer.innerHTML = `${renderRoutingRulesetsSection()}
-    <div class="routing-section">
-      <div class="routing-section-header">
-        <div>
-          <div class="routing-section-title">手写域名 / IP 规则</div>
-          <div class="routing-section-note">这些规则优先于规则集，用于覆盖特殊域名或地址段，只作用于系统代理入口。</div>
+    routingRulesContainer.innerHTML = `
+      <div class="routing-unified-list">
+        <div class="routing-unified-header">
+          <div>
+            <div class="routing-section-title">规则列表</div>
+            <div class="routing-section-note">内置规则集、自定义规则集、手动规则统一展示。规则集和手动规则暂时各自维护顺序。</div>
+          </div>
+          <div class="routing-unified-stats">
+            <span class="routing-chip">规则集 ${rulesetCount}</span>
+            <span class="routing-chip">规则 ${ruleCount}</span>
+          </div>
         </div>
-      </div>
-      ${manualRulesMarkup}
-    </div>`;
+        ${unifiedRows.map((row) => {
+          const sameKindRows = unifiedRows.filter((item) => item.kind === row.kind);
+          const sameKindIndex = sameKindRows.findIndex((item) => item.id === row.id);
+          const rowContext = {
+            ...row,
+            isFirst: sameKindIndex === 0,
+            isLast: sameKindIndex === sameKindRows.length - 1,
+            routingNodeOptions,
+            nodeGroups,
+            getNodeGroupDisplayName,
+            routingBuiltinRulesets,
+            routingRuleErrors,
+            rulesetErrors: routingRulesetErrors,
+            rulesetDatabaseStatus: null,
+          };
+          return row.kind === 'rule'
+            ? renderRuleRow({ row: rowContext, escapeHtml })
+            : renderRulesetRow({ row: rowContext, escapeHtml, renderRulesetRuntimeMeta });
+        }).join('')}
+      </div>`;
 
     routingRulesContainer.querySelectorAll('[data-field]').forEach((input) => {
       const eventName = input.tagName === 'SELECT' ? 'change' : 'input';

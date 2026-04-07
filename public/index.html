@@ -221,8 +221,8 @@
           <div class="proxy-card full-card">
             <div class="card-header">
               <div class="header-titles">
-                <h1>路由分流规则配置</h1>
-                <p>为域名与 IP 段定义走代理或直连的规则</p>
+                <h1>分流规则</h1>
+                <p>统一管理手动规则与规则集</p>
               </div>
             </div>
             <div class="toolbar routing-toolbar">
@@ -236,11 +236,11 @@
                 </div>
                 <div class="routing-toolbar-actions">
                   <select id="routing-ruleset-preset-select" class="route-select routing-preset-select">
-                    <option value="">添加常用规则集...</option>
+                    <option value="">添加内置规则集...</option>
                   </select>
-                  <button id="routing-add-ruleset" type="button">新增自定义规则集</button>
+                  <button id="routing-add-ruleset" type="button">新增规则集</button>
                   <select id="routing-preset-select" class="route-select routing-preset-select">
-                    <option value="">快速插入手写规则...</option>
+                    <option value="">插入规则模板...</option>
                     <option value="proxy-ai">AI 服务 (代理)</option>
                     <option value="proxy-dev">开发者服务 (代理)</option>
                     <option value="direct-cn">国内常见域名 (直连)</option>
@@ -258,7 +258,7 @@
                 <p class="state-msg error"></p>
               </div>
               <div id="routing-empty" class="state-container hidden">
-                <p class="state-msg">还没有规则集或手写规则，可以先添加一个内置规则集并为它选择节点。</p>
+                <p class="state-msg">规则列表为空。</p>
               </div>
               <div id="routing-rules" class="routing-rules hidden"></div>
             </div>

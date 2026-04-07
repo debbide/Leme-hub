@@ -7,6 +7,20 @@ const ROUTING_RULE_TYPES = ['domain', 'domain_suffix', 'domain_keyword', 'ip_cid
 const ROUTING_RULE_ACTIONS = ['default', 'direct', 'node', 'node_group'];
 const ROUTING_RULESET_TARGETS = ['default', 'direct', 'node', 'node_group'];
 
+const ROUTING_RULE_TYPE_LABELS = {
+  domain: '域名',
+  domain_suffix: '后缀',
+  domain_keyword: '关键词',
+  ip_cidr: 'CIDR'
+};
+
+const ROUTING_TARGET_LABELS = {
+  default: '默认代理',
+  direct: '直连',
+  node: '指定节点',
+  node_group: '节点组'
+};
+
 let routingRuleCounter = 0;
 let routingRulesetCounter = 0;
 let routingRulesetEntryCounter = 0;
@@ -226,20 +240,75 @@ export const renderRulesetRuntimeMeta = ({ ruleset, routingBuiltinRulesets, rule
   }).join('');
 };
 
+export const buildUnifiedRoutingRows = (rules = [], rulesets = []) => ([
+  ...rulesets.map((ruleset, index) => ({
+    kind: 'ruleset',
+    id: String(ruleset.id || `ruleset-${index}`),
+    sourceIndex: index,
+    data: ruleset,
+  })),
+  ...rules.map((rule, index) => ({
+    kind: 'rule',
+    id: String(rule.id || `rule-${index}`),
+    sourceIndex: index,
+    data: rule,
+  }))
+]);
+
+export const summarizeUnifiedRoutingRow = ({ row, routingNodeOptions = [], nodeGroups = [], getNodeGroupDisplayName = () => '' }) => {
+  if (!row || typeof row !== 'object' || !row.data) {
+    return { typeLabel: '--', matchLabel: '--', targetLabel: '--', metaLabel: '' };
+  }
+
+  if (row.kind === 'rule') {
+    const rule = row.data;
+    const node = routingNodeOptions.find((item) => item.id === rule.nodeId);
+    const group = nodeGroups.find((item) => item.id === rule.nodeGroupId);
+    const targetLabel = rule.action === 'node'
+      ? `${ROUTING_TARGET_LABELS.node} · ${node?.name || node?.server || rule.nodeId || '--'}`
+      : rule.action === 'node_group'
+        ? `${ROUTING_TARGET_LABELS.node_group} · ${getNodeGroupDisplayName(group) || rule.nodeGroupId || '--'}`
+        : ROUTING_TARGET_LABELS[rule.action] || '--';
+
+    return {
+      typeLabel: ROUTING_RULE_TYPE_LABELS[rule.type] || '规则',
+      matchLabel: String(rule.value || '').trim() || '--',
+      targetLabel,
+      metaLabel: String(rule.note || '').trim(),
+    };
+  }
+
+  const ruleset = row.data;
+  const node = routingNodeOptions.find((item) => item.id === ruleset.nodeId);
+  const group = nodeGroups.find((item) => item.id === ruleset.groupId);
+  const targetLabel = ruleset.target === 'node'
+    ? `${ROUTING_TARGET_LABELS.node} · ${node?.name || node?.server || ruleset.nodeId || '--'}`
+    : ruleset.target === 'node_group'
+      ? `${ROUTING_TARGET_LABELS.node_group} · ${getNodeGroupDisplayName(group) || ruleset.groupId || '--'}`
+      : ROUTING_TARGET_LABELS[ruleset.target] || '--';
+
+  return {
+    typeLabel: ruleset.kind === 'builtin' ? '内置规则集' : '自定义规则集',
+    matchLabel: String(ruleset.name || '').trim() || '--',
+    targetLabel,
+    metaLabel: ruleset.kind === 'custom' ? `${Array.isArray(ruleset.entries) ? ruleset.entries.length : 0} 条` : String(ruleset.presetId || '').trim(),
+  };
+};
+
 export const applyRoutingPreset = (presetId) => {
   switch (presetId) {
     case 'proxy-ai':
       return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'proxy', note: 'OpenAI' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'anthropic', action: 'proxy', note: 'Anthropic' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'claude.ai', action: 'proxy', note: 'Claude' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'midjourney.com', action: 'proxy', note: 'Midjourney' })
+        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'default', note: 'OpenAI' }),
+        createRoutingRuleDraft({ type: 'domain_keyword', value: 'anthropic', action: 'default', note: 'Anthropic' }),
+        createRoutingRuleDraft({ type: 'domain_suffix', value: 'claude.ai', action: 'default', note: 'Claude' }),
+        createRoutingRuleDraft({ type: 'domain_suffix', value: 'midjourney.com', action: 'default', note: 'Midjourney' })
       ];
     case 'proxy-dev':
       return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'proxy', note: 'GitHub' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'stackoverflow.com', action: 'proxy', note: 'StackOverflow' }),
-        createRoutingRuleDraft({ type: 'domain_suffix', value: 'docker.com', action: 'proxy', note: 'Docker' })
+        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'default', note: 'GitHub' }),
+        createRoutingRuleDraft({ type: 'domain_suffix', value: 'stackoverflow.com', action: 'default', note: 'StackOverflow' }),
+        createRoutingRuleDraft({ type: 'domain_suffix', value: 'docker.com', action: 'default', note: 'Docker' })
       ];
     case 'direct-cn':
       return [
@@ -250,8 +319,8 @@ export const applyRoutingPreset = (presetId) => {
       ];
     case 'mixed-starter':
       return [
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'proxy', note: 'AI 服务走代理' }),
-        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'proxy', note: '开发平台走代理' }),
+        createRoutingRuleDraft({ type: 'domain_keyword', value: 'openai', action: 'default', note: 'AI 服务走代理' }),
+        createRoutingRuleDraft({ type: 'domain_keyword', value: 'github', action: 'default', note: '开发平台走代理' }),
         createRoutingRuleDraft({ type: 'domain_suffix', value: 'cn', action: 'direct', note: '国内域名直连' })
       ];
     default:

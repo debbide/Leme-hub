@@ -1810,10 +1810,103 @@ input[type="checkbox"] {
   background: rgba(139, 92, 246, 0.12);
 }
 
-.routing-chip.is-custom {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.35);
-  background: rgba(59, 130, 246, 0.12);
+.routing-unified-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.routing-unified-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.95rem 1rem 0.25rem;
+}
+
+.routing-unified-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.routing-unified-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.42);
+  overflow: hidden;
+}
+
+.routing-unified-main {
+  display: grid;
+  grid-template-columns: auto auto minmax(180px, 1.25fr) minmax(120px, 0.7fr) minmax(140px, 0.8fr) minmax(180px, 1fr) minmax(120px, 0.9fr) auto;
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.85rem 0.95rem;
+}
+
+.routing-unified-handle {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.routing-unified-type {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  padding-top: 1.45rem;
+}
+
+.routing-unified-field {
+  min-width: 0;
+}
+
+.routing-unified-field .routing-input,
+.routing-unified-field .routing-select {
+  margin-top: 0;
+}
+
+.routing-unified-dest {
+  min-width: 0;
+}
+
+.routing-unified-static {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 0 0.2rem;
+}
+
+.routing-unified-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  padding-top: 1.45rem;
+}
+
+.routing-inline-note {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.routing-unified-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-self: end;
+  padding-top: 1.45rem;
+}
+
+.routing-unified-subrows {
+  border-top: 1px dashed var(--border-subtle);
+  padding: 0.75rem 0.95rem 0.9rem 4.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
 .routing-rule-modal-grid {

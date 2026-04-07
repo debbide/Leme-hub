@@ -1,8 +1,8 @@
-import { closeRoutingRuleModal as closeRoutingRuleModalView, openRoutingRuleModal as openRoutingRuleModalView, renderRoutingRules as renderRoutingRulesView, renderRoutingRulesetsSection as renderRoutingRulesetsSectionView, submitRoutingRuleModal as submitRoutingRuleModalView } from './routing-editor.js';
+import { closeRoutingRuleModal as closeRoutingRuleModalView, openRoutingRuleModal as openRoutingRuleModalView, renderRoutingRules as renderRoutingRulesView, submitRoutingRuleModal as submitRoutingRuleModalView } from './routing-editor.js';
 import { loadRoutingRulesData, saveRoutingRulesData, showRoutingError as showRoutingErrorView } from './routing-dataflow.js';
 import { extractRoutingObservability, renderRoutingObservability as renderRoutingObservabilityView } from './routing-observability.js';
 import { markRoutingHitsAsSeen as markRoutingHitsAsSeenView, renderRoutingModeBanner as renderRoutingModeBannerView, updateRoutingLogNavBadge as updateRoutingLogNavBadgeView, updateRoutingLogSearchControls as updateRoutingLogSearchControlsView, updateRoutingLogViewModeButtons as updateRoutingLogViewModeButtonsView } from './routing-ui.js';
-import { applyRoutingPreset, buildRoutingRuleErrors, buildRoutingRulesetErrors, createRoutingRuleDraft, createRoutingRulesetDraft, createRoutingRulesetEntryDraft, getBuiltinRulesetById, normalizeRoutingRule, normalizeRoutingRulesetEntry, renderRulesetRuntimeMeta, validateRoutingRule } from './routing-core.js';
+import { applyRoutingPreset, buildRoutingRuleErrors, buildRoutingRulesetErrors, buildUnifiedRoutingRows, createRoutingRuleDraft, createRoutingRulesetDraft, createRoutingRulesetEntryDraft, getBuiltinRulesetById, normalizeRoutingRule, normalizeRoutingRulesetEntry, renderRulesetRuntimeMeta, summarizeUnifiedRoutingRow, validateRoutingRule } from './routing-core.js';
 import { debounce } from './utils.js';
 
 export const createRoutingController = ({
@@ -76,16 +76,16 @@ export const createRoutingController = ({
     routingSaveBtn.textContent = routingSavingState
       ? '保存中...'
       : routingDirty
-        ? '保存路由表'
+        ? '保存规则'
         : inSavedFlash
           ? '已保存'
-          : '保存路由表';
+          : '保存规则';
   };
 
   const renderRoutingRulesetPresetOptions = () => {
     if (!routingRulesetPresetSelect) return;
     routingRulesetPresetSelect.innerHTML = [
-      '<option value="">添加常用规则集...</option>',
+      '<option value="">添加内置规则集...</option>',
       ...routingBuiltinRulesets.map((ruleset) => `<option value="${escapeHtml(ruleset.id)}">${escapeHtml(ruleset.name)}</option>`)
     ].join('');
   };
@@ -235,17 +235,6 @@ export const createRoutingController = ({
     onStartCore: () => runCoreAction('start'),
   });
 
-  const renderRoutingRulesetsSection = () => renderRoutingRulesetsSectionView({
-    routingRulesets,
-    routingRulesetErrors,
-    routingBuiltinRulesets,
-    routingNodeOptions: getRoutingNodeOptions(),
-    nodeGroups: getNodeGroups(),
-    getNodeGroupDisplayName,
-    renderRulesetRuntimeMeta,
-    escapeHtml,
-  });
-
   const showRoutingError = (message) => showRoutingErrorView({
     routingError,
     routingLoading,
@@ -254,104 +243,121 @@ export const createRoutingController = ({
     message,
   });
 
-  const renderRoutingRules = () => renderRoutingRulesView({
-    routingRulesContainer,
-    routingLoading,
-    routingEmpty,
-    routingError,
-    routingLoadingState,
-    routingRules,
-    routingRulesets,
-    routingRuleErrors,
-    nodeGroups: getNodeGroups(),
-    routingNodeOptions: getRoutingNodeOptions(),
-    escapeHtml,
-    getNodeGroupDisplayName,
-    renderRoutingRulesetsSection,
-    updateRoutingSaveState,
-    renderRoutingModeBanner,
-    onRuleFieldChange: (input, event) => {
-      const ruleId = input.dataset.ruleId;
-      const field = input.dataset.field;
-      const targetRule = routingRules.find((item) => item.id === ruleId);
-      if (!targetRule || !field) return;
-      targetRule[field] = event.target.value;
-      routingRuleErrors = buildRoutingRuleErrors(routingRules);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRuleDelete: (ruleId) => {
-      routingRules = routingRules.filter((rule) => rule.id !== ruleId);
-      delete routingRuleErrors[ruleId];
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRuleMove: (ruleId, offset) => moveRoutingRule(ruleId, offset),
-    onRuleEdit: (ruleId) => {
-      const rule = routingRules.find((item) => item.id === ruleId);
-      if (rule) openRoutingRuleModal(rule);
-    },
-    onRulesetFieldChange: (input, event) => {
-      const ruleset = routingRulesets.find((item) => item.id === input.dataset.rulesetId);
-      if (!ruleset) return;
-      const field = input.dataset.rulesetField;
-      ruleset[field] = field === 'enabled' ? event.target.checked : event.target.value;
-      if (field === 'target') {
-        if (ruleset.target === 'node_group') {
-          ruleset.nodeId = '';
-        } else if (ruleset.target === 'node') {
-          ruleset.groupId = '';
-        } else {
-          ruleset.nodeId = '';
-          ruleset.groupId = '';
+  const renderRoutingRules = () => {
+    const routingNodeOptions = getRoutingNodeOptions();
+    const nodeGroups = getNodeGroups();
+    const unifiedRows = buildUnifiedRoutingRows(routingRules, routingRulesets).map((row) => ({
+      ...row,
+      summary: summarizeUnifiedRoutingRow({
+        row,
+        routingNodeOptions,
+        nodeGroups,
+        getNodeGroupDisplayName,
+      })
+    }));
+
+    return renderRoutingRulesView({
+      routingRulesContainer,
+      routingLoading,
+      routingEmpty,
+      routingError,
+      routingLoadingState,
+      routingRules,
+      routingRulesets,
+      routingRuleErrors,
+      routingRulesetErrors,
+      routingBuiltinRulesets,
+      routingNodeOptions,
+      nodeGroups,
+      unifiedRows,
+      escapeHtml,
+      getNodeGroupDisplayName,
+      renderRulesetRuntimeMeta,
+      updateRoutingSaveState,
+      renderRoutingModeBanner,
+      onRuleFieldChange: (input, event) => {
+        const ruleId = input.dataset.ruleId;
+        const field = input.dataset.field;
+        const targetRule = routingRules.find((item) => item.id === ruleId);
+        if (!targetRule || !field) return;
+        targetRule[field] = event.target.value;
+        routingRuleErrors = buildRoutingRuleErrors(routingRules);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRuleDelete: (ruleId) => {
+        routingRules = routingRules.filter((rule) => rule.id !== ruleId);
+        delete routingRuleErrors[ruleId];
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRuleMove: (ruleId, offset) => moveRoutingRule(ruleId, offset),
+      onRuleEdit: (ruleId) => {
+        const rule = routingRules.find((item) => item.id === ruleId);
+        if (rule) openRoutingRuleModal(rule);
+      },
+      onRulesetFieldChange: (input, event) => {
+        const ruleset = routingRulesets.find((item) => item.id === input.dataset.rulesetId);
+        if (!ruleset) return;
+        const field = input.dataset.rulesetField;
+        ruleset[field] = field === 'enabled' ? event.target.checked : event.target.value;
+        if (field === 'target') {
+          if (ruleset.target === 'node_group') {
+            ruleset.nodeId = '';
+          } else if (ruleset.target === 'node') {
+            ruleset.groupId = '';
+          } else {
+            ruleset.nodeId = '';
+            ruleset.groupId = '';
+          }
         }
-      }
-      if (field === 'presetId' && ruleset.kind === 'builtin') {
-        const builtin = getBuiltinRulesetById(ruleset.presetId);
-        if (builtin) ruleset.name = builtin.name;
-      }
-      routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRulesetDelete: (rulesetId) => {
-      routingRulesets = routingRulesets.filter((ruleset) => ruleset.id !== rulesetId);
-      routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRulesetMove: (rulesetId, offset) => moveRoutingRuleset(rulesetId, offset),
-    onRulesetAddEntry: (rulesetId) => {
-      const ruleset = routingRulesets.find((item) => item.id === rulesetId);
-      if (!ruleset) return;
-      ruleset.entries.push(createRoutingRulesetEntryDraft());
-      routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRulesetEntryFieldChange: (input, event) => {
-      const ruleset = routingRulesets.find((item) => item.id === input.dataset.rulesetId);
-      const entry = ruleset?.entries.find((item) => item.id === input.dataset.rulesetEntryId);
-      if (!ruleset || !entry) return;
-      entry[input.dataset.rulesetEntryField] = event.target.value;
-      routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    onRulesetEntryDelete: (rulesetId, entryId) => {
-      const ruleset = routingRulesets.find((item) => item.id === rulesetId);
-      if (!ruleset) return;
-      ruleset.entries = ruleset.entries.filter((entry) => entry.id !== entryId);
-      routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
-      routingDirty = true;
-      renderRoutingRules();
-    },
-    renderRoutingObservability,
-    onRenderError: (error) => {
-      routingLoadingState = false;
-      showRoutingError(`分流页面渲染失败: ${error.message}`);
-    },
-  });
+        if (field === 'presetId' && ruleset.kind === 'builtin') {
+          const builtin = getBuiltinRulesetById(routingBuiltinRulesets, ruleset.presetId);
+          if (builtin) ruleset.name = builtin.name;
+        }
+        routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRulesetDelete: (rulesetId) => {
+        routingRulesets = routingRulesets.filter((ruleset) => ruleset.id !== rulesetId);
+        routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRulesetMove: (rulesetId, offset) => moveRoutingRuleset(rulesetId, offset),
+      onRulesetAddEntry: (rulesetId) => {
+        const ruleset = routingRulesets.find((item) => item.id === rulesetId);
+        if (!ruleset) return;
+        ruleset.entries.push(createRoutingRulesetEntryDraft());
+        routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRulesetEntryFieldChange: (input, event) => {
+        const ruleset = routingRulesets.find((item) => item.id === input.dataset.rulesetId);
+        const entry = ruleset?.entries.find((item) => item.id === input.dataset.rulesetEntryId);
+        if (!ruleset || !entry) return;
+        entry[input.dataset.rulesetEntryField] = event.target.value;
+        routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      onRulesetEntryDelete: (rulesetId, entryId) => {
+        const ruleset = routingRulesets.find((item) => item.id === rulesetId);
+        if (!ruleset) return;
+        ruleset.entries = ruleset.entries.filter((entry) => entry.id !== entryId);
+        routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+        routingDirty = true;
+        renderRoutingRules();
+      },
+      renderRoutingObservability,
+      onRenderError: (error) => {
+        routingLoadingState = false;
+        showRoutingError(`分流页面渲染失败: ${error.message}`);
+      },
+    });
+  };
 
   const loadRoutingRules = (force = false) => loadRoutingRulesData({
     force,
