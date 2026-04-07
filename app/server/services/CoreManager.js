@@ -271,6 +271,8 @@ const normalizeRoutingItem = (item, index, nodeGroups = []) => {
   return {
     id: String(item.id || entry.id),
     kind,
+    rulesetId: String(item.rulesetId || item.id || `custom-entry-${index + 1}`),
+    rulesetName: typeof item.rulesetName === 'string' ? item.rulesetName.trim() : '',
     type: entry.type,
     value: entry.value,
     target,
@@ -296,7 +298,7 @@ const normalizeRoutingItems = (items, nodeGroups = []) => {
       ? `rule|${item.type}|${item.action}|${item.nodeId || ''}|${item.nodeGroupId || ''}|${String(item.value || '').toLowerCase()}`
       : item.kind === 'builtin_ruleset'
         ? `builtin_ruleset|${item.presetId}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}`
-        : `custom_entry|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
+        : `custom_entry|${item.rulesetId || ''}|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
 
     if (seenSignatures.has(signature)) {
       throw createHttpError(`routingItems[${index}] duplicates another routing item`, 400);

@@ -306,13 +306,11 @@ export const renderRoutingRules = ({
           <span>状态</span>
           <span>操作</span>
         </div>
-        ${unifiedRows.map((row) => {
-          const sameKindRows = unifiedRows.filter((item) => item.kind === row.kind);
-          const sameKindIndex = sameKindRows.findIndex((item) => item.id === row.id);
+        ${unifiedRows.map((row, rowIndex) => {
           const rowContext = {
             ...row,
-            isFirst: sameKindIndex === 0,
-            isLast: sameKindIndex === sameKindRows.length - 1,
+            isFirst: rowIndex === 0,
+            isLast: rowIndex === unifiedRows.length - 1,
             routingNodeOptions,
             nodeGroups,
             getNodeGroupDisplayName,

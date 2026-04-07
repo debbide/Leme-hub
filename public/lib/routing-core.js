@@ -240,20 +240,171 @@ export const renderRulesetRuntimeMeta = ({ ruleset, routingBuiltinRulesets, rule
   }).join('');
 };
 
-export const buildUnifiedRoutingRows = (rules = [], rulesets = []) => ([
-  ...rulesets.map((ruleset, index) => ({
+const buildRoutingRowCollections = (rules = [], rulesets = []) => {
+  const rulesetRows = rulesets.map((ruleset, index) => ({
     kind: 'ruleset',
     id: String(ruleset.id || `ruleset-${index}`),
     sourceIndex: index,
     data: ruleset,
-  })),
-  ...rules.map((rule, index) => ({
+  }));
+  const ruleRows = rules.map((rule, index) => ({
     kind: 'rule',
     id: String(rule.id || `rule-${index}`),
     sourceIndex: index,
     data: rule,
-  }))
-]);
+  }));
+  const allRows = [...rulesetRows, ...ruleRows];
+  const lookup = new Map(allRows.map((row) => [`${row.kind}:${row.id}`, row]));
+  return { allRows, lookup };
+};
+
+const normalizeRoutingRowRef = (row) => {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const kind = row.kind === 'rule' || row.kind === 'ruleset'
+    ? row.kind
+    : null;
+  const id = row.id == null ? '' : String(row.id);
+
+  if (!kind || !id) {
+    return null;
+  }
+
+  return { kind, id };
+};
+
+export const buildRoutingRowOrderFromItems = ({ routingItems = [], rules = [], rulesets = [] } = {}) => {
+  const { allRows, lookup } = buildRoutingRowCollections(rules, rulesets);
+  const orderedRows = [];
+  const seen = new Set();
+
+  (Array.isArray(routingItems) ? routingItems : []).forEach((item) => {
+    let ref = null;
+
+    if (item?.kind === 'rule') {
+      ref = { kind: 'rule', id: String(item.id || '') };
+    } else if (item?.kind === 'builtin_ruleset') {
+      ref = { kind: 'ruleset', id: String(item.id || '') };
+    } else if (item?.kind === 'custom_entry') {
+      ref = { kind: 'ruleset', id: String(item.rulesetId || '') };
+    }
+
+    const normalizedRef = normalizeRoutingRowRef(ref);
+    if (!normalizedRef) {
+      return;
+    }
+
+    const key = `${normalizedRef.kind}:${normalizedRef.id}`;
+    if (!lookup.has(key) || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    orderedRows.push(normalizedRef);
+  });
+
+  allRows.forEach((row) => {
+    const key = `${row.kind}:${row.id}`;
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    orderedRows.push({ kind: row.kind, id: row.id });
+  });
+
+  return orderedRows;
+};
+
+export const buildUnifiedRoutingRows = (rules = [], rulesets = [], orderedRows = []) => {
+  const { allRows, lookup } = buildRoutingRowCollections(rules, rulesets);
+  const normalizedOrder = Array.isArray(orderedRows)
+    ? orderedRows.map(normalizeRoutingRowRef).filter(Boolean)
+    : [];
+
+  if (!normalizedOrder.length) {
+    return allRows;
+  }
+
+  const rows = [];
+  const seen = new Set();
+
+  normalizedOrder.forEach((rowRef) => {
+    const key = `${rowRef.kind}:${rowRef.id}`;
+    if (!lookup.has(key) || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    rows.push(lookup.get(key));
+  });
+
+  allRows.forEach((row) => {
+    const key = `${row.kind}:${row.id}`;
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    rows.push(row);
+  });
+
+  return rows;
+};
+
+export const buildRoutingItemsFromUnifiedRows = ({ rules = [], rulesets = [], orderedRows = [] } = {}) => (
+  buildUnifiedRoutingRows(rules, rulesets, orderedRows).flatMap((row, index) => {
+    if (row.kind === 'rule') {
+      const rule = row.data || {};
+      return [{
+        id: String(rule.id || `rule-${index + 1}`),
+        kind: 'rule',
+        type: String(rule.type || '').trim(),
+        value: String(rule.value || '').trim(),
+        action: String(rule.action || '').trim(),
+        nodeId: rule.nodeId == null || rule.nodeId === '' ? null : String(rule.nodeId).trim(),
+        nodeGroupId: rule.nodeGroupId == null || rule.nodeGroupId === '' ? null : String(rule.nodeGroupId).trim(),
+        note: String(rule.note || '').trim(),
+      }];
+    }
+
+    const ruleset = row.data || {};
+    const rulesetId = String(ruleset.id || `ruleset-${index + 1}`);
+    const target = String(ruleset.target || '').trim();
+    const nodeId = ruleset.nodeId == null || ruleset.nodeId === '' ? null : String(ruleset.nodeId).trim();
+    const groupId = ruleset.groupId == null || ruleset.groupId === '' ? null : String(ruleset.groupId).trim();
+
+    if (ruleset.kind === 'builtin') {
+      return [{
+        id: rulesetId,
+        kind: 'builtin_ruleset',
+        presetId: String(ruleset.presetId || '').trim(),
+        name: String(ruleset.name || '').trim(),
+        target,
+        nodeId,
+        groupId,
+        enabled: ruleset.enabled !== false,
+        note: String(ruleset.note || '').trim(),
+      }];
+    }
+
+    return (Array.isArray(ruleset.entries) ? ruleset.entries : []).map((entry, entryIndex) => ({
+      id: String(entry.id || `${rulesetId}-entry-${entryIndex + 1}`),
+      kind: 'custom_entry',
+      rulesetId,
+      rulesetName: String(ruleset.name || '').trim(),
+      type: String(entry.type || '').trim(),
+      value: String(entry.value || '').trim(),
+      target,
+      nodeId,
+      groupId,
+      enabled: ruleset.enabled !== false,
+      note: String(entry.note || ruleset.note || '').trim(),
+    }));
+  })
+);
 
 export const summarizeUnifiedRoutingRow = ({ row, routingNodeOptions = [], nodeGroups = [], getNodeGroupDisplayName = () => '' }) => {
   if (!row || typeof row !== 'object' || !row.data) {

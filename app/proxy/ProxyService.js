@@ -651,6 +651,7 @@ export class ProxyService {
 
     const orderedInlineRuleSets = [];
     const orderedRouteRules = [];
+    const customRulesetBuckets = new Map();
     const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
 
     normalizedRoutingItems.forEach((item, index) => {
@@ -718,7 +719,15 @@ export class ProxyService {
       if (item.kind === 'custom_entry') {
         const outbound = buildRulesetOutbound(item);
         const rulesetTagBase = item.rulesetId || item.id || index + 1;
-        const tag = registerRoutingHit(`usr-rs-${rulesetTagBase}`, {
+        const tag = `usr-rs-${rulesetTagBase}`;
+        const existingBucket = customRulesetBuckets.get(tag);
+
+        if (existingBucket) {
+          existingBucket.rules.push({ [item.type]: [item.value] });
+          return;
+        }
+
+        registerRoutingHit(tag, {
           kind: 'ruleset',
           name: item.rulesetName || item.note || `${item.type}=${item.value}`,
           target: outbound,
@@ -727,11 +736,13 @@ export class ProxyService {
           matchType: item.type,
           matchValue: item.value
         });
-        orderedInlineRuleSets.push({
+        const bucket = {
           type: 'inline',
           tag,
           rules: [{ [item.type]: [item.value] }]
-        });
+        };
+        customRulesetBuckets.set(tag, bucket);
+        orderedInlineRuleSets.push(bucket);
         orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
       }
     });

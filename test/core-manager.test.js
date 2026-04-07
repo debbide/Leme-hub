@@ -659,6 +659,28 @@ test('getSettingsSnapshot recovers invalid routingItems from legacy routing fiel
   assert.equal(settings.nodeGroups[0].name, 'JP Pool');
 });
 
+test('updateSettings preserves custom ruleset grouping from routingItems', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    routingItems: [
+      { id: 'entry-1', kind: 'custom_entry', rulesetId: 'rs-dev', rulesetName: 'Dev Rules', type: 'domain_suffix', value: 'corp.local', target: 'direct', note: '' },
+      { id: 'rule-1', kind: 'rule', type: 'domain_suffix', value: 'example.com', action: 'default', note: 'site' },
+      { id: 'entry-2', kind: 'custom_entry', rulesetId: 'rs-dev', rulesetName: 'Dev Rules', type: 'domain_keyword', value: 'internal', target: 'direct', note: '' }
+    ]
+  });
+
+  assert.equal(result.settings.routingItems.length, 3);
+  assert.equal(result.settings.routingItems[0].rulesetId, 'rs-dev');
+  assert.equal(result.settings.routingItems[1].kind, 'rule');
+  assert.equal(result.settings.routingItems[2].rulesetId, 'rs-dev');
+  assert.equal(result.settings.customRules.length, 1);
+  assert.equal(result.settings.customRules[0].value, 'example.com');
+  assert.equal(result.settings.rulesets.length, 1);
+  assert.equal(result.settings.rulesets[0].id, 'rs-dev');
+  assert.equal(result.settings.rulesets[0].entries.length, 2);
+});
+
 test('updateSettings rejects colliding unified proxy ports', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 

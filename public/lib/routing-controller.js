@@ -2,7 +2,7 @@ import { closeRoutingRuleModal as closeRoutingRuleModalView, openRoutingRuleModa
 import { loadRoutingRulesData, saveRoutingRulesData, showRoutingError as showRoutingErrorView } from './routing-dataflow.js';
 import { extractRoutingObservability, renderRoutingObservability as renderRoutingObservabilityView } from './routing-observability.js';
 import { markRoutingHitsAsSeen as markRoutingHitsAsSeenView, renderRoutingModeBanner as renderRoutingModeBannerView, updateRoutingLogNavBadge as updateRoutingLogNavBadgeView, updateRoutingLogSearchControls as updateRoutingLogSearchControlsView, updateRoutingLogViewModeButtons as updateRoutingLogViewModeButtonsView } from './routing-ui.js';
-import { applyRoutingPreset, buildRoutingRuleErrors, buildRoutingRulesetErrors, buildUnifiedRoutingRows, createRoutingRuleDraft, createRoutingRulesetDraft, createRoutingRulesetEntryDraft, getBuiltinRulesetById, normalizeRoutingRule, normalizeRoutingRulesetEntry, renderRulesetRuntimeMeta, summarizeUnifiedRoutingRow, validateRoutingRule } from './routing-core.js';
+import { applyRoutingPreset, buildRoutingItemsFromUnifiedRows, buildRoutingRowOrderFromItems, buildRoutingRuleErrors, buildRoutingRulesetErrors, buildUnifiedRoutingRows, createRoutingRuleDraft, createRoutingRulesetDraft, createRoutingRulesetEntryDraft, getBuiltinRulesetById, normalizeRoutingRule, normalizeRoutingRulesetEntry, renderRulesetRuntimeMeta, summarizeUnifiedRoutingRow, validateRoutingRule } from './routing-core.js';
 import { debounce } from './utils.js';
 
 export const createRoutingController = ({
@@ -50,6 +50,7 @@ export const createRoutingController = ({
 }) => {
   let routingRules = [];
   let routingRulesets = [];
+  let routingRowOrder = [];
   let routingRuleErrors = {};
   let routingRulesetErrors = {};
   let routingLoaded = false;
@@ -139,29 +140,30 @@ export const createRoutingController = ({
     renderRoutingObservability();
   }, 250);
 
-  const moveRoutingRule = (ruleId, offset) => {
-    const index = routingRules.findIndex((rule) => rule.id === ruleId);
+  const syncRoutingRowOrder = (routingItems = []) => {
+    routingRowOrder = buildRoutingRowOrderFromItems({
+      routingItems,
+      rules: routingRules,
+      rulesets: routingRulesets,
+    });
+  };
+
+  const moveRoutingRow = (kind, rowId, offset) => {
+    const rows = buildUnifiedRoutingRows(routingRules, routingRulesets, routingRowOrder);
+    const index = rows.findIndex((row) => row.kind === kind && row.id === rowId);
     const targetIndex = index + offset;
-    if (index === -1 || targetIndex < 0 || targetIndex >= routingRules.length) return;
-    const nextRules = [...routingRules];
-    const [rule] = nextRules.splice(index, 1);
-    nextRules.splice(targetIndex, 0, rule);
-    routingRules = nextRules;
+    if (index === -1 || targetIndex < 0 || targetIndex >= rows.length) return;
+    const nextRows = [...rows];
+    const [row] = nextRows.splice(index, 1);
+    nextRows.splice(targetIndex, 0, row);
+    routingRowOrder = nextRows.map((item) => ({ kind: item.kind, id: item.id }));
     routingDirty = true;
     renderRoutingRules();
   };
 
-  const moveRoutingRuleset = (rulesetId, offset) => {
-    const index = routingRulesets.findIndex((ruleset) => ruleset.id === rulesetId);
-    const targetIndex = index + offset;
-    if (index === -1 || targetIndex < 0 || targetIndex >= routingRulesets.length) return;
-    const nextRulesets = [...routingRulesets];
-    const [ruleset] = nextRulesets.splice(index, 1);
-    nextRulesets.splice(targetIndex, 0, ruleset);
-    routingRulesets = nextRulesets;
-    routingDirty = true;
-    renderRoutingRules();
-  };
+  const moveRoutingRule = (ruleId, offset) => moveRoutingRow('rule', ruleId, offset);
+
+  const moveRoutingRuleset = (rulesetId, offset) => moveRoutingRow('ruleset', rulesetId, offset);
 
   const closeRoutingRuleModal = () => closeRoutingRuleModalView({
     routingRuleModal,
@@ -247,7 +249,7 @@ export const createRoutingController = ({
   const renderRoutingRules = () => {
     const routingNodeOptions = getRoutingNodeOptions();
     const nodeGroups = getNodeGroups();
-    const unifiedRows = buildUnifiedRoutingRows(routingRules, routingRulesets).map((row) => ({
+    const unifiedRows = buildUnifiedRoutingRows(routingRules, routingRulesets, routingRowOrder).map((row) => ({
       ...row,
       summary: summarizeUnifiedRoutingRow({
         row,
@@ -296,6 +298,7 @@ export const createRoutingController = ({
       },
       onRuleDelete: (ruleId) => {
         routingRules = routingRules.filter((rule) => rule.id !== ruleId);
+        routingRowOrder = routingRowOrder.filter((row) => !(row.kind === 'rule' && row.id === ruleId));
         delete routingRuleErrors[ruleId];
         routingDirty = true;
         renderRoutingRules();
@@ -330,6 +333,7 @@ export const createRoutingController = ({
       },
       onRulesetDelete: (rulesetId) => {
         routingRulesets = routingRulesets.filter((ruleset) => ruleset.id !== rulesetId);
+        routingRowOrder = routingRowOrder.filter((row) => !(row.kind === 'ruleset' && row.id === rulesetId));
         routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
         routingDirty = true;
         renderRoutingRules();
@@ -376,6 +380,7 @@ export const createRoutingController = ({
     setRoutingLoadingState: (value) => { routingLoadingState = value; },
     setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
     setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },
+    setRoutingRowOrder: (routingItems = []) => { syncRoutingRowOrder(routingItems); },
     renderRoutingRules,
     requestJson,
     createRoutingRuleDraft,
@@ -407,9 +412,11 @@ export const createRoutingController = ({
     buildRoutingRuleErrors,
     setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
     routingRulesets,
+    routingRowOrder,
     normalizeRoutingRulesetEntry,
     buildRoutingRulesetErrors,
     setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },
+    setRoutingRowOrder: (routingItems = []) => { syncRoutingRowOrder(routingItems); },
     setRoutingDirty: (value) => { routingDirty = value; },
     renderRoutingRules,
     showToast,
@@ -420,6 +427,7 @@ export const createRoutingController = ({
     createRoutingRulesetDraft,
     setRoutingRules: (value) => { routingRules = value; },
     setRoutingRulesets: (value) => { routingRulesets = value; },
+    buildRoutingItemsFromUnifiedRows,
     nodeGroups: getNodeGroups(),
     setNodeGroups,
     routingBuiltinRulesets,
@@ -502,6 +510,8 @@ export const createRoutingController = ({
     setRoutingRules: (value) => { routingRules = value; },
     getRoutingRulesets: () => routingRulesets,
     setRoutingRulesets: (value) => { routingRulesets = value; },
+    getRoutingRowOrder: () => routingRowOrder,
+    setRoutingRowOrder: (routingItems = []) => { syncRoutingRowOrder(routingItems); },
     getRoutingBuiltinRulesets: () => routingBuiltinRulesets,
     setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
     setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },

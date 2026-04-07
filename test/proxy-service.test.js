@@ -440,6 +440,31 @@ test('keeps per-node socks inbounds isolated from system ruleset routing in rule
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.rule_set === 'usr-rs-rs-youtube' && rule.outbound === 'out-n2'), true);
 });
 
+test('custom ruleset entries share one inline ruleset tag in routingItems mode', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    routingItems: [
+      { id: 'entry-1', kind: 'custom_entry', rulesetId: 'rs-work', rulesetName: 'Work', type: 'domain_suffix', value: 'corp.local', target: 'direct', note: '' },
+      { id: 'entry-2', kind: 'custom_entry', rulesetId: 'rs-work', rulesetName: 'Work', type: 'domain_keyword', value: 'intranet', target: 'direct', note: '' }
+    ]
+  });
+
+  const workRulesets = config.route.rule_set.filter((ruleset) => ruleset.tag === 'usr-rs-rs-work');
+  const workRoutes = config.route.rules.filter((rule) => rule.rule_set === 'usr-rs-rs-work');
+
+  assert.equal(workRulesets.length, 1);
+  assert.equal(workRulesets[0].rules.length, 2);
+  assert.equal(workRoutes.length, 1);
+  assert.equal(workRoutes[0].outbound, 'direct');
+});
+
 test('drops invalid vmess node during config generation', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'bad', type: 'vmess', server: 'example.com', port: 443, uuid: 'bad' }]);

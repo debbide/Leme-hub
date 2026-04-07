@@ -22,6 +22,7 @@ export const loadRoutingRulesData = async ({
   createRoutingRulesetDraft,
   setRoutingRules,
   setRoutingRulesets,
+  setRoutingRowOrder,
   nodeGroups,
   setNodeGroups,
   setRoutingBuiltinRulesets,
@@ -56,6 +57,7 @@ export const loadRoutingRulesData = async ({
     const nextRulesets = (payload.rulesets || []).filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset) => createRoutingRulesetDraft(ruleset));
     setRoutingRules(nextRules);
     setRoutingRulesets(nextRulesets);
+    setRoutingRowOrder(payload.routingItems || []);
     setNodeGroups(payload.nodeGroups || nodeGroups);
     setRoutingBuiltinRulesets(payload.builtinRulesets || []);
     setRoutingNodeOptions(payload.core?.nodes || currentCoreState?.nodes || []);
@@ -83,9 +85,11 @@ export const saveRoutingRulesData = async ({
   buildRoutingRuleErrors,
   setRoutingRuleErrors,
   routingRulesets,
+  routingRowOrder,
   normalizeRoutingRulesetEntry,
   buildRoutingRulesetErrors,
   setRoutingRulesetErrors,
+  setRoutingRowOrder,
   setRoutingDirty,
   renderRoutingRules,
   showToast,
@@ -96,6 +100,7 @@ export const saveRoutingRulesData = async ({
   createRoutingRulesetDraft,
   setRoutingRules,
   setRoutingRulesets,
+  buildRoutingItemsFromUnifiedRows,
   nodeGroups,
   setNodeGroups,
   routingBuiltinRulesets,
@@ -141,14 +146,24 @@ export const saveRoutingRulesData = async ({
   setRoutingSavingState(true);
   updateRoutingSaveState();
   try {
+    const normalizedRoutingItems = buildRoutingItemsFromUnifiedRows({
+      rules: normalized,
+      rulesets: normalizedRulesets,
+      orderedRows: routingRowOrder,
+    });
     const payload = await requestJson('/api/system/rules', {
       method: 'PUT',
-      body: JSON.stringify({ customRules: normalized, rulesets: normalizedRulesets })
+      body: JSON.stringify({
+        routingItems: normalizedRoutingItems,
+        customRules: normalized,
+        rulesets: normalizedRulesets,
+      })
     });
     const nextRules = (payload.customRules || payload.rules || []).filter((rule) => rule && typeof rule === 'object').map((rule) => createRoutingRuleDraft(rule));
     const nextRulesets = (payload.rulesets || []).filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset) => createRoutingRulesetDraft(ruleset));
     setRoutingRules(nextRules);
     setRoutingRulesets(nextRulesets);
+    setRoutingRowOrder(payload.routingItems || normalizedRoutingItems);
     setNodeGroups(payload.nodeGroups || nodeGroups);
     setRoutingBuiltinRulesets(payload.builtinRulesets || routingBuiltinRulesets);
     setRoutingNodeOptions(payload.core?.nodes || currentCoreState?.nodes || []);
