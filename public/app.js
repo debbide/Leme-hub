@@ -406,6 +406,7 @@ const routingController = createRoutingController({
   getRoutingNodeOptions: () => routingNodeOptions,
   setRoutingNodeOptions: (value) => { routingNodeOptions = value || []; },
   getNodeGroupDisplayName: (group) => nodeGroupsController.getNodeGroupDisplayName(group),
+  getRulesetDatabaseStatus: () => rulesetDatabaseStatus,
   escapeHtml,
   escapeRegExp,
 });
