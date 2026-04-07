@@ -1830,6 +1830,10 @@ input[type="checkbox"] {
   gap: 0.4rem;
 }
 
+.routing-unified-columns {
+  display: none;
+}
+
 .routing-unified-row {
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -1907,6 +1911,10 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+}
+
+.routing-unified-gap {
+  display: none;
 }
 
 .routing-rule-modal-grid {
@@ -2390,6 +2398,79 @@ input[type="checkbox"] {
   }
 }
 
+@media (min-width: 1201px) {
+  .routing-unified-columns,
+  .routing-unified-main {
+    grid-template-columns: auto auto minmax(180px, 1.25fr) minmax(120px, 0.7fr) minmax(140px, 0.8fr) minmax(180px, 1fr) minmax(220px, 1fr) auto;
+  }
+
+  .routing-unified-columns {
+    display: grid;
+    gap: 0.65rem;
+    align-items: center;
+    padding: 0 0.95rem;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .routing-unified-main {
+    align-items: center;
+    padding: 0.72rem 0.95rem;
+  }
+
+  .routing-unified-type,
+  .routing-unified-meta,
+  .routing-unified-actions {
+    padding-top: 0;
+    align-self: center;
+  }
+
+  .routing-unified-meta {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .routing-unified-gap {
+    display: block;
+  }
+
+  .routing-unified-field {
+    gap: 0.3rem;
+  }
+
+  .routing-unified-field .routing-field-label {
+    display: none;
+  }
+
+  .routing-unified-field .routing-field-error {
+    min-height: 0;
+    line-height: 1.2;
+  }
+
+  .routing-unified-field .routing-field-error:empty {
+    display: none;
+  }
+
+  .routing-ruleset-inline-switch {
+    white-space: nowrap;
+  }
+
+  .routing-ruleset-runtime-inline {
+    flex-wrap: wrap;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .routing-runtime-pill {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.66rem;
+  }
+}
+
 @media (max-width: 760px) {
   .routing-toolbar {
     flex-direction: column;
@@ -2416,6 +2497,10 @@ input[type="checkbox"] {
   .routing-ruleset-entry,
   .routing-rule-grid {
     grid-template-columns: 1fr;
+  }
+
+  .routing-unified-columns {
+    display: none;
   }
 
   .routing-ruleset-inline {

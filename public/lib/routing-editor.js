@@ -176,6 +176,7 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
           <input class="routing-input ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
           <span class="routing-field-error">${escapeHtml(rulesetErrors.name || rulesetErrors.presetId || '')}</span>
         </label>
+        <div class="routing-unified-gap" aria-hidden="true"></div>
         <label class="routing-field routing-unified-field routing-unified-target">
           <span class="routing-field-label">去向</span>
           <select class="routing-select ${rulesetErrors.target ? 'has-error' : ''}" data-ruleset-field="target" data-ruleset-id="${escapeHtml(ruleset.id)}">
@@ -294,6 +295,16 @@ export const renderRoutingRules = ({
             <span class="routing-chip">规则集 ${rulesetCount}</span>
             <span class="routing-chip">规则 ${ruleCount}</span>
           </div>
+        </div>
+        <div class="routing-unified-columns" aria-hidden="true">
+          <span>排序</span>
+          <span>类别</span>
+          <span>名称 / 匹配</span>
+          <span>规则类型</span>
+          <span>去向</span>
+          <span>目标 / 备注</span>
+          <span>状态</span>
+          <span>操作</span>
         </div>
         ${unifiedRows.map((row) => {
           const sameKindRows = unifiedRows.filter((item) => item.kind === row.kind);
