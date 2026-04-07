@@ -199,10 +199,7 @@ const renderRulesetDatabaseStatus = (status = rulesetDatabaseStatus) => {
   if (!rulesetDatabaseStatus) {
     routingDbNote.textContent = '上次更新 --';
     if (rulesetDbRefreshBtn) rulesetDbRefreshBtn.disabled = false;
-    return;
-  }
-
-  if (rulesetDatabaseStatus.pending) {
+  } else if (rulesetDatabaseStatus.pending) {
     routingDbNote.textContent = '更新中...';
   } else if (rulesetDatabaseStatus.ready) {
     routingDbNote.textContent = rulesetDatabaseStatus.downloadedAt
@@ -215,10 +212,15 @@ const renderRulesetDatabaseStatus = (status = rulesetDatabaseStatus) => {
   }
 
   if (rulesetDbRefreshBtn) {
-    rulesetDbRefreshBtn.disabled = Boolean(rulesetDatabaseStatus.pending);
-    rulesetDbRefreshBtn.textContent = rulesetDatabaseStatus.pending ? '规则库下载中...' : '更新规则库';
+    rulesetDbRefreshBtn.disabled = Boolean(rulesetDatabaseStatus?.pending);
+    rulesetDbRefreshBtn.textContent = rulesetDatabaseStatus?.pending ? '规则库下载中...' : '更新规则库';
+  }
+
+  if (document.getElementById('routing-view')?.classList.contains('active')) {
+    routingController?.renderRoutingRules?.();
   }
 };
+
 
 const renderSystemProxyNodeOptions = (nodes, activeNodeId) => renderSystemProxyNodeOptionsView({
   dashActiveNodeSelect,
