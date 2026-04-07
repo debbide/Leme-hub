@@ -855,35 +855,56 @@ export class CoreManager {
     const normalizedNodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec);
     const normalizedNodeGroupLatencyCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
     const nodes = this.store.getNodes();
-    const normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
 
+    let normalizedNodeGroups;
     try {
-      const routingItemsSource = Array.isArray(settings.routingItems)
-        ? settings.routingItems
-        : legacyRoutingItemsFromSettings(settings, normalizedNodeGroups);
-      const normalizedRoutingItems = normalizeRoutingItems(routingItemsSource, normalizedNodeGroups);
-      const { customRules, rulesets } = routingItemsToLegacySettings(normalizedRoutingItems);
+      normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] Invalid persisted node groups ignored: ${error.message}`);
+      normalizedNodeGroups = [];
+    }
 
-      if (!Array.isArray(settings.routingItems)
-        || JSON.stringify(settings.routingItems) !== JSON.stringify(normalizedRoutingItems)
-        || JSON.stringify(settings.customRules || []) !== JSON.stringify(customRules)
-        || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
-        || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
-        || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
-        || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
-        return this.store.saveSettings({
-          ...settings,
-          routingItems: normalizedRoutingItems,
-          customRules,
-          rulesets,
-          nodeGroups: normalizedNodeGroups,
-          subscriptions: normalizedSubscriptions,
-          nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-          nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
-        });
+    let normalizedRoutingItems;
+    let customRules;
+    let rulesets;
+
+    if (Array.isArray(settings.routingItems)) {
+      try {
+        normalizedRoutingItems = normalizeRoutingItems(settings.routingItems, normalizedNodeGroups);
+      } catch (error) {
+        this.store.appendLog(`[CoreManager] Invalid persisted routingItems recovered from legacy rules: ${error.message}`);
+        try {
+          normalizedRoutingItems = normalizeRoutingItems(
+            legacyRoutingItemsFromSettings(settings, normalizedNodeGroups),
+            normalizedNodeGroups
+          );
+        } catch (legacyError) {
+          this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${legacyError.message}`);
+          normalizedRoutingItems = [];
+        }
       }
+    } else {
+      try {
+        normalizedRoutingItems = normalizeRoutingItems(
+          legacyRoutingItemsFromSettings(settings, normalizedNodeGroups),
+          normalizedNodeGroups
+        );
+      } catch (error) {
+        this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
+        normalizedRoutingItems = [];
+      }
+    }
 
-      return {
+    ({ customRules, rulesets } = routingItemsToLegacySettings(normalizedRoutingItems));
+
+    if (!Array.isArray(settings.routingItems)
+      || JSON.stringify(settings.routingItems) !== JSON.stringify(normalizedRoutingItems)
+      || JSON.stringify(settings.customRules || []) !== JSON.stringify(customRules)
+      || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
+      || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
+      || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
+      || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
+      return this.store.saveSettings({
         ...settings,
         routingItems: normalizedRoutingItems,
         customRules,
@@ -892,20 +913,19 @@ export class CoreManager {
         subscriptions: normalizedSubscriptions,
         nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
         nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
-      };
-    } catch (error) {
-      this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
-      return this.store.saveSettings({
-        ...settings,
-        routingItems: [],
-        customRules: [],
-        rulesets: [],
-        nodeGroups: [],
-        subscriptions: normalizedSubscriptions,
-        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
       });
     }
+
+    return {
+      ...settings,
+      routingItems: normalizedRoutingItems,
+      customRules,
+      rulesets,
+      nodeGroups: normalizedNodeGroups,
+      subscriptions: normalizedSubscriptions,
+      nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
+      nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
+    };
   }
 
   buildBinaryState(overrides = {}) {

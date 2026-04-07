@@ -567,7 +567,7 @@ bindRoutingEvents({
   routingSaveBtn,
   saveRoutingRules: () => routingController.saveRoutingRules(),
   routingRulesetPresetSelect,
-  getBuiltinRulesetById: routingController.getBuiltinRulesetById,
+  getBuiltinRulesetById: (presetId) => routingController.getBuiltinRulesetById(routingController.getRoutingBuiltinRulesets(), presetId),
   showToast,
   routingPresetSelect,
   applyRoutingPreset: routingController.applyRoutingPreset,

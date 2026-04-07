@@ -637,6 +637,28 @@ test('getSettingsSnapshot repairs malformed persisted custom rules', () => {
   assert.deepEqual(settings.customRules, []);
 });
 
+test('getSettingsSnapshot recovers invalid routingItems from legacy routing fields', () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: [], selectedNodeId: null }],
+    customRules: [{ id: 'rule-1', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: 'office' }],
+    rulesets: [{ id: 'rs-1', kind: 'builtin', presetId: 'youtube', name: 'YouTube', enabled: true, target: 'direct', entries: [] }],
+    routingItems: [{ id: 'bad-1', kind: 'builtin', presetId: 'youtube', target: 'direct' }]
+  });
+  const manager = new CoreManager(createPaths(), store);
+
+  const settings = manager.getSettingsSnapshot();
+
+  assert.equal(settings.customRules.length, 1);
+  assert.equal(settings.customRules[0].value, 'corp.local');
+  assert.equal(settings.rulesets.length, 1);
+  assert.equal(settings.rulesets[0].presetId, 'youtube');
+  assert.equal(settings.routingItems.length, 2);
+  assert.equal(settings.nodeGroups.length, 1);
+  assert.equal(settings.nodeGroups[0].name, 'JP Pool');
+});
+
 test('updateSettings rejects colliding unified proxy ports', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 

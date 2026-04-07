@@ -502,6 +502,7 @@ export const createRoutingController = ({
     setRoutingRules: (value) => { routingRules = value; },
     getRoutingRulesets: () => routingRulesets,
     setRoutingRulesets: (value) => { routingRulesets = value; },
+    getRoutingBuiltinRulesets: () => routingBuiltinRulesets,
     setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
     setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },
     setRoutingDirty: (value) => { routingDirty = value; },
