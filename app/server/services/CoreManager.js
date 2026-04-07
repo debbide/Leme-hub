@@ -143,12 +143,232 @@ const pickConnectionTimestamp = (connection) => {
 };
 
 const isValidIpv4Cidr = (value) => {
-  const match = String(value || '').trim().match(/^(\d{1,3})(?:\.(\d{1,3}))(?:\.(\d{1,3}))(?:\.(\d{1,3}))\/(\d|[12]\d|3[0-2])$/);
+  const match = String(value || '').trim().match(/^((?:\d{1,3}\.){3}\d{1,3})\/(\d|[12]\d|3[0-2])$/);
   if (!match) {
     return false;
   }
 
-  return match.slice(1, 5).every((part) => Number(part) >= 0 && Number(part) <= 255);
+  return match[1].split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
+};
+
+const ROUTING_ITEM_KINDS = ['rule', 'builtin_ruleset', 'custom_entry'];
+
+const legacyRoutingItemsFromSettings = (settings = {}, nodeGroups = []) => {
+  const rules = Array.isArray(settings.customRules) ? normalizeCustomRules(settings.customRules, nodeGroups) : [];
+  const rulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets, nodeGroups) : [];
+
+  return [
+    ...rules.map((rule, index) => ({
+      id: String(rule.id || `routing-rule-${index + 1}`),
+      kind: 'rule',
+      type: rule.type,
+      value: rule.value,
+      action: rule.action,
+      nodeId: rule.nodeId,
+      nodeGroupId: rule.nodeGroupId,
+      note: rule.note || ''
+    })),
+    ...rulesets.flatMap((ruleset, index) => {
+      if (ruleset.kind === 'builtin') {
+        return [{
+          id: String(ruleset.id || `routing-builtin-${index + 1}`),
+          kind: 'builtin_ruleset',
+          presetId: ruleset.presetId,
+          name: ruleset.name || '',
+          target: ruleset.target,
+          nodeId: ruleset.nodeId,
+          groupId: ruleset.groupId,
+          enabled: ruleset.enabled !== false,
+          note: ruleset.note || ''
+        }];
+      }
+
+      return (ruleset.entries || []).map((entry, entryIndex) => ({
+        id: String(entry.id || `${ruleset.id}-entry-${entryIndex + 1}`),
+        kind: 'custom_entry',
+        rulesetId: String(ruleset.id || `routing-custom-${index + 1}`),
+        rulesetName: ruleset.name || '',
+        type: entry.type,
+        value: entry.value,
+        target: ruleset.target,
+        nodeId: ruleset.nodeId,
+        groupId: ruleset.groupId,
+        enabled: ruleset.enabled !== false,
+        note: entry.note || ruleset.note || ''
+      }));
+    })
+  ];
+};
+
+const normalizeRoutingItem = (item, index, nodeGroups = []) => {
+  if (!item || typeof item !== 'object') {
+    throw createHttpError(`routingItems[${index}] must be an object`, 400);
+  }
+
+  const kind = String(item.kind || '').trim();
+  if (!ROUTING_ITEM_KINDS.includes(kind)) {
+    throw createHttpError(`routingItems[${index}] has invalid kind`, 400);
+  }
+
+  if (kind === 'rule') {
+    const normalized = normalizeCustomRule(item, index, nodeGroups);
+    return {
+      id: String(item.id || normalized.id),
+      kind,
+      type: normalized.type,
+      value: normalized.value,
+      action: normalized.action,
+      nodeId: normalized.nodeId,
+      nodeGroupId: normalized.nodeGroupId,
+      note: normalized.note || ''
+    };
+  }
+
+  if (kind === 'builtin_ruleset') {
+    const normalized = normalizeRuleset({
+      id: item.id,
+      kind: 'builtin',
+      presetId: item.presetId,
+      name: item.name,
+      target: item.target,
+      nodeId: item.nodeId,
+      groupId: item.groupId,
+      enabled: item.enabled,
+      note: item.note
+    }, index, nodeGroups);
+
+    return {
+      id: String(item.id || normalized.id),
+      kind,
+      presetId: normalized.presetId,
+      name: normalized.name,
+      target: normalized.target,
+      nodeId: normalized.nodeId,
+      groupId: normalized.groupId,
+      enabled: normalized.enabled !== false,
+      note: normalized.note || ''
+    };
+  }
+
+  const entry = normalizeRulesetEntry(item, index, index);
+  const target = String(item.target || '').trim();
+  const nodeId = item.nodeId == null || item.nodeId === '' ? null : String(item.nodeId).trim();
+  const groupId = item.groupId == null || item.groupId === '' ? null : String(item.groupId).trim();
+
+  if (!RULESET_TARGETS.includes(target)) {
+    throw createHttpError(`routingItems[${index}] has invalid target`, 400);
+  }
+  if (target === 'node' && !nodeId) {
+    throw createHttpError(`routingItems[${index}] target=node requires nodeId`, 400);
+  }
+  if (target === 'node_group' && !groupId) {
+    throw createHttpError(`routingItems[${index}] target=node_group requires groupId`, 400);
+  }
+  if (target === 'node_group' && groupId && !nodeGroups.some((group) => group.id === groupId && group.selectedNodeId)) {
+    throw createHttpError(`routingItems[${index}] target=node_group requires a valid selected group node`, 400);
+  }
+
+  return {
+    id: String(item.id || entry.id),
+    kind,
+    type: entry.type,
+    value: entry.value,
+    target,
+    nodeId,
+    groupId,
+    enabled: item.enabled !== false,
+    note: typeof item.note === 'string' ? item.note.trim() : ''
+  };
+};
+
+const normalizeRoutingItems = (items, nodeGroups = []) => {
+  const normalized = items.map((item, index) => normalizeRoutingItem(item, index, nodeGroups));
+  const seenIds = new Set();
+  const seenSignatures = new Set();
+
+  normalized.forEach((item, index) => {
+    if (seenIds.has(item.id)) {
+      throw createHttpError(`routingItems[${index}] duplicates another item id`, 400);
+    }
+    seenIds.add(item.id);
+
+    const signature = item.kind === 'rule'
+      ? `rule|${item.type}|${item.action}|${item.nodeId || ''}|${item.nodeGroupId || ''}|${String(item.value || '').toLowerCase()}`
+      : item.kind === 'builtin_ruleset'
+        ? `builtin_ruleset|${item.presetId}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}`
+        : `custom_entry|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
+
+    if (seenSignatures.has(signature)) {
+      throw createHttpError(`routingItems[${index}] duplicates another routing item`, 400);
+    }
+    seenSignatures.add(signature);
+  });
+
+  return normalized;
+};
+
+const routingItemsToLegacySettings = (routingItems = []) => {
+  const customRules = [];
+  const builtinRulesets = [];
+  const customRulesetMap = new Map();
+
+  routingItems.forEach((item, index) => {
+    if (item.kind === 'rule') {
+      customRules.push({
+        id: item.id || `rule-${index + 1}`,
+        type: item.type,
+        value: item.value,
+        action: item.action,
+        nodeId: item.nodeId,
+        nodeGroupId: item.nodeGroupId,
+        note: item.note || ''
+      });
+      return;
+    }
+
+    if (item.kind === 'builtin_ruleset') {
+      builtinRulesets.push({
+        id: item.id || `ruleset-${index + 1}`,
+        kind: 'builtin',
+        presetId: item.presetId,
+        name: item.note || item.name || BUILTIN_RULESET_MAP.get(item.presetId)?.name || item.presetId,
+        enabled: item.enabled !== false,
+        target: item.target,
+        nodeId: item.nodeId,
+        groupId: item.groupId,
+        entries: [],
+        note: item.note || ''
+      });
+      return;
+    }
+
+    const rulesetId = String(item.rulesetId || item.id || `custom-entry-${index + 1}`);
+    if (!customRulesetMap.has(rulesetId)) {
+      customRulesetMap.set(rulesetId, {
+        id: rulesetId,
+        kind: 'custom',
+        name: item.rulesetName || item.note || `自定义规则 ${customRulesetMap.size + 1}`,
+        enabled: item.enabled !== false,
+        target: item.target,
+        nodeId: item.nodeId,
+        groupId: item.groupId,
+        entries: [],
+        note: item.note || ''
+      });
+    }
+
+    customRulesetMap.get(rulesetId).entries.push({
+      id: item.id || `${rulesetId}-entry-${customRulesetMap.get(rulesetId).entries.length + 1}`,
+      type: item.type,
+      value: item.value,
+      note: item.note || ''
+    });
+  });
+
+  return {
+    customRules,
+    rulesets: [...builtinRulesets, ...customRulesetMap.values()]
+  };
 };
 
 const normalizeCustomRule = (rule, index, nodeGroups = []) => {
@@ -334,7 +554,7 @@ const normalizeRuleset = (ruleset, index, nodeGroups = []) => {
       id,
       kind,
       presetId,
-      name: String(ruleset.name || BUILTIN_RULESET_MAP.get(presetId).name).trim() || BUILTIN_RULESET_MAP.get(presetId).name,
+      name: String(ruleset.name || '').trim() || BUILTIN_RULESET_MAP.get(presetId).name,
       enabled: ruleset.enabled !== false,
       target,
       nodeId,
@@ -634,69 +854,28 @@ export class CoreManager {
       : [];
     const normalizedNodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec);
     const normalizedNodeGroupLatencyCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
-
-    if (settings.customRules === undefined) {
-      return {
-        ...settings,
-        customRules: [],
-        rulesets: [],
-        nodeGroups: [],
-        subscriptions: normalizedSubscriptions,
-        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
-      };
-    }
-
-    if (!Array.isArray(settings.customRules)) {
-      this.store.appendLog('[CoreManager] Invalid customRules persisted in settings; resetting to []');
-      return this.store.saveSettings({
-        ...settings,
-        customRules: []
-      });
-    }
+    const nodes = this.store.getNodes();
+    const normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
 
     try {
-      const nodes = this.store.getNodes();
-      const normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
-      const normalizedRules = normalizeCustomRules(settings.customRules, normalizedNodeGroups);
-      const normalizedRulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets, normalizedNodeGroups) : [];
-      if (JSON.stringify(settings.customRules) !== JSON.stringify(normalizedRules)) {
-        return this.store.saveSettings({
-          ...settings,
-          customRules: normalizedRules,
-          rulesets: normalizedRulesets,
-          nodeGroups: normalizedNodeGroups,
-          subscriptions: normalizedSubscriptions
-        });
-      }
+      const routingItemsSource = Array.isArray(settings.routingItems)
+        ? settings.routingItems
+        : legacyRoutingItemsFromSettings(settings, normalizedNodeGroups);
+      const normalizedRoutingItems = normalizeRoutingItems(routingItemsSource, normalizedNodeGroups);
+      const { customRules, rulesets } = routingItemsToLegacySettings(normalizedRoutingItems);
 
-      if (JSON.stringify(settings.rulesets || []) !== JSON.stringify(normalizedRulesets)) {
+      if (!Array.isArray(settings.routingItems)
+        || JSON.stringify(settings.routingItems) !== JSON.stringify(normalizedRoutingItems)
+        || JSON.stringify(settings.customRules || []) !== JSON.stringify(customRules)
+        || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
+        || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
+        || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
+        || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
         return this.store.saveSettings({
           ...settings,
-          customRules: normalizedRules,
-          rulesets: normalizedRulesets,
-          nodeGroups: normalizedNodeGroups,
-          subscriptions: normalizedSubscriptions
-        });
-      }
-
-      if (JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)) {
-        return this.store.saveSettings({
-          ...settings,
-          customRules: normalizedRules,
-          rulesets: normalizedRulesets,
-          nodeGroups: normalizedNodeGroups,
-          subscriptions: normalizedSubscriptions,
-          nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-          nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
-        });
-      }
-
-      if (settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
-        return this.store.saveSettings({
-          ...settings,
-          customRules: normalizedRules,
-          rulesets: normalizedRulesets,
+          routingItems: normalizedRoutingItems,
+          customRules,
+          rulesets,
           nodeGroups: normalizedNodeGroups,
           subscriptions: normalizedSubscriptions,
           nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
@@ -706,8 +885,9 @@ export class CoreManager {
 
       return {
         ...settings,
-        customRules: normalizedRules,
-        rulesets: normalizedRulesets,
+        routingItems: normalizedRoutingItems,
+        customRules,
+        rulesets,
         nodeGroups: normalizedNodeGroups,
         subscriptions: normalizedSubscriptions,
         nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
@@ -717,6 +897,7 @@ export class CoreManager {
       this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
       return this.store.saveSettings({
         ...settings,
+        routingItems: [],
         customRules: [],
         rulesets: [],
         nodeGroups: [],
@@ -728,7 +909,7 @@ export class CoreManager {
   }
 
   buildBinaryState(overrides = {}) {
-    const settings = this.getSettingsSnapshot();
+    const settings = this.store.getSettings();
     const status = this.binaryManager.getStatus(settings.singBoxBinaryPath);
 
     return {
@@ -744,7 +925,7 @@ export class CoreManager {
   }
 
   buildSystemProxyState(overrides = {}) {
-    const settings = this.getSettingsSnapshot();
+    const settings = this.store.getSettings();
     const capabilities = this.systemProxyManager.getCapabilities();
 
     return {
@@ -761,7 +942,7 @@ export class CoreManager {
   }
 
   buildAutoStartState(overrides = {}) {
-    const settings = this.getSettingsSnapshot();
+    const settings = this.store.getSettings();
     const capabilities = this.autoStartManager.getCapabilities();
 
     return {
@@ -818,6 +999,7 @@ export class CoreManager {
       },
       customRules: settings.customRules,
       rulesets: settings.rulesets || [],
+      routingItems: settings.routingItems || [],
       nodeGroups: settings.nodeGroups || [],
       activeNode: nodes.find((node) => node.id === activeNodeId) || null
     };
@@ -831,10 +1013,10 @@ export class CoreManager {
         kind: 'builtin',
         remoteRuleSetIds: Array.isArray(ruleset.remoteRuleSetIds) ? [...ruleset.remoteRuleSetIds] : [],
         entries: ruleset.entries.map((entry, index) => ({
-        id: `${ruleset.id}-entry-${index + 1}`,
-        type: entry.type,
-        value: entry.value,
-        note: entry.note || ''
+          id: `${ruleset.id}-entry-${index + 1}`,
+          type: entry.type,
+          value: entry.value,
+          note: entry.note || ''
         }))
       }))
     ];
@@ -945,20 +1127,22 @@ export class CoreManager {
   }
 
   getRuntimeOptions(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
+    const snapshot = this.getSettingsSnapshot();
     return {
-      activeNodeId: this.resolveActiveNodeId(settings, nodes),
-      customRules: settings.customRules,
-      rulesets: settings.rulesets || [],
-      nodeGroups: settings.nodeGroups || [],
-      dnsRemoteServer: settings.dnsRemoteServer,
-      dnsDirectServer: settings.dnsDirectServer,
-      dnsBootstrapServer: settings.dnsBootstrapServer,
-      dnsFinal: settings.dnsFinal,
-      dnsStrategy: settings.dnsStrategy,
-      proxyMode: settings.routingMode,
-      systemProxyEnabled: !!settings.systemProxyEnabled,
-      systemProxyHttpPort: settings.systemProxyHttpPort,
-      systemProxySocksPort: settings.systemProxySocksPort
+      activeNodeId: this.resolveActiveNodeId(snapshot, nodes),
+      customRules: snapshot.customRules,
+      rulesets: snapshot.rulesets || [],
+      routingItems: snapshot.routingItems || [],
+      nodeGroups: snapshot.nodeGroups || [],
+      dnsRemoteServer: snapshot.dnsRemoteServer,
+      dnsDirectServer: snapshot.dnsDirectServer,
+      dnsBootstrapServer: snapshot.dnsBootstrapServer,
+      dnsFinal: snapshot.dnsFinal,
+      dnsStrategy: snapshot.dnsStrategy,
+      proxyMode: snapshot.routingMode,
+      systemProxyEnabled: !!snapshot.systemProxyEnabled,
+      systemProxyHttpPort: snapshot.systemProxyHttpPort,
+      systemProxySocksPort: snapshot.systemProxySocksPort
     };
   }
 
@@ -1010,6 +1194,9 @@ export class CoreManager {
     if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Array.isArray(next.rulesets)) {
       throw createHttpError('rulesets must be an array', 400);
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'routingItems') && !Array.isArray(next.routingItems)) {
+      throw createHttpError('routingItems must be an array', 400);
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && !Array.isArray(next.nodeGroups)) {
       throw createHttpError('nodeGroups must be an array', 400);
     }
@@ -1030,12 +1217,39 @@ export class CoreManager {
     const nodeGroups = Array.isArray(next.nodeGroups)
       ? normalizeNodeGroups(next.nodeGroups, this.store.getNodes())
       : current.nodeGroups;
-    const customRules = Array.isArray(next.customRules)
-      ? normalizeCustomRules(next.customRules, nodeGroups)
-      : current.customRules;
-    const rulesets = Array.isArray(next.rulesets)
-      ? normalizeRulesets(next.rulesets, nodeGroups)
-      : current.rulesets;
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
+      next.customRules = normalizeCustomRules(next.customRules || [], nodeGroups);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
+      next.rulesets = normalizeRulesets(next.rulesets || [], nodeGroups);
+    }
+
+    let routingItems;
+    let customRules;
+    let rulesets;
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
+      routingItems = normalizeRoutingItems(next.routingItems, nodeGroups);
+      const legacy = routingItemsToLegacySettings(routingItems);
+      customRules = legacy.customRules;
+      rulesets = legacy.rulesets;
+    } else if (Object.prototype.hasOwnProperty.call(patch, 'customRules') || Object.prototype.hasOwnProperty.call(patch, 'rulesets')) {
+      customRules = Array.isArray(next.customRules)
+        ? normalizeCustomRules(next.customRules, nodeGroups)
+        : current.customRules;
+      rulesets = Array.isArray(next.rulesets)
+        ? normalizeRulesets(next.rulesets, nodeGroups)
+        : current.rulesets;
+      routingItems = legacyRoutingItemsFromSettings({ customRules, rulesets }, nodeGroups);
+    } else {
+      routingItems = Array.isArray(next.routingItems)
+        ? normalizeRoutingItems(next.routingItems, nodeGroups)
+        : current.routingItems;
+      const legacy = routingItemsToLegacySettings(routingItems);
+      customRules = legacy.customRules;
+      rulesets = legacy.rulesets;
+    }
 
     if (systemProxySocksPort === systemProxyHttpPort) {
       throw createHttpError('systemProxySocksPort and systemProxyHttpPort must be different', 400);
@@ -1066,6 +1280,7 @@ export class CoreManager {
       proxyBasePort,
       systemProxySocksPort,
       systemProxyHttpPort,
+      routingItems,
       customRules,
       rulesets,
       nodeGroups,
@@ -1076,7 +1291,7 @@ export class CoreManager {
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 

@@ -159,6 +159,7 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     proxyMode = 'rule',
     customRules = [],
     rulesets = [],
+    routingItems = [],
     systemProxyEnabled = false
   } = runtime;
 
@@ -176,7 +177,12 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
   } else if (proxyMode !== 'rule') {
     lines.push(`[Routing] rule routing inactive: mode=${proxyMode}`);
   } else {
-    lines.push(`[Routing] rule routing active: ${customRules.length} manual rule(s), active outbound ${activeOutbound}`);
+    const hasRoutingItems = Array.isArray(routingItems) && routingItems.length > 0;
+    const routingItemCount = hasRoutingItems
+      ? routingItems.length
+      : customRules.length + rulesets.length;
+    const label = hasRoutingItems ? 'routing item(s)' : 'manual rule(s)';
+    lines.push(`[Routing] rule routing active: ${routingItemCount} ${label}, active outbound ${activeOutbound}`);
   }
 
   if (systemProxyEnabled) {
@@ -185,21 +191,35 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     lines.push(`[Routing] unmatched system traffic -> ${fallbackOutbound}`);
   }
 
-  if (Array.isArray(customRules) && customRules.length) {
-    customRules.forEach((rule, index) => {
-      lines.push(`[Routing] rule ${index + 1}: ${rule.type}=${rule.value} -> ${rule.action}${rule.note ? ` (${rule.note})` : ''}`);
+  if (Array.isArray(routingItems) && routingItems.length) {
+    routingItems.forEach((item, index) => {
+      if (item.kind === 'rule') {
+        lines.push(`[Routing] item ${index + 1}: rule ${item.type}=${item.value} -> ${item.action}${item.note ? ` (${item.note})` : ''}`);
+      } else if (item.kind === 'builtin_ruleset') {
+        const targetLabel = item.target === 'node' ? `node:${item.nodeId}` : item.target === 'node_group' ? `node_group:${item.groupId}` : item.target;
+        lines.push(`[Routing] item ${index + 1}: builtin ${item.presetId} -> ${targetLabel}`);
+      } else if (item.kind === 'custom_entry') {
+        const targetLabel = item.target === 'node' ? `node:${item.nodeId}` : item.target === 'node_group' ? `node_group:${item.groupId}` : item.target;
+        lines.push(`[Routing] item ${index + 1}: custom ${item.type}=${item.value} -> ${targetLabel}`);
+      }
     });
   } else {
-    lines.push('[Routing] no manual rules configured');
-  }
+    if (Array.isArray(customRules) && customRules.length) {
+      customRules.forEach((rule, index) => {
+        lines.push(`[Routing] rule ${index + 1}: ${rule.type}=${rule.value} -> ${rule.action}${rule.note ? ` (${rule.note})` : ''}`);
+      });
+    } else {
+      lines.push('[Routing] no manual rules configured');
+    }
 
-  if (Array.isArray(rulesets) && rulesets.length) {
-    rulesets.filter((ruleset) => ruleset.enabled !== false).forEach((ruleset) => {
-      const targetLabel = ruleset.target === 'node' ? `node:${ruleset.nodeId}` : ruleset.target;
-      lines.push(`[Routing] ruleset ${ruleset.name || ruleset.id} -> ${targetLabel}`);
-    });
-  } else {
-    lines.push('[Routing] no rulesets configured');
+    if (Array.isArray(rulesets) && rulesets.length) {
+      rulesets.filter((ruleset) => ruleset.enabled !== false).forEach((ruleset) => {
+        const targetLabel = ruleset.target === 'node' ? `node:${ruleset.nodeId}` : ruleset.target;
+        lines.push(`[Routing] ruleset ${ruleset.name || ruleset.id} -> ${targetLabel}`);
+      });
+    } else {
+      lines.push('[Routing] no rulesets configured');
+    }
   }
 
   return lines;
@@ -298,6 +318,7 @@ export class ProxyService {
       proxyMode = 'rule',
       customRules = [],
       rulesets = [],
+      routingItems = [],
       nodeGroups = [],
       dnsRemoteServer = 'https://cloudflare-dns.com/dns-query',
       dnsDirectServer = 'https://dns.alidns.com/dns-query',
@@ -592,20 +613,6 @@ export class ProxyService {
       }
       return activeOutbound;
     };
-
-    const manualRuleSetDefs = customRules.map((rule, index) => ({
-      tag: registerRoutingHit(`usr-rule-${rule.id || index + 1}`, {
-        kind: 'rule',
-        name: rule.note || `${rule.type}=${rule.value}`,
-        target: resolveManualRuleOutbound(rule),
-        descriptor: `${rule.type}=${rule.value}`,
-        matchType: rule.type,
-        matchValue: rule.value
-      }),
-      outbound: resolveManualRuleOutbound(rule),
-      rules: [{ [rule.type]: [rule.value] }]
-    }));
-
     const buildRulesetOutbound = (ruleset) => {
       if (ruleset.target === 'direct') return 'direct';
       if (ruleset.target === 'default') return activeOutbound;
@@ -621,43 +628,114 @@ export class ProxyService {
       return activeOutbound;
     };
 
-    const materializedRulesets = rulesets
-      .filter((ruleset) => ruleset && ruleset.enabled !== false)
-      .map((ruleset) => {
-        const builtin = ruleset.kind === 'builtin' && ruleset.presetId ? BUILTIN_RULESET_MAP.get(ruleset.presetId) : null;
-        const entries = builtin ? builtin.entries : (Array.isArray(ruleset.entries) ? ruleset.entries : []);
-        const remoteRuleSetIds = builtin && Array.isArray(builtin.remoteRuleSetIds) ? builtin.remoteRuleSetIds : [];
-        const remoteRuleSetTags = remoteRuleSetIds
+    const normalizedRoutingItems = Array.isArray(routingItems) && routingItems.length
+      ? routingItems
+      : [
+        ...customRules.map((rule) => ({ ...rule, kind: 'rule' })),
+        ...rulesets.flatMap((ruleset) => ruleset.kind === 'builtin'
+          ? [{ ...ruleset, kind: 'builtin_ruleset' }]
+          : (ruleset.entries || []).map((entry) => ({
+            id: entry.id,
+            rulesetId: ruleset.id,
+            rulesetName: ruleset.name,
+            kind: 'custom_entry',
+            type: entry.type,
+            value: entry.value,
+            target: ruleset.target,
+            nodeId: ruleset.nodeId,
+            groupId: ruleset.groupId,
+            enabled: ruleset.enabled !== false,
+            note: entry.note || ruleset.note || ''
+          })))
+      ];
+
+    const orderedInlineRuleSets = [];
+    const orderedRouteRules = [];
+    const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
+
+    normalizedRoutingItems.forEach((item, index) => {
+      if (!item || item.enabled === false) return;
+
+      if (item.kind === 'rule') {
+        const outbound = resolveManualRuleOutbound(item);
+        const tag = registerRoutingHit(`usr-rule-${item.id || index + 1}`, {
+          kind: 'rule',
+          name: item.note || `${item.type}=${item.value}`,
+          target: outbound,
+          descriptor: `${item.type}=${item.value}`,
+          matchType: item.type,
+          matchValue: item.value
+        });
+        orderedInlineRuleSets.push({
+          type: 'inline',
+          tag,
+          rules: [{ [item.type]: [item.value] }]
+        });
+        orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
+        return;
+      }
+
+      if (item.kind === 'builtin_ruleset') {
+        const builtin = BUILTIN_RULESET_MAP.get(item.presetId);
+        if (!builtin) return;
+        const outbound = buildRulesetOutbound(item);
+        const inlineTagName = `usr-rs-${item.id || index + 1}`;
+        const remoteRuleSetTags = (builtin.remoteRuleSetIds || [])
           .map((id) => REMOTE_RULESET_MAP.get(id)?.tag || null)
           .filter((tag) => tag && Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
-        const outbound = buildRulesetOutbound(ruleset);
-        const descriptor = ruleset.name || ruleset.id;
+        const inlineTag = registerRoutingHit(inlineTagName, {
+          kind: 'ruleset',
+          name: builtin.name || item.presetId,
+          target: outbound,
+          descriptor: builtin.name || item.presetId,
+          rulesetId: item.id || null,
+          rulesetPresetId: item.presetId || null
+        });
         remoteRuleSetTags.forEach((tag) => {
           registerRoutingHit(tag, {
             kind: 'ruleset',
-            name: ruleset.name || ruleset.id,
+            name: builtin.name || item.presetId,
             target: outbound,
-            descriptor,
-            rulesetId: ruleset.id || null,
-            rulesetPresetId: ruleset.presetId || null
+            descriptor: builtin.name || item.presetId,
+            rulesetId: item.id || null,
+            rulesetPresetId: item.presetId || null
           });
         });
-        return {
-          ...ruleset,
-          entries,
-          remoteRuleSetTags,
-          tag: registerRoutingHit(`usr-rs-${ruleset.id}`, {
-            kind: 'ruleset',
-            name: ruleset.name || ruleset.id,
-            target: outbound,
-            descriptor,
-            rulesetId: ruleset.id || null,
-            rulesetPresetId: ruleset.presetId || null
-          }),
-          outbound
-        };
-      })
-      .filter((ruleset) => ruleset.remoteRuleSetTags.length > 0 || (Array.isArray(ruleset.entries) && ruleset.entries.length > 0));
+        if (remoteRuleSetTags.length) {
+          orderedRouteRules.push({ inbound: systemInbounds, rule_set: remoteRuleSetTags, outbound });
+        }
+        orderedRouteRules.push({ inbound: systemInbounds, rule_set: inlineTagName, outbound });
+        if (Array.isArray(builtin.entries) && builtin.entries.length) {
+          orderedInlineRuleSets.push({
+            type: 'inline',
+            tag: inlineTag,
+            rules: builtin.entries.map((entry) => ({ [entry.type]: [entry.value] }))
+          });
+        }
+        return;
+      }
+
+      if (item.kind === 'custom_entry') {
+        const outbound = buildRulesetOutbound(item);
+        const rulesetTagBase = item.rulesetId || item.id || index + 1;
+        const tag = registerRoutingHit(`usr-rs-${rulesetTagBase}`, {
+          kind: 'ruleset',
+          name: item.rulesetName || item.note || `${item.type}=${item.value}`,
+          target: outbound,
+          descriptor: `${item.type}=${item.value}`,
+          rulesetId: item.rulesetId || null,
+          matchType: item.type,
+          matchValue: item.value
+        });
+        orderedInlineRuleSets.push({
+          type: 'inline',
+          tag,
+          rules: [{ [item.type]: [item.value] }]
+        });
+        orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
+      }
+    });
+
     const finalOutbound = !systemProxyEnabled || proxyMode === 'rule'
       ? 'direct'
       : proxyMode === 'direct'
@@ -677,12 +755,10 @@ export class ProxyService {
         outbound: 'direct'
       });
     }
-    
-    // Global sniffing rule MUST be at the top for proper protocol identification (WebSocket, gRPC, etc.)
+
     routeRules.unshift({ action: 'sniff' });
 
     if (systemProxyEnabled) {
-      const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
       if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
         const systemOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
         routeRules.push({
@@ -701,31 +777,7 @@ export class ProxyService {
           });
         }
 
-        for (const ruleSetDef of manualRuleSetDefs) {
-          routeRules.push({
-            inbound: systemInbounds,
-            rule_set: ruleSetDef.tag,
-            outbound: ruleSetDef.outbound
-          });
-        }
-
-        for (const ruleset of materializedRulesets) {
-          if (ruleset.remoteRuleSetTags.length) {
-            routeRules.push({
-              inbound: systemInbounds,
-              rule_set: ruleset.remoteRuleSetTags,
-              outbound: ruleset.outbound
-            });
-          }
-
-          if (Array.isArray(ruleset.entries) && ruleset.entries.length) {
-            routeRules.push({
-              inbound: systemInbounds,
-              rule_set: ruleset.tag,
-              outbound: ruleset.outbound
-            });
-          }
-        }
+        orderedRouteRules.forEach((rule) => routeRules.push(rule));
 
         routeRules.push({
           inbound: systemInbounds,
@@ -804,18 +856,7 @@ export class ProxyService {
               format: REMOTE_RULESET_CATALOG.find((ruleset) => ruleset.tag === tag)?.format || 'binary',
               path: filePath
             })),
-          ...manualRuleSetDefs.map((ruleset) => ({
-            type: 'inline',
-            tag: ruleset.tag,
-            rules: ruleset.rules
-          })),
-          ...materializedRulesets.map((ruleset) => ({
-              type: 'inline',
-              tag: ruleset.tag,
-              rules: ruleset.entries.map((entry) => ({
-                [entry.type]: [entry.value]
-              }))
-            }))
+          ...orderedInlineRuleSets
         ],
         rules: routeRules,
         auto_detect_interface: true,

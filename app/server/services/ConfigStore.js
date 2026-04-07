@@ -29,6 +29,7 @@ const defaultSettings = (paths) => ({
   dnsFinal: DEFAULT_DNS_FINAL,
   dnsStrategy: DEFAULT_DNS_STRATEGY,
   activeNodeId: null,
+  routingItems: [],
   customRules: [],
   rulesets: [],
   nodeGroups: [],

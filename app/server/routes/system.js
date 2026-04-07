@@ -88,6 +88,7 @@ export function createSystemRoutes({ store, coreManager, paths }) {
         status: 200,
         body: {
           ok: true,
+          routingItems: settings.routingItems || [],
           rules: settings.customRules || [],
           customRules: settings.customRules || [],
           rulesets: settings.rulesets || [],
@@ -98,10 +99,11 @@ export function createSystemRoutes({ store, coreManager, paths }) {
       };
     },
     'PUT /api/system/rules': async ({ body }) => {
+      const hasRoutingItems = body && Array.isArray(body.routingItems);
       const hasLegacyRules = body && Array.isArray(body.rules);
       const hasCustomRules = body && Array.isArray(body.customRules);
       const hasRulesets = body && Array.isArray(body.rulesets);
-      if (!body || (!hasLegacyRules && !hasCustomRules && !hasRulesets)) {
+      if (!body || (!hasRoutingItems && !hasLegacyRules && !hasCustomRules && !hasRulesets)) {
         return {
           status: 400,
           body: { ok: false, error: 'Invalid rules payload' }
@@ -110,6 +112,7 @@ export function createSystemRoutes({ store, coreManager, paths }) {
 
       try {
         const result = await coreManager.updateSettings({
+          ...(hasRoutingItems ? { routingItems: body.routingItems } : {}),
           ...(hasLegacyRules ? { customRules: body.rules } : {}),
           ...(hasCustomRules ? { customRules: body.customRules } : {}),
           ...(hasRulesets ? { rulesets: body.rulesets } : {})
@@ -119,6 +122,7 @@ export function createSystemRoutes({ store, coreManager, paths }) {
           body: {
             ok: true,
             ...result,
+            routingItems: coreManager.getSettingsSnapshot().routingItems || [],
             rules: coreManager.getSettingsSnapshot().customRules || [],
             customRules: coreManager.getSettingsSnapshot().customRules || [],
             rulesets: coreManager.getSettingsSnapshot().rulesets || [],
