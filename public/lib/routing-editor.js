@@ -308,7 +308,7 @@ export const renderRoutingRules = ({
             routingBuiltinRulesets,
             routingRuleErrors,
             rulesetErrors: routingRulesetErrors,
-            rulesetDatabaseStatus: null,
+            rulesetDatabaseStatus: row.rulesetDatabaseStatus,
           };
           return row.kind === 'rule'
             ? renderRuleRow({ row: rowContext, escapeHtml })
