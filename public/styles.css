@@ -41,9 +41,43 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
   user-select: none; /* Desktop app feel */
 }
+
+.ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  min-width: 1.1em;
+  font-style: normal;
+  line-height: 1;
+}
+
+.ph::before {
+  content: '•';
+}
+
+.ph-squares-four::before { content: '▦'; }
+.ph-globe-hemisphere-west::before { content: '◎'; }
+.ph-stack::before { content: '▤'; }
+.ph-git-branch::before { content: '⎇'; }
+.ph-terminal-window::before { content: '>_'; }
+.ph-gear::before { content: '⚙'; }
+.ph-activity::before { content: '◔'; }
+.ph-flag-banner::before { content: '⚑'; }
+.ph-folder-simple-arrow::before { content: '↦'; }
+.ph-lightning::before { content: '⚡'; }
+.ph-pencil-simple::before { content: '✎'; }
+.ph-share-network::before { content: '↗'; }
+.ph-trash::before { content: '✕'; }
+.ph-sort-ascending::before { content: '⇅'; }
+.ph-arrow-bend-up-left::before { content: '↶'; }
+.ph-compass-tool::before { content: '⌖'; }
+.ph-path::before { content: '⤴'; }
+.ph-plugs-connected::before { content: '⇄'; }
+.ph-radar::before { content: '◉'; }
 
 body {
   background-color: var(--bg-main);

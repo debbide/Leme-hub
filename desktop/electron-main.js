@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const BACKGROUND_ARG = '--background';
+const WINDOW_BACKGROUND_COLOR = '#0a0a0e';
 
 let serverContext = null;
 let mainWindow = null;
@@ -85,6 +86,7 @@ async function createWindow() {
     minWidth: 1080,
     minHeight: 720,
     autoHideMenuBar: true,
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     webPreferences: {
       contextIsolation: true,
       sandbox: false
@@ -104,6 +106,30 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    console.error(`[desktop] failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[desktop] renderer exited: ${details.reason}`);
+  });
+
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      console.error(`[renderer] ${message} (${sourceId}:${line})`);
+    }
+  });
+
+  try {
+    // Avoid stale cached shell assets after desktop upgrades.
+    await mainWindow.webContents.session.clearCache();
+  } catch {
+    // ignore cache clear failures and continue loading
+  }
 
   await mainWindow.loadURL(context.runtime.publicOrigin);
   return mainWindow;
