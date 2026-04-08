@@ -1,7 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, Tray } from 'electron';
 
 import { createAppServer } from '../app/server/createServer.js';
 import { resolveProjectPaths } from '../app/shared/paths.js';
@@ -9,9 +9,20 @@ import { resolveProjectPaths } from '../app/shared/paths.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const BACKGROUND_ARG = '--background';
 
 let serverContext = null;
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
+
+function isBackgroundLaunch(argv = process.argv) {
+  return Array.isArray(argv) && argv.includes(BACKGROUND_ARG);
+}
+
+function getTrayIconPath() {
+  return path.join(projectRoot, 'desktop', 'resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+}
 
 function resolveDesktopRuntimeRoot() {
   if (process.env.LEME_RUNTIME_ROOT) {
@@ -37,6 +48,10 @@ function resolveDesktopRuntimeRoot() {
 }
 
 async function startBackend() {
+  if (serverContext) {
+    return serverContext;
+  }
+
   const autoStartExecutable = process.env.PORTABLE_EXECUTABLE_FILE
     || process.execPath;
   const runtimeRoot = resolveDesktopRuntimeRoot();
@@ -53,6 +68,15 @@ async function startBackend() {
 }
 
 async function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+
   const context = serverContext || await startBackend();
 
   mainWindow = new BrowserWindow({
@@ -68,14 +92,75 @@ async function createWindow() {
     title: 'Leme Hub'
   });
 
-  await mainWindow.loadURL(context.runtime.publicOrigin);
+  mainWindow.on('close', (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow.hide();
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  await mainWindow.loadURL(context.runtime.publicOrigin);
+  return mainWindow;
+}
+
+async function restoreOrCreateWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+
+  return createWindow();
+}
+
+function createTray() {
+  if (tray) {
+    return tray;
+  }
+
+  tray = new Tray(getTrayIconPath());
+  tray.setToolTip('Leme Hub');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: '打开主界面',
+      click: () => {
+        restoreOrCreateWindow().catch(() => null);
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]));
+  tray.on('click', () => {
+    restoreOrCreateWindow().catch(() => null);
+  });
+  tray.on('double-click', () => {
+    restoreOrCreateWindow().catch(() => null);
+  });
+
+  return tray;
 }
 
 async function shutdownBackend() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+
   if (!serverContext) {
     return;
   }
@@ -92,35 +177,54 @@ async function shutdownBackend() {
   serverContext = null;
 }
 
-app.whenReady().then(createWindow);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
-app.on('activate', async () => {
-  if (!BrowserWindow.getAllWindows().length) {
-    await createWindow();
-  }
-});
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', async (_event, argv) => {
+    if (isBackgroundLaunch(argv)) {
+      return;
+    }
 
-app.on('before-quit', async (event) => {
-  if (!serverContext) {
-    return;
-  }
-
-  event.preventDefault();
-  const currentContext = serverContext;
-  serverContext = null;
-  try {
-    await currentContext.coreManager.stop();
-  } catch {
-    // ignore shutdown races
-  }
-  await new Promise((resolve) => {
-    currentContext.server.close(() => resolve());
+    await app.whenReady();
+    await restoreOrCreateWindow();
   });
-  app.exit(0);
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.whenReady().then(async () => {
+    await startBackend();
+    createTray();
+    if (!isBackgroundLaunch()) {
+      await createWindow();
+    }
+  });
+
+  app.on('activate', async () => {
+    await restoreOrCreateWindow();
+  });
+
+  app.on('before-quit', async (event) => {
+    if (!serverContext && !tray) {
+      return;
+    }
+
+    if (isQuitting && !serverContext) {
+      return;
+    }
+
+    event.preventDefault();
+    isQuitting = true;
+    await shutdownBackend();
+    app.exit(0);
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform === 'darwin' && !isQuitting) {
+      return;
+    }
+
+    if (isQuitting) {
+      app.quit();
+    }
+  });
+}

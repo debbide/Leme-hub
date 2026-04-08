@@ -38,6 +38,7 @@ test('windows auto start writes and removes run entry', async () => {
   assert.equal(enabledStatus.enabled, true);
   assert.equal(disabledStatus.enabled, false);
   assert.equal(calls[0][1][0], 'add');
+  assert.equal(calls[0][1].includes('"C:\\Leme Hub\\Leme.Hub.exe" --background'), true);
   assert.equal(calls[1][1][0], 'query');
   assert.equal(calls[2][1][0], 'delete');
 });
@@ -57,7 +58,7 @@ test('linux auto start writes xdg desktop file', async () => {
   const disabled = await manager.disable();
 
   assert.equal(enabled.enabled, true);
-  assert.equal(desktopEntry.includes('Exec="/opt/Leme Hub/Leme Hub"'), true);
+  assert.equal(desktopEntry.includes('Exec="/opt/Leme Hub/Leme Hub" --background'), true);
   assert.equal(fs.existsSync(desktopFile), false);
   assert.equal(disabled.enabled, false);
 });

@@ -136,7 +136,9 @@ export const updateCoreStatus = ({
     dashActiveNodeSelect.value = proxyProfile.activeNodeId || '';
   }
 
-  if (autoStartToggle && core.settings) {
+  if (autoStartToggle && typeof core.autoStart?.enabled === 'boolean') {
+    autoStartToggle.checked = !!core.autoStart.enabled;
+  } else if (autoStartToggle && core.settings) {
     autoStartToggle.checked = !!core.settings.autoStart;
   } else if (autoStartToggle && getCurrentCoreState()?.settings) {
     autoStartToggle.checked = !!getCurrentCoreState().settings.autoStart;

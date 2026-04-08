@@ -7,9 +7,12 @@ import { execFile } from 'child_process';
 const execFileAsync = promisify(execFile);
 const WINDOWS_RUN_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
 const APP_NAME = 'Leme Hub';
+const AUTOSTART_BACKGROUND_ARG = '--background';
 
 const trimValue = (value) => String(value || '').trim();
 const quoteDesktopExec = (value) => `"${String(value || '').replace(/"/g, '\\"')}"`;
+const quoteCommandPath = (value) => `"${String(value || '').replace(/"/g, '')}"`;
+const buildAutoStartCommand = (executable) => `${quoteCommandPath(executable)} ${AUTOSTART_BACKGROUND_ARG}`.trim();
 
 export class AutoStartManager {
   constructor(options = {}) {
@@ -75,7 +78,7 @@ export class AutoStartManager {
 
   async enableWindows() {
     const executable = this.resolveExecutablePath();
-    await this.exec('reg', ['add', WINDOWS_RUN_REG_PATH, '/v', APP_NAME, '/t', 'REG_SZ', '/d', `"${executable}"`, '/f']);
+    await this.exec('reg', ['add', WINDOWS_RUN_REG_PATH, '/v', APP_NAME, '/t', 'REG_SZ', '/d', buildAutoStartCommand(executable), '/f']);
     return this.getWindowsStatus();
   }
 
@@ -106,7 +109,7 @@ export class AutoStartManager {
       '[Desktop Entry]',
       'Type=Application',
       `Name=${APP_NAME}`,
-      `Exec=${quoteDesktopExec(executable)}`,
+      `Exec=${quoteDesktopExec(executable)} ${AUTOSTART_BACKGROUND_ARG}`,
       'X-GNOME-Autostart-enabled=true'
     ].join('\n'));
     return this.getLinuxStatus();
