@@ -137,6 +137,8 @@ jobs:
                 ;;
             esac
           done
+          cp scripts/install-server.sh release-assets/server/install-server.sh
+          chmod +x release-assets/server/install-server.sh
       - uses: actions/upload-artifact@v4
         with:
           name: leme-hub-server-linux

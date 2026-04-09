@@ -15,6 +15,7 @@ Desktop icon files:
 ## Server Edition
 
 - Linux amd64 + arm64 binary bundle: `npm run build:server`
+- GitHub Release 会同时附带 `install-server.sh` 交互式安装脚本
 
 Recommended environment:
 
@@ -27,6 +28,15 @@ Build pipeline detail:
 - `pkg` then packages the bundled server entry into Linux binaries.
 
 The server build packages the shared backend core as standalone Linux executables.
+
+Interactive install script capabilities:
+
+- Chinese menu
+- Install / update
+- Uninstall
+- Listen host selection
+- Port configuration (default `51888`)
+- Installs a `systemd` service automatically
 
 ## Runtime Notes
 
