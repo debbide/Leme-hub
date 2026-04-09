@@ -79,7 +79,7 @@ function resolveDesktopRuntimeRoot() {
     return path.resolve(process.env.LEME_RUNTIME_ROOT);
   }
 
-  // Windows portable builds: store data next to the .exe
+  // Windows packaged builds (zip/portable): store data next to the .exe
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
     return path.resolve(process.env.PORTABLE_EXECUTABLE_DIR);
   }
@@ -88,7 +88,11 @@ function resolveDesktopRuntimeRoot() {
     return path.dirname(path.resolve(process.env.PORTABLE_EXECUTABLE_FILE));
   }
 
-  // Installed builds (deb, NSIS, etc.): binary dir is read-only,
+  if (app.isPackaged && process.platform === 'win32') {
+    return path.dirname(path.resolve(process.execPath));
+  }
+
+  // Installed builds (deb, etc.): binary dir is read-only,
   // use user-writable data directory instead (~/.config/Leme Hub/)
   if (app.isPackaged) {
     return app.getPath('userData');
