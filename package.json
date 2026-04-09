@@ -15,7 +15,7 @@
     "start:server": "node scripts/server.js",
     "prepare:icons": "node scripts/prepare-icons.js",
     "desktop:dev": "electron .",
-    "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win portable",
+    "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win zip",
     "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
     "build:server:bundle": "node scripts/build-server-bundle.mjs",
     "build:server": "npm run build:server:bundle && pkg ./dist/server/package.json --targets node20-linux-x64,node20-linux-arm64 --out-path dist/server",
@@ -57,7 +57,7 @@
     "win": {
       "icon": "desktop/resources/icon.ico",
       "target": [
-        "portable"
+        "zip"
       ]
     },
     "linux": {
