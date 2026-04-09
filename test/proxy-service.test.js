@@ -557,6 +557,28 @@ test('parses tuic extended parameters', () => {
   assert.equal(node.zero_rtt_handshake, true);
 });
 
+test('parses tuic allow_insecure alias from imported share links', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('tuic://74ceeeb0-c2bc-4eab-8626-bc8aa779c82d:R1buS6WPEryV@31.59.234.78:25011/?congestion_control=bbr&alpn=h3&allow_insecure=1&sni=31.59.234.78#Node-FR_ARYK');
+
+  assert.equal(node.type, 'tuic');
+  assert.equal(node.uuid, '74ceeeb0-c2bc-4eab-8626-bc8aa779c82d');
+  assert.equal(node.password, 'R1buS6WPEryV');
+  assert.equal(node.insecure, true);
+  assert.equal(node.alpn, 'h3');
+  assert.equal(node.sni, '31.59.234.78');
+});
+
+test('parses hysteria2 allow_insecure alias from imported share links', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('hy2://secret@example.com:443?allow_insecure=1&sni=edge.example#hy2');
+
+  assert.equal(node.type, 'hysteria2');
+  assert.equal(node.password, 'secret');
+  assert.equal(node.insecure, true);
+  assert.equal(node.sni, 'edge.example');
+});
+
 test('keeps dial network separate from transport type', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&network=udp&host=cdn.example&path=%2Fws&sni=cdn.example#edge');

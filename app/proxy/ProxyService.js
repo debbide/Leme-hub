@@ -1230,7 +1230,9 @@ export class ProxyService {
       if (params.get('permit_without_stream')) config.grpc_permit_without_stream = toBool(params.get('permit_without_stream'));
 
       if (['1', 'true'].includes(params.get('record_fragment'))) config.record_fragment = true;
-      if (['1', 'true'].includes(params.get('insecure')) || params.get('allowInsecure') === '1') config.insecure = true;
+      if (toBool(params.get('insecure')) || toBool(params.get('allowInsecure')) || toBool(params.get('allow_insecure'))) {
+        config.insecure = true;
+      }
 
       const rawUser = decodeURIComponent(url.username || '');
       const rawPass = decodeURIComponent(url.password || '');
