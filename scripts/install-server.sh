@@ -157,6 +157,7 @@ data['proxyListenHost'] = proxy_host
 data['systemProxyHttpPort'] = proxy_http_port
 data['systemProxySocksPort'] = proxy_socks_port
 data['systemProxyEnabled'] = proxy_enabled
+data['systemProxyCaptureEnabled'] = False
 
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY

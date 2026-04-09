@@ -8,50 +8,76 @@ import {
   DEFAULT_DNS_STRATEGY,
   DEFAULT_PROXY_BASE_PORT,
   DEFAULT_PROXY_LISTEN_HOST,
+  DEFAULT_SERVER_PROXY_LISTEN_HOST,
   DEFAULT_SYSTEM_PROXY_HTTP_PORT,
   DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
   DEFAULT_UI_HOST,
   DEFAULT_UI_PORT
 } from '../../shared/constants.js';
 
-const defaultSettings = (paths) => ({
-  uiHost: DEFAULT_UI_HOST,
-  uiPort: DEFAULT_UI_PORT,
-  proxyListenHost: DEFAULT_PROXY_LISTEN_HOST,
-  proxyBasePort: DEFAULT_PROXY_BASE_PORT,
-  systemProxyEnabled: false,
-  autoStart: false,
-  systemProxySocksPort: DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
-  systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
-  dnsRemoteServer: DEFAULT_DNS_REMOTE_SERVER,
-  dnsDirectServer: DEFAULT_DNS_DIRECT_SERVER,
-  dnsBootstrapServer: DEFAULT_DNS_BOOTSTRAP_SERVER,
-  dnsFinal: DEFAULT_DNS_FINAL,
-  dnsStrategy: DEFAULT_DNS_STRATEGY,
-  activeNodeId: null,
-  routingItems: [],
-  customRules: [],
-  rulesets: [],
-  nodeGroups: [],
-  subscriptions: [],
-  groups: [],
-  nodeGroupAutoTestIntervalSec: 300,
-  nodeGroupLatencyCache: {
-    updatedAt: null,
-    results: {}
-  },
-  singBoxBinaryPath: process.platform === 'win32'
-    ? `${paths.binDir}\\sing-box.exe`
-    : `${paths.binDir}/sing-box`,
-  routingMode: 'rule'
-});
+const resolveRuntimeMode = (options = {}) => {
+  if (options.mode) {
+    return options.mode === 'server' ? 'server' : 'desktop';
+  }
 
-const normalizeSettings = (paths, settings = {}) => {
-  const defaults = defaultSettings(paths);
+  return options.env?.LEME_MODE === 'server' ? 'server' : 'desktop';
+};
+
+const defaultSettings = (paths, options = {}) => {
+  const mode = resolveRuntimeMode(options);
+
+  return {
+    uiHost: DEFAULT_UI_HOST,
+    uiPort: DEFAULT_UI_PORT,
+    proxyListenHost: mode === 'server' ? DEFAULT_SERVER_PROXY_LISTEN_HOST : DEFAULT_PROXY_LISTEN_HOST,
+    proxyBasePort: DEFAULT_PROXY_BASE_PORT,
+    systemProxyEnabled: false,
+    systemProxyCaptureEnabled: false,
+    autoStart: false,
+    systemProxySocksPort: DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
+    systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
+    dnsRemoteServer: DEFAULT_DNS_REMOTE_SERVER,
+    dnsDirectServer: DEFAULT_DNS_DIRECT_SERVER,
+    dnsBootstrapServer: DEFAULT_DNS_BOOTSTRAP_SERVER,
+    dnsFinal: DEFAULT_DNS_FINAL,
+    dnsStrategy: DEFAULT_DNS_STRATEGY,
+    activeNodeId: null,
+    routingItems: [],
+    customRules: [],
+    rulesets: [],
+    nodeGroups: [],
+    subscriptions: [],
+    groups: [],
+    nodeGroupAutoTestIntervalSec: 300,
+    nodeGroupLatencyCache: {
+      updatedAt: null,
+      results: {}
+    },
+    singBoxBinaryPath: process.platform === 'win32'
+      ? `${paths.binDir}\\sing-box.exe`
+      : `${paths.binDir}/sing-box`,
+    routingMode: 'rule'
+  };
+};
+
+const normalizeSettings = (paths, settings = {}, options = {}) => {
+  const defaults = defaultSettings(paths, options);
+  const mode = resolveRuntimeMode(options);
+  const hasCapturePreference = Object.prototype.hasOwnProperty.call(settings, 'systemProxyCaptureEnabled');
   const normalized = {
     ...defaults,
     ...settings
   };
+
+  normalized.systemProxyEnabled = !!normalized.systemProxyEnabled;
+  normalized.systemProxyCaptureEnabled = hasCapturePreference
+    ? !!normalized.systemProxyCaptureEnabled
+    : mode === 'desktop'
+      ? normalized.systemProxyEnabled
+      : false;
+  if (!normalized.systemProxyEnabled) {
+    normalized.systemProxyCaptureEnabled = false;
+  }
 
   if (normalized.systemProxySocksPort === 20100 && normalized.systemProxyHttpPort === 20101) {
     normalized.systemProxySocksPort = DEFAULT_SYSTEM_PROXY_SOCKS_PORT;
@@ -62,14 +88,15 @@ const normalizeSettings = (paths, settings = {}) => {
 };
 
 export class ConfigStore {
-  constructor(paths) {
+  constructor(paths, options = {}) {
     this.paths = paths;
+    this.options = options;
     this.ensureFiles();
   }
 
   ensureFiles() {
     const bootstrap = [
-      [this.paths.settingsPath, defaultSettings(this.paths)],
+      [this.paths.settingsPath, defaultSettings(this.paths, this.options)],
       [this.paths.nodesPath, []],
       [this.paths.logPath, ''],
       [this.paths.configPath, null]
@@ -84,8 +111,8 @@ export class ConfigStore {
       }
     }
 
-    const currentSettings = this.readJson(this.paths.settingsPath, defaultSettings(this.paths));
-    const normalizedSettings = normalizeSettings(this.paths, currentSettings);
+    const currentSettings = this.readJson(this.paths.settingsPath, defaultSettings(this.paths, this.options));
+    const normalizedSettings = normalizeSettings(this.paths, currentSettings, this.options);
     if (JSON.stringify(currentSettings) !== JSON.stringify(normalizedSettings)) {
       this.writeJson(this.paths.settingsPath, normalizedSettings);
     }
@@ -128,7 +155,7 @@ export class ConfigStore {
   }
 
   getSettings() {
-    return normalizeSettings(this.paths, this.readJson(this.paths.settingsPath, defaultSettings(this.paths)));
+    return normalizeSettings(this.paths, this.readJson(this.paths.settingsPath, defaultSettings(this.paths, this.options)), this.options);
   }
 
   getNodes() {
@@ -140,7 +167,7 @@ export class ConfigStore {
   }
 
   saveSettings(settings) {
-    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings));
+    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options));
   }
 
   rotateLogs() {

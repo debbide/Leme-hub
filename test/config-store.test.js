@@ -60,3 +60,30 @@ test('preserves custom system proxy ports during normalization', () => {
   assert.equal(settings.systemProxySocksPort, 25000);
   assert.equal(settings.systemProxyHttpPort, 25001);
 });
+
+test('server mode defaults proxy listener to all interfaces without system proxy capture', () => {
+  const paths = createPaths();
+
+  const store = new ConfigStore(paths, { mode: 'server' });
+  const settings = store.getSettings();
+
+  assert.equal(settings.proxyListenHost, '0.0.0.0');
+  assert.equal(settings.systemProxyEnabled, false);
+  assert.equal(settings.systemProxyCaptureEnabled, false);
+});
+
+test('desktop mode migrates legacy unified proxy preference into system proxy capture', () => {
+  const paths = createPaths();
+  fs.writeFileSync(paths.settingsPath, JSON.stringify({
+    systemProxyEnabled: true
+  }, null, 2));
+  fs.writeFileSync(paths.nodesPath, '[]');
+  fs.writeFileSync(paths.logPath, '');
+  fs.writeFileSync(paths.configPath, 'null');
+
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+  const settings = store.getSettings();
+
+  assert.equal(settings.systemProxyEnabled, true);
+  assert.equal(settings.systemProxyCaptureEnabled, true);
+});

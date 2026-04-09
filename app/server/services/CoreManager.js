@@ -701,6 +701,7 @@ export class CoreManager {
     this.paths = paths;
     this.store = store;
     this.options = options;
+    this.runtimeMode = options.env?.LEME_MODE === 'server' ? 'server' : 'desktop';
     this.state = {
       status: 'stopped',
       startedAt: null,
@@ -958,7 +959,7 @@ export class CoreManager {
       socks: null,
       lastError: null,
       supported: capabilities.supported,
-      desiredEnabled: !!settings.systemProxyEnabled,
+      desiredEnabled: !!settings.systemProxyCaptureEnabled,
       ...overrides
     };
   }
@@ -996,6 +997,7 @@ export class CoreManager {
     return {
       mode: settings.routingMode,
       systemProxyEnabled: !!settings.systemProxyEnabled,
+      systemProxyCaptureEnabled: !!settings.systemProxyCaptureEnabled,
       activeNodeId,
       unifiedHttpPort,
       unifiedSocksPort,
@@ -1106,7 +1108,7 @@ export class CoreManager {
   }
 
   async cleanupSystemProxyAfterExit() {
-    const desiredEnabled = !!this.getSettingsSnapshot().systemProxyEnabled;
+    const desiredEnabled = !!this.getSettingsSnapshot().systemProxyCaptureEnabled;
     if (!desiredEnabled) {
       this.state.systemProxy = this.buildSystemProxyState(await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState()));
       return this.state.systemProxy;
@@ -1132,15 +1134,21 @@ export class CoreManager {
       throw createHttpError('Core must be running before applying system proxy', 400);
     }
 
-    const settings = this.getSettingsSnapshot();
+    let settings = this.getSettingsSnapshot();
+    if (!settings.systemProxyEnabled) {
+      await this.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: false });
+      await this.restart();
+      settings = this.getSettingsSnapshot();
+    }
+
     const status = await this.systemProxyManager.apply({
       host: settings.proxyListenHost,
       httpPort: settings.systemProxyHttpPort,
       socksPort: settings.systemProxySocksPort
     });
 
-    if (!settings.systemProxyEnabled) {
-      await this.updateSettings({ systemProxyEnabled: true });
+    if (!this.getSettingsSnapshot().systemProxyCaptureEnabled) {
+      await this.updateSettings({ systemProxyCaptureEnabled: true });
     }
     this.state.systemProxy = this.buildSystemProxyState(status);
     return this.state.systemProxy;
@@ -1148,8 +1156,8 @@ export class CoreManager {
 
   async disableSystemProxy() {
     const status = await this.systemProxyManager.disable();
-    if (this.getSettingsSnapshot().systemProxyEnabled) {
-      await this.updateSettings({ systemProxyEnabled: false });
+    if (this.getSettingsSnapshot().systemProxyCaptureEnabled) {
+      await this.updateSettings({ systemProxyCaptureEnabled: false });
     }
     this.state.systemProxy = this.buildSystemProxyState(status);
     return this.state.systemProxy;
@@ -1170,6 +1178,7 @@ export class CoreManager {
       dnsStrategy: snapshot.dnsStrategy,
       proxyMode: snapshot.routingMode,
       systemProxyEnabled: !!snapshot.systemProxyEnabled,
+      systemProxyCaptureEnabled: !!snapshot.systemProxyCaptureEnabled,
       systemProxyHttpPort: snapshot.systemProxyHttpPort,
       systemProxySocksPort: snapshot.systemProxySocksPort
     };
@@ -1181,6 +1190,27 @@ export class CoreManager {
       ...current,
       ...patch
     };
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'proxyListenHost')) {
+      next.proxyListenHost = String(next.proxyListenHost || '').trim();
+      if (!next.proxyListenHost) {
+        throw createHttpError('proxyListenHost is required', 400);
+      }
+    }
+
+    next.systemProxyEnabled = !!next.systemProxyEnabled;
+    next.systemProxyCaptureEnabled = !!next.systemProxyCaptureEnabled;
+    if (this.runtimeMode === 'desktop'
+      && Object.prototype.hasOwnProperty.call(patch, 'systemProxyEnabled')
+      && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyCaptureEnabled')) {
+      next.systemProxyCaptureEnabled = next.systemProxyEnabled;
+    }
+    if (!next.systemProxyEnabled) {
+      next.systemProxyCaptureEnabled = false;
+    }
+    if (next.systemProxyCaptureEnabled) {
+      next.systemProxyEnabled = true;
+    }
 
     if (next.routingMode && !ROUTING_MODES.includes(next.routingMode)) {
       throw createHttpError('Invalid routing mode', 400);
@@ -1306,7 +1336,10 @@ export class CoreManager {
 
     const saved = this.store.saveSettings({
       ...next,
+      proxyListenHost: next.proxyListenHost,
       proxyBasePort,
+      systemProxyEnabled: !!next.systemProxyEnabled,
+      systemProxyCaptureEnabled: !!next.systemProxyCaptureEnabled,
       systemProxySocksPort,
       systemProxyHttpPort,
       routingItems,
@@ -1320,7 +1353,7 @@ export class CoreManager {
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -2023,6 +2056,7 @@ export class CoreManager {
         runtime: this.getRuntimeOptions(settings, nodes)
       });
       const systemProxy = settings.systemProxyEnabled
+        && settings.systemProxyCaptureEnabled
         ? await this.systemProxyManager.apply({
             host: settings.proxyListenHost,
             httpPort: settings.systemProxyHttpPort,
@@ -2082,7 +2116,7 @@ export class CoreManager {
   async stop() {
     this._restartAttempts = 0;
     this.proxyService.stop();
-    const systemProxy = this.getSettingsSnapshot().systemProxyEnabled
+    const systemProxy = this.getSettingsSnapshot().systemProxyCaptureEnabled
       ? await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
           ...this.state.systemProxy,
           lastError: error.message,

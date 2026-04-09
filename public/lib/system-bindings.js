@@ -35,8 +35,8 @@ export const bindSystemEvents = ({
           updateCoreStatus(stopPayload.core);
           masterSwitch.classList.remove('on');
           masterSwitch.classList.add('off');
-          if (masterStatusText) masterStatusText.textContent = '系统代理已关闭';
-          showToast('系统代理已关闭', 'info');
+          if (masterStatusText) masterStatusText.textContent = '统一代理已关闭';
+          showToast('统一代理已关闭', 'info');
         } else {
           const selectedMode = systemProxyModeSelect?.value || 'rule';
           await requestJson('/api/system/settings', {
@@ -50,8 +50,9 @@ export const bindSystemEvents = ({
           updateCoreStatus(startPayload.core);
           masterSwitch.classList.remove('off');
           masterSwitch.classList.add('on');
-          if (masterStatusText) masterStatusText.textContent = '系统代理接管中';
-          showToast('系统代理已启动', 'success');
+          const captureEnabled = !!startPayload.core?.systemProxy?.enabled;
+          if (masterStatusText) masterStatusText.textContent = captureEnabled ? '系统代理接管中' : '统一代理入口已开启';
+          showToast(captureEnabled ? '系统代理已启动' : '统一代理已启动', 'success');
         }
         await loadNodes();
         await loadSystemStatus();
@@ -97,11 +98,11 @@ export const bindSystemEvents = ({
         renderSystemProxyNodeOptions(getNodesData(), coreData.proxy?.activeNodeId);
         updateRestartWarning(payload.restartRequired);
         if (payload.autoRestarted) {
-          showToast('系统代理节点已切换并自动应用', 'success');
+          showToast('代理节点已切换并自动应用', 'success');
         } else if (payload.restartRequired) {
-          showToast('系统代理节点已切换，运行中的核心已进入待应用状态', 'info');
+          showToast('代理节点已切换，运行中的核心已进入待应用状态', 'info');
         } else {
-          showToast('系统代理节点已切换', 'success');
+          showToast('代理节点已切换', 'success');
         }
       } catch (error) {
         showToast(`节点切换失败: ${error.message}`, 'error');

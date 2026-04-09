@@ -123,6 +123,7 @@ export const updateCoreStatus = ({
   const dashText = document.getElementById('master-status-text');
   const systemProxy = core.systemProxy || {};
   const proxyProfile = core.proxy || {};
+  const unifiedProxyEnabled = !!proxyProfile.systemProxyEnabled;
 
   renderProxyEndpoints(proxyProfile);
 
@@ -178,13 +179,22 @@ export const updateCoreStatus = ({
       dashText.textContent = '系统代理接管中';
       dashText.className = 'status-pill is-running';
     }
+  } else if (core.status === 'running' && unifiedProxyEnabled) {
+    coreStatusIndicator.classList.add('running');
+    coreStatusIndicator.title = '运行中';
+    if (dashSwitch) {
+      dashSwitch.classList.remove('off');
+      dashSwitch.classList.add('on');
+      dashText.textContent = '核心运行中，统一代理入口已开启';
+      dashText.className = 'status-pill is-running';
+    }
   } else if (core.status === 'running') {
     coreStatusIndicator.classList.add('running');
     coreStatusIndicator.title = '运行中';
     if (dashSwitch) {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
-      dashText.textContent = '核心运行中，系统代理未接管';
+      dashText.textContent = '核心运行中，统一代理入口未开启';
       dashText.className = 'status-pill is-idle';
     }
   } else if (core.status === 'crashed') {
@@ -211,7 +221,7 @@ export const updateCoreStatus = ({
     if (dashSwitch) {
       dashSwitch.classList.remove('on');
       dashSwitch.classList.add('off');
-      dashText.textContent = systemProxy.enabled ? '核心已停止，系统代理仍被外部占用' : '系统代理已关闭';
+      dashText.textContent = systemProxy.enabled ? '核心已停止，系统代理仍被外部占用' : '统一代理已关闭';
       dashText.className = 'status-pill is-off';
     }
   }

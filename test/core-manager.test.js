@@ -12,6 +12,7 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
     proxyListenHost: '127.0.0.1',
     proxyBasePort: 20000,
     systemProxyEnabled: false,
+    systemProxyCaptureEnabled: false,
     systemProxySocksPort: 18998,
     systemProxyHttpPort: 18999,
     dnsRemoteServer: 'https://cloudflare-dns.com/dns-query',
@@ -181,7 +182,7 @@ test('start rolls back proxy process when system proxy apply fails', async () =>
       source: 'managed'
     })
   };
-  manager.updateSettings({ systemProxyEnabled: true });
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
   manager.proxyService = {
     proxyProcess: { once() {} },
     setNodes() {},
@@ -200,6 +201,68 @@ test('start rolls back proxy process when system proxy apply fails', async () =>
 
   await assert.rejects(() => manager.start(), /apply failed/);
   assert.deepEqual(calls, ['stop']);
+});
+
+test('server mode keeps unified proxy entry enabled without auto-applying system proxy capture', async () => {
+  const manager = new CoreManager(createPaths(), createStore(), { env: { LEME_MODE: 'server' } });
+  let applyCalls = 0;
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: '/tmp/sing-box',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: null,
+      configuredExists: false,
+      managedPath: '/tmp/sing-box',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  await manager.updateSettings({ systemProxyEnabled: true });
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    start: async ({ binPath }) => ({ configPath: createPaths().configPath, executablePath: binPath }),
+    stop() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.systemProxyManager = {
+    apply: async () => {
+      applyCalls += 1;
+      return {
+        enabled: true,
+        mode: 'manual',
+        provider: 'mock',
+        http: { host: '127.0.0.1', port: 18999 },
+        socks: { host: '127.0.0.1', port: 18998 },
+        supported: true,
+        lastError: null
+      };
+    },
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  const status = await manager.start();
+
+  assert.equal(applyCalls, 0);
+  assert.equal(status.proxy.systemProxyEnabled, true);
+  assert.equal(status.proxy.systemProxyCaptureEnabled, false);
+  assert.equal(status.systemProxy.enabled, false);
 });
 
 test('assignStableLocalPorts skips reserved system proxy ports', () => {
@@ -484,6 +547,26 @@ test('updateSettings persists proxy mode and active node profile', async () => {
   assert.equal(result.proxy.unifiedSocksPort, 20100);
 });
 
+test('desktop mode keeps system proxy capture aligned with unified proxy toggle', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({ systemProxyEnabled: true });
+
+  assert.equal(result.settings.systemProxyEnabled, true);
+  assert.equal(result.settings.systemProxyCaptureEnabled, true);
+  assert.equal(result.proxy.systemProxyCaptureEnabled, true);
+});
+
+test('server mode leaves system proxy capture disabled when enabling unified proxy entry', async () => {
+  const manager = new CoreManager(createPaths(), createStore(), { env: { LEME_MODE: 'server' } });
+
+  const result = await manager.updateSettings({ systemProxyEnabled: true });
+
+  assert.equal(result.settings.systemProxyEnabled, true);
+  assert.equal(result.settings.systemProxyCaptureEnabled, false);
+  assert.equal(result.proxy.systemProxyCaptureEnabled, false);
+});
+
 test('updateSettings persists validated custom rules', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
@@ -726,6 +809,7 @@ test('getStatus exposes http default and socks manual endpoints', () => {
 test('applySystemProxy uses current unified proxy ports', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.state.status = 'running';
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: false });
   manager.systemProxyManager = {
     apply: async ({ host, httpPort, socksPort }) => ({
       enabled: true,
@@ -744,11 +828,42 @@ test('applySystemProxy uses current unified proxy ports', async () => {
   assert.equal(status.enabled, true);
   assert.equal(status.http.port, 18999);
   assert.equal(status.socks.port, 18998);
+  assert.equal(manager.getStatus().proxy.systemProxyCaptureEnabled, true);
+});
+
+test('applySystemProxy enables unified proxy entry before enabling system proxy capture', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  manager.state.status = 'running';
+  let restartCalls = 0;
+
+  manager.restart = async () => {
+    restartCalls += 1;
+    return manager.getStatus();
+  };
+  manager.systemProxyManager = {
+    apply: async ({ host, httpPort, socksPort }) => ({
+      enabled: true,
+      mode: 'manual',
+      provider: 'mock',
+      http: { host, port: httpPort },
+      socks: { host, port: socksPort },
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  const status = await manager.applySystemProxy();
+
+  assert.equal(restartCalls, 1);
+  assert.equal(status.enabled, true);
+  assert.equal(manager.getSettingsSnapshot().systemProxyEnabled, true);
+  assert.equal(manager.getSettingsSnapshot().systemProxyCaptureEnabled, true);
 });
 
 test('disableSystemProxy clears desired system proxy setting', async () => {
   const manager = new CoreManager(createPaths(), createStore());
-  await manager.updateSettings({ systemProxyEnabled: true });
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
   manager.systemProxyManager = {
     disable: async () => ({
       enabled: false,
@@ -766,11 +881,12 @@ test('disableSystemProxy clears desired system proxy setting', async () => {
 
   assert.equal(status.enabled, false);
   assert.equal(manager.getStatus().systemProxy.desiredEnabled, false);
+  assert.equal(manager.getStatus().proxy.systemProxyEnabled, true);
 });
 
 test('unexpected process exit disables system proxy when desired', async () => {
   const manager = new CoreManager(createPaths(), createStore());
-  await manager.updateSettings({ systemProxyEnabled: true });
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
   let exitHandler = null;
 
   manager.proxyService = {

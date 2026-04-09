@@ -88,7 +88,7 @@ export const renderRoutingObservability = ({
     if (!filteredGroups.length) {
       routingObservabilityLines.innerHTML = query
         ? `<div class="routing-log-empty">没有找到匹配 <strong>${escapeHtml(routingLogSearchQuery)}</strong> 的命中</div>`
-        : '<div class="routing-log-empty">暂无自定义规则命中日志。请确认系统代理正在走规则分流，并实际访问能命中你自定义规则的域名或 IP。</div>';
+        : '<div class="routing-log-empty">暂无自定义规则命中日志。请确认统一代理入口正在走规则分流，并实际访问能命中你自定义规则的域名或 IP。</div>';
       return;
     }
 
@@ -210,7 +210,7 @@ export const renderRoutingObservability = ({
       routingObservabilityLines.innerHTML = `<div class="routing-log-empty">没有找到匹配 <strong>${escapeHtml(routingLogSearchQuery)}</strong> 的日志</div>`;
       return;
     }
-    routingObservabilityLines.innerHTML = '<div class="routing-log-empty">暂无自定义规则命中日志。请确认系统代理正在走规则分流，并实际访问能命中你自定义规则的域名或 IP。</div>';
+    routingObservabilityLines.innerHTML = '<div class="routing-log-empty">暂无自定义规则命中日志。请确认统一代理入口正在走规则分流，并实际访问能命中你自定义规则的域名或 IP。</div>';
     return;
   }
 

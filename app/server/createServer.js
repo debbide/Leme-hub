@@ -70,7 +70,8 @@ const sendFile = (response, filePath) => {
 export function createAppServer(paths, env = process.env) {
   ensureRuntimeDirs(paths);
 
-  const store = new ConfigStore(paths);
+  const runtimeMode = env.LEME_MODE === 'server' ? 'server' : 'desktop';
+  const store = new ConfigStore(paths, { env, mode: runtimeMode });
   const coreManager = new CoreManager(paths, store, {
     env,
     autoStartExecutablePath: env.LEME_AUTOSTART_EXECUTABLE

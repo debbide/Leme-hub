@@ -220,7 +220,7 @@ export const createRoutingController = ({
       });
       updateCoreStatus(payload.core);
       renderRoutingRules();
-      showToast(enableSystemProxy ? '已启用系统代理并切换到规则分流' : '已切换到规则分流模式', 'success');
+      showToast(enableSystemProxy ? '已启用统一代理并切换到规则分流' : '已切换到规则分流模式', 'success');
     } catch (error) {
       showToast(`切换规则分流失败: ${error.message}`, 'error');
     }

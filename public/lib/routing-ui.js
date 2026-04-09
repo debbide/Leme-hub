@@ -68,29 +68,29 @@ export const renderRoutingModeBanner = ({
     keywords = ['分流规则', '预设模板'];
     routingModeBanner.classList.add('is-inactive');
   } else if (!systemProxyEnabled) {
-    modeLabel = '系统代理未启用';
+    modeLabel = '统一代理入口未启用';
     modeIcon = 'ph ph-plugs-connected';
-    copy = '系统代理当前未启用：规则已经保存，但统一入口没有开启，所以这些规则不会被命中。';
-    keywords = ['系统代理未启用', '不会被命中'];
+    copy = '统一代理入口当前未启用：规则已经保存，但统一入口没有开启，所以这些规则不会被命中。';
+    keywords = ['统一代理入口未启用', '不会被命中'];
     routingModeBanner.classList.add('is-direct');
-    actions.push('<button type="button" class="btn-primary" data-routing-action="enable-system-proxy-rule">启用系统代理</button>');
+    actions.push('<button type="button" class="btn-primary" data-routing-action="enable-system-proxy-rule">启用统一代理</button>');
   } else if (mode === 'rule') {
     modeLabel = '规则分流模式';
     modeIcon = 'ph ph-radar';
     routingModeBanner.classList.add('is-active');
-    copy = '当前处于规则分流模式：规则集和手写规则正在参与系统代理统一入口的流量分发。';
+    copy = '当前处于规则分流模式：规则集和手写规则正在参与统一代理入口的流量分发。';
     keywords = ['规则分流模式', '规则集', '手写规则'];
   } else if (mode === 'direct') {
     modeLabel = '直连退出模式';
     modeIcon = 'ph ph-arrow-bend-up-left';
     routingModeBanner.classList.add('is-direct');
-    copy = '当前处于直连退出模式：规则仍可编辑，但系统代理流量会全部直连，不使用这些规则。';
+    copy = '当前处于直连退出模式：规则仍可编辑，但统一代理入口流量会全部直连，不使用这些规则。';
     keywords = ['直连退出模式', '全部直连'];
   } else {
     modeLabel = '全局接管模式';
     modeIcon = 'ph ph-globe-hemisphere-west';
     routingModeBanner.classList.add('is-inactive');
-    copy = '当前处于全局接管模式：规则仍可编辑，但系统代理流量会统一走当前默认节点，不使用这些规则。';
+    copy = '当前处于全局接管模式：规则仍可编辑，但统一代理入口流量会统一走当前默认节点，不使用这些规则。';
     keywords = ['全局接管模式', '当前默认节点'];
   }
 
