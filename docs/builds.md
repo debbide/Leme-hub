@@ -34,8 +34,10 @@ Interactive install script capabilities:
 - Chinese menu
 - Install / update
 - Uninstall
-- Listen host selection
-- Port configuration (default `51888`)
+- Control panel host / port selection (default `0.0.0.0:51888`)
+- Unified proxy enable / disable selection
+- Proxy listen host selection
+- HTTP / SOCKS5 proxy port configuration (default `18999` / `18998`)
 - Installs a `systemd` service automatically
 
 ## Runtime Notes
