@@ -1046,7 +1046,14 @@ export class CoreManager {
 
   async refreshAutoStartState() {
     try {
-      const status = await this.autoStartManager.getStatus();
+      let status = await this.autoStartManager.getStatus();
+      const desiredEnabled = !!this.getSettingsSnapshot().autoStart;
+
+      if (desiredEnabled && (!status.enabled || !this.autoStartManager.matchesExpectedCommand(status.command))) {
+        status = await this.autoStartManager.enable();
+        this.store.appendLog('[CoreManager] Repaired auto-start command to match the current executable');
+      }
+
       this.state.autoStart = this.buildAutoStartState(status);
     } catch (error) {
       this.state.autoStart = this.buildAutoStartState({

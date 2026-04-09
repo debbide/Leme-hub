@@ -13,6 +13,17 @@ const trimValue = (value) => String(value || '').trim();
 const quoteDesktopExec = (value) => `"${String(value || '').replace(/"/g, '\\"')}"`;
 const quoteCommandPath = (value) => `"${String(value || '').replace(/"/g, '')}"`;
 const buildAutoStartCommand = (executable) => `${quoteCommandPath(executable)} ${AUTOSTART_BACKGROUND_ARG}`.trim();
+const normalizeCommand = (value) => trimValue(value).replace(/\s+/g, ' ').toLowerCase();
+const parseWindowsRunCommand = (stdout) => {
+  const lines = String(stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const record = [...lines].reverse().find((line) => line.includes('REG_SZ'));
+  if (!record) {
+    return null;
+  }
+
+  const match = record.match(/\bREG_SZ\b\s+(.*)$/i);
+  return trimValue(match?.[1] || '');
+};
 
 export class AutoStartManager {
   constructor(options = {}) {
@@ -45,6 +56,14 @@ export class AutoStartManager {
       || process.execPath;
   }
 
+  getExpectedCommand() {
+    return buildAutoStartCommand(this.resolveExecutablePath());
+  }
+
+  matchesExpectedCommand(command) {
+    return normalizeCommand(command) === normalizeCommand(this.getExpectedCommand());
+  }
+
   async exec(command, args) {
     return this.execFile(command, args, { windowsHide: true });
   }
@@ -60,11 +79,12 @@ export class AutoStartManager {
   async getWindowsStatus() {
     try {
       const { stdout } = await this.exec('reg', ['query', WINDOWS_RUN_REG_PATH, '/v', APP_NAME]);
+      const command = parseWindowsRunCommand(stdout);
       return {
         enabled: stdout.includes(APP_NAME),
         provider: 'windows-registry',
         supported: true,
-        command: trimValue(stdout)
+        command
       };
     } catch {
       return {

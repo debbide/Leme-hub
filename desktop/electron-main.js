@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,6 +17,54 @@ let serverContext = null;
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+
+function getDesktopCacheMarkerPath(context) {
+  const dataDir = context?.store?.paths?.dataDir || path.join(resolveDesktopRuntimeRoot(), 'data');
+  return path.join(dataDir, 'desktop-shell-cache-marker.txt');
+}
+
+function buildDesktopCacheMarkerValue(executablePath) {
+  const targetPath = path.resolve(executablePath || process.execPath);
+  let stamp = '';
+
+  try {
+    const stat = fs.statSync(targetPath);
+    stamp = String(stat.mtimeMs);
+  } catch {
+    stamp = 'missing';
+  }
+
+  return `${targetPath}|${stamp}`;
+}
+
+async function refreshWindowCacheIfNeeded(window, context) {
+  const executablePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const markerPath = getDesktopCacheMarkerPath(context);
+  const nextMarker = buildDesktopCacheMarkerValue(executablePath);
+
+  let previousMarker = '';
+  try {
+    previousMarker = fs.readFileSync(markerPath, 'utf8').trim();
+  } catch {
+    previousMarker = '';
+  }
+
+  if (previousMarker === nextMarker) {
+    return;
+  }
+
+  try {
+    await window.webContents.session.clearCache();
+  } catch {
+    // ignore cache clear failures and continue loading
+  }
+
+  try {
+    fs.writeFileSync(markerPath, nextMarker);
+  } catch {
+    // ignore marker write failures and continue loading
+  }
+}
 
 function isBackgroundLaunch(argv = process.argv) {
   return Array.isArray(argv) && argv.includes(BACKGROUND_ARG);
@@ -124,12 +173,7 @@ async function createWindow() {
     }
   });
 
-  try {
-    // Avoid stale cached shell assets after desktop upgrades.
-    await mainWindow.webContents.session.clearCache();
-  } catch {
-    // ignore cache clear failures and continue loading
-  }
+  await refreshWindowCacheIfNeeded(mainWindow, context);
 
   await mainWindow.loadURL(context.runtime.publicOrigin);
   return mainWindow;

@@ -26,7 +26,7 @@ test('windows auto start writes and removes run entry', async () => {
         if (!enabled) {
           throw new Error('missing');
         }
-        return { stdout: 'Leme Hub    REG_SZ    "C:\\Leme Hub\\Leme.Hub.exe"' };
+        return { stdout: 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n    Leme Hub    REG_SZ    "C:\\Leme Hub\\Leme.Hub.exe" --background\r\n' };
       }
       return { stdout: '' };
     }
@@ -41,6 +41,24 @@ test('windows auto start writes and removes run entry', async () => {
   assert.equal(calls[0][1].includes('"C:\\Leme Hub\\Leme.Hub.exe" --background'), true);
   assert.equal(calls[1][1][0], 'query');
   assert.equal(calls[2][1][0], 'delete');
+  assert.equal(enabledStatus.command, '"C:\\Leme Hub\\Leme.Hub.exe" --background');
+  assert.equal(manager.matchesExpectedCommand(enabledStatus.command), true);
+});
+
+test('windows auto start detects stale executable command', async () => {
+  const manager = new AutoStartManager({
+    platform: 'win32',
+    env: { LEME_AUTOSTART_EXECUTABLE: 'E:\\Program Files (x86)\\lemehub\\Leme.Hub-2.2.3-win-x64.exe' }
+  });
+
+  assert.equal(
+    manager.matchesExpectedCommand('"E:\\Program Files (x86)\\lemehub\\Leme.Hub-2.1.1-win-x64.exe"'),
+    false
+  );
+  assert.equal(
+    manager.matchesExpectedCommand('"E:\\Program Files (x86)\\lemehub\\Leme.Hub-2.2.3-win-x64.exe" --background'),
+    true
+  );
 });
 
 test('linux auto start writes xdg desktop file', async () => {
