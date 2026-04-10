@@ -14,6 +14,7 @@ import {
   DEFAULT_UI_HOST,
   DEFAULT_UI_PORT
 } from '../../shared/constants.js';
+import { normalizeHost } from '../../shared/network.js';
 
 const resolveRuntimeMode = (options = {}) => {
   if (options.mode) {
@@ -68,6 +69,9 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
     ...defaults,
     ...settings
   };
+
+  normalized.uiHost = normalizeHost(normalized.uiHost, defaults.uiHost);
+  normalized.proxyListenHost = normalizeHost(normalized.proxyListenHost, defaults.proxyListenHost);
 
   normalized.systemProxyEnabled = !!normalized.systemProxyEnabled;
   normalized.systemProxyCaptureEnabled = hasCapturePreference

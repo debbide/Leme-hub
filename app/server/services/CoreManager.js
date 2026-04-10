@@ -4,6 +4,7 @@ import path from 'path';
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
 import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
+import { formatHostPort, formatUrlWithHost, normalizeHost } from '../../shared/network.js';
 import { AutoStartManager } from './AutoStartManager.js';
 import { ConnectionsService } from './ConnectionsService.js';
 import { GeoIpService, geoFlagFromCountryCode } from './GeoIpService.js';
@@ -753,7 +754,7 @@ export class CoreManager {
     this.rulesetDatabaseService = new RulesetDatabaseService(this.paths, {
       log: this.createLogger()
     });
-    this.connectionsService = new ConnectionsService();
+    this.connectionsService = new ConnectionsService({ listenHost: this.store.getSettings().proxyListenHost });
     const routingHitHistoryDir = this.paths.logsDir || this.paths.dataDir || this.paths.root;
     this.routingHitHistoryPath = path.join(routingHitHistoryDir, 'routing-hits.jsonl');
     if (!fs.existsSync(this.routingHitHistoryPath)) {
@@ -964,6 +965,12 @@ export class CoreManager {
     };
   }
 
+  refreshConnectionsServiceBaseUrl(settings = this.getSettingsSnapshot()) {
+    if (typeof this.connectionsService?.setListenHost === 'function') {
+      this.connectionsService.setListenHost(settings?.proxyListenHost);
+    }
+  }
+
   buildAutoStartState(overrides = {}) {
     const settings = this.store.getSettings();
     const capabilities = this.autoStartManager.getCapabilities();
@@ -1007,19 +1014,19 @@ export class CoreManager {
         protocol: 'http',
         host: listenHost,
         port: unifiedHttpPort,
-        url: `http://${listenHost}:${unifiedHttpPort}`
+        url: formatUrlWithHost('http', listenHost, unifiedHttpPort)
       },
       httpCompatibilityEndpoint: {
         protocol: 'socks5',
         host: listenHost,
         port: unifiedSocksPort,
-        url: `socks5://${listenHost}:${unifiedSocksPort}`
+        url: formatUrlWithHost('socks5', listenHost, unifiedSocksPort)
       },
       systemSocksEndpoint: {
         protocol: 'socks5',
         host: listenHost,
         port: unifiedSocksPort,
-        url: `socks5://${listenHost}:${unifiedSocksPort}`
+        url: formatUrlWithHost('socks5', listenHost, unifiedSocksPort)
       },
       customRules: settings.customRules,
       rulesets: settings.rulesets || [],
@@ -1192,7 +1199,7 @@ export class CoreManager {
     };
 
     if (Object.prototype.hasOwnProperty.call(patch, 'proxyListenHost')) {
-      next.proxyListenHost = String(next.proxyListenHost || '').trim();
+      next.proxyListenHost = normalizeHost(next.proxyListenHost);
       if (!next.proxyListenHost) {
         throw createHttpError('proxyListenHost is required', 400);
       }
@@ -1352,6 +1359,7 @@ export class CoreManager {
       nodeGroupLatencyCache: normalizeNodeGroupLatencyCache(next.nodeGroupLatencyCache)
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
+    this.refreshConnectionsServiceBaseUrl(saved);
 
     const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort'];
     const shouldAutoRestart = this.state.status === 'running'
@@ -1431,6 +1439,7 @@ export class CoreManager {
     const settings = this.store.getSettings();
     if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return history;
 
+    this.refreshConnectionsServiceBaseUrl(settings);
     const nodeMap = new Map(this.store.getNodes().map((node) => [`out-${node.id}`, node]));
     const connections = await this.connectionsService.getConnections();
     const liveHits = connections
@@ -1478,6 +1487,7 @@ export class CoreManager {
       };
     }
 
+    this.refreshConnectionsServiceBaseUrl();
     const connections = await this.connectionsService.getConnections();
     const totals = connections.reduce((acc, connection) => {
       acc.uploadBytes += pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']);
@@ -1510,9 +1520,9 @@ export class CoreManager {
         protocol: 'socks5',
         host: settings.proxyListenHost,
         port: this.proxyService.getLocalPort(node.id),
-        url: `socks5://${settings.proxyListenHost}:${this.proxyService.getLocalPort(node.id)}`
+        url: formatUrlWithHost('socks5', settings.proxyListenHost, this.proxyService.getLocalPort(node.id))
       },
-      copyText: `${settings.proxyListenHost}:${this.proxyService.getLocalPort(node.id)}`,
+      copyText: formatHostPort(settings.proxyListenHost, this.proxyService.getLocalPort(node.id)),
       isRunning: this.state.status === 'running'
     }));
 

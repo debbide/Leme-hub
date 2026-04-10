@@ -502,6 +502,30 @@ test('getNodeRecords exposes ready-to-copy endpoint metadata', async () => {
   assert.equal(node.shareLink, 'socks://127.0.0.1:1080#n1');
 });
 
+test('getNodeRecords formats ipv6 endpoint metadata with brackets', async () => {
+  const store = createStore();
+  store.saveSettings({ ...store.getSettings(), proxyListenHost: '::1' });
+  const manager = new CoreManager(createPaths(), store);
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: () => 20000,
+    toShareLink: () => 'socks://[2001:db8::1]:1080#n1',
+    proxyListen: '::1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const [node] = await manager.getNodeRecords();
+
+  assert.equal(node.endpoint.host, '::1');
+  assert.equal(node.endpoint.url, 'socks5://[::1]:20000');
+  assert.equal(node.copyText, '[::1]:20000');
+  assert.equal(node.shareLink, 'socks://[2001:db8::1]:1080#n1');
+});
+
 test('getNodeRecords enriches nodes with geo metadata when available', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.proxyService = {
@@ -803,6 +827,27 @@ test('getStatus exposes http default and socks manual endpoints', () => {
     host: '127.0.0.1',
     port: 18998,
     url: 'socks5://127.0.0.1:18998'
+  });
+});
+
+test('getStatus formats ipv6 unified proxy endpoints with brackets', () => {
+  const store = createStore();
+  store.saveSettings({ ...store.getSettings(), proxyListenHost: '::1' });
+  const manager = new CoreManager(createPaths(), store);
+
+  const status = manager.getStatus();
+
+  assert.deepEqual(status.proxy.systemDefaultEndpoint, {
+    protocol: 'http',
+    host: '::1',
+    port: 18999,
+    url: 'http://[::1]:18999'
+  });
+  assert.deepEqual(status.proxy.httpCompatibilityEndpoint, {
+    protocol: 'socks5',
+    host: '::1',
+    port: 18998,
+    url: 'socks5://[::1]:18998'
   });
 });
 

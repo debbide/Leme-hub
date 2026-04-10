@@ -1,9 +1,15 @@
 import axios from 'axios';
+import { formatUrlWithHost, resolveLoopbackHost } from '../../shared/network.js';
 
 export class ConnectionsService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || 'http://127.0.0.1:9095';
+    this.baseUrl = options.baseUrl || formatUrlWithHost('http', resolveLoopbackHost(options.listenHost), 9095);
     this.secret = options.secret || '';
+  }
+
+  setListenHost(listenHost) {
+    this.baseUrl = formatUrlWithHost('http', resolveLoopbackHost(listenHost), 9095);
+    return this.baseUrl;
   }
 
   async getConnections() {

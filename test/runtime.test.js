@@ -48,3 +48,15 @@ test('server mode still accepts explicit env overrides', () => {
   assert.equal(runtime.host, '10.0.0.5');
   assert.equal(runtime.port, 52100);
 });
+
+test('server mode formats ipv6 public origin and normalizes bracketed hosts', () => {
+  const runtime = resolveServerRuntime(baseSettings, {
+    LEME_MODE: 'server',
+    LEME_UI_HOST: '[::]',
+    LEME_UI_PORT: '52100'
+  });
+
+  assert.equal(runtime.host, '::');
+  assert.equal(runtime.port, 52100);
+  assert.equal(runtime.publicOrigin, 'http://[::1]:52100');
+});

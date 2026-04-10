@@ -29,6 +29,19 @@ prompt() {
   printf '%b%s%b' "${GREEN}" "$1" "${RESET}"
 }
 
+format_host_for_url() {
+  local host="${1:-}"
+  if [[ -z "${host}" ]]; then
+    printf ''
+  elif [[ "${host}" == \[*\] ]]; then
+    printf '%s' "${host}"
+  elif [[ "${host}" == *:* ]]; then
+    printf '[%s]' "${host}"
+  else
+    printf '%s' "${host}"
+  fi
+}
+
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
     say '请使用 root 或 sudo 运行此脚本。'
@@ -218,15 +231,23 @@ prompt_host() {
     127.0.0.1)
       default_choice='2'
       ;;
-    *)
+    ::)
       default_choice='3'
+      ;;
+    ::1)
+      default_choice='4'
+      ;;
+    *)
+      default_choice='5'
       ;;
   esac
 
   say '请选择监听地址：'
   say '1. 监听全部地址（0.0.0.0）'
   say '2. 仅监听本机（127.0.0.1）'
-  say "3. 自定义地址（当前：${current_host}）"
+  say '3. 监听全部 IPv6 地址（::）'
+  say '4. 仅监听本机 IPv6（::1）'
+  say "5. 自定义地址（当前：${current_host}）"
 
   while true; do
     prompt "请输入选项 [${default_choice}]: "
@@ -243,6 +264,14 @@ prompt_host() {
         return
         ;;
       3)
+        LISTEN_HOST='::'
+        return
+        ;;
+      4)
+        LISTEN_HOST='::1'
+        return
+        ;;
+      5)
         prompt "请输入自定义监听地址 [${current_host}]: "
         read -r custom_host
         custom_host="${custom_host:-${current_host}}"
@@ -253,7 +282,7 @@ prompt_host() {
         say '监听地址不能为空。'
         ;;
       *)
-        say '请输入 1、2 或 3。'
+        say '请输入 1、2、3、4 或 5。'
         ;;
     esac
   done
@@ -324,15 +353,23 @@ prompt_proxy_host() {
     127.0.0.1)
       default_choice='2'
       ;;
-    *)
+    ::)
       default_choice='3'
+      ;;
+    ::1)
+      default_choice='4'
+      ;;
+    *)
+      default_choice='5'
       ;;
   esac
 
   say '请选择代理监听地址：'
   say '1. 监听全部地址（0.0.0.0）'
   say '2. 仅监听本机（127.0.0.1）'
-  say "3. 自定义地址（当前：${current_host}）"
+  say '3. 监听全部 IPv6 地址（::）'
+  say '4. 仅监听本机 IPv6（::1）'
+  say "5. 自定义地址（当前：${current_host}）"
 
   while true; do
     prompt "请输入选项 [${default_choice}]: "
@@ -349,6 +386,14 @@ prompt_proxy_host() {
         return
         ;;
       3)
+        PROXY_HOST='::'
+        return
+        ;;
+      4)
+        PROXY_HOST='::1'
+        return
+        ;;
+      5)
         prompt "请输入自定义代理监听地址 [${current_host}]: "
         read -r custom_proxy_host
         custom_proxy_host="${custom_proxy_host:-${current_host}}"
@@ -359,7 +404,7 @@ prompt_proxy_host() {
         say '代理监听地址不能为空。'
         ;;
       *)
-        say '请输入 1、2 或 3。'
+        say '请输入 1、2、3、4 或 5。'
         ;;
     esac
   done
@@ -451,16 +496,21 @@ install_server() {
   say "  状态：systemctl status ${SERVICE_NAME}"
   if [[ "${LISTEN_HOST}" == '0.0.0.0' ]]; then
     say "浏览器访问：http://服务器IP:${LISTEN_PORT}"
+  elif [[ "${LISTEN_HOST}" == '::' ]]; then
+    say "浏览器访问：http://[服务器IPv6]:${LISTEN_PORT}"
   else
-    say "浏览器访问：http://${LISTEN_HOST}:${LISTEN_PORT}"
+    say "浏览器访问：http://$(format_host_for_url "${LISTEN_HOST}"):${LISTEN_PORT}"
   fi
   if [[ "${PROXY_ENABLED}" == 'true' ]]; then
     if [[ "${PROXY_HOST}" == '0.0.0.0' ]]; then
       say "HTTP 代理：服务器IP:${PROXY_HTTP_PORT}"
       say "SOCKS5 代理：服务器IP:${PROXY_SOCKS_PORT}"
+    elif [[ "${PROXY_HOST}" == '::' ]]; then
+      say "HTTP 代理：[服务器IPv6]:${PROXY_HTTP_PORT}"
+      say "SOCKS5 代理：[服务器IPv6]:${PROXY_SOCKS_PORT}"
     else
-      say "HTTP 代理：${PROXY_HOST}:${PROXY_HTTP_PORT}"
-      say "SOCKS5 代理：${PROXY_HOST}:${PROXY_SOCKS_PORT}"
+      say "HTTP 代理：$(format_host_for_url "${PROXY_HOST}"):${PROXY_HTTP_PORT}"
+      say "SOCKS5 代理：$(format_host_for_url "${PROXY_HOST}"):${PROXY_SOCKS_PORT}"
     fi
   fi
 }

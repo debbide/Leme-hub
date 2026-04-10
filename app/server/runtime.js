@@ -1,4 +1,5 @@
 import { DEFAULT_UI_PORT } from '../shared/constants.js';
+import { formatUrlWithHost, normalizeHost, resolvePublicOriginHost } from '../shared/network.js';
 
 const toBool = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());
 
@@ -14,9 +15,9 @@ const toPort = (value, fallback) => {
 export function resolveServerRuntime(settings, env = process.env) {
   const mode = env.LEME_MODE === 'server' ? 'server' : 'desktop';
   const allowRemote = toBool(env.LEME_ALLOW_REMOTE);
-  const host = mode === 'server'
+  const host = normalizeHost(mode === 'server'
     ? (env.LEME_UI_HOST || '0.0.0.0')
-    : (env.LEME_UI_HOST || settings.uiHost);
+    : (env.LEME_UI_HOST || settings.uiHost), '0.0.0.0');
   const port = mode === 'server'
     ? toPort(env.LEME_UI_PORT, DEFAULT_UI_PORT)
     : toPort(env.LEME_UI_PORT, settings.uiPort);
@@ -26,6 +27,6 @@ export function resolveServerRuntime(settings, env = process.env) {
     allowRemote,
     host,
     port,
-    publicOrigin: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`
+    publicOrigin: formatUrlWithHost('http', resolvePublicOriginHost(host), port)
   };
 }

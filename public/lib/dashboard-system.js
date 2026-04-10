@@ -1,3 +1,10 @@
+const formatHostForUrl = (value) => {
+  const host = String(value || '').trim();
+  if (!host) return '';
+  if (host.startsWith('[') && host.endsWith(']')) return host;
+  return host.includes(':') ? `[${host}]` : host;
+};
+
 export const renderSystemProxyNodeOptions = ({ dashActiveNodeSelect, nodes, activeNodeId }) => {
   if (!dashActiveNodeSelect) return;
 
@@ -18,7 +25,7 @@ export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy })
     protocol: 'http',
     host: listenHost,
     port: proxyProfile.unifiedHttpPort || 18999,
-    url: `http://${listenHost}:${proxyProfile.unifiedHttpPort || 18999}`
+    url: `http://${formatHostForUrl(listenHost)}:${proxyProfile.unifiedHttpPort || 18999}`
   };
   if (sidebarDefaultProxy) {
     sidebarDefaultProxy.textContent = defaultEndpoint.url;

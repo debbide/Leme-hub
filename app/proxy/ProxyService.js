@@ -13,6 +13,7 @@ import {
   DEFAULT_PROXY_LISTEN_HOST,
   REMOTE_RULESET_CATALOG
 } from '../shared/constants.js';
+import { formatHostForUrl, formatHostPort, isIpLiteralHost, normalizeHost, resolveLoopbackHost } from '../shared/network.js';
 
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
@@ -240,7 +241,7 @@ export class ProxyService {
     this.proxyProcess = null;
     this.nodes = [];
     this.projectRoot = projectRoot ? path.resolve(projectRoot) : process.cwd();
-    this.proxyListen = proxyListen;
+    this.proxyListen = normalizeHost(proxyListen, DEFAULT_PROXY_LISTEN_HOST);
     this.basePort = basePort;
     this.log = log;
     this.onRoutingHit = typeof onRoutingHit === 'function' ? onRoutingHit : null;
@@ -362,14 +363,15 @@ export class ProxyService {
     }));
 
     const outbounds = validNodes.map((node) => {
+      const serverHost = normalizeHost(node.server);
       const outbound = {
         type: node.type,
         tag: `out-${node.id}`,
-        server: node.server,
+        server: serverHost,
         server_port: node.port
       };
 
-      if (node.server && !net.isIP(String(node.server))) {
+      if (serverHost && !isIpLiteralHost(serverHost)) {
         outbound.domain_resolver = 'dns-local';
       }
 
@@ -417,7 +419,7 @@ export class ProxyService {
       if (isTls || node.sni) {
         outbound.tls = {
           enabled: true,
-          server_name: node.sni || node.wsHost || node.server,
+          server_name: normalizeHost(node.sni) || node.wsHost || serverHost,
           insecure: !!node.insecure,
           utls: {
             enabled: true,
@@ -483,8 +485,8 @@ export class ProxyService {
           headers: {}
         };
 
-        const hostHeader = node.wsHost || node.sni || node.server;
-        if (hostHeader && !hostHeader.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+        const hostHeader = node.wsHost || normalizeHost(node.sni) || serverHost;
+        if (hostHeader && !isIpLiteralHost(hostHeader)) {
           outbound.transport.headers.Host = hostHeader;
           if (outbound.tls && !outbound.tls.server_name) {
             outbound.tls.server_name = hostHeader;
@@ -551,7 +553,7 @@ export class ProxyService {
         if (!outbound.tls) {
           outbound.tls = {
             enabled: true,
-            server_name: node.sni || node.server,
+            server_name: normalizeHost(node.sni) || serverHost,
             insecure: !!node.insecure
           };
           if (node.alpn) {
@@ -805,7 +807,7 @@ export class ProxyService {
       try {
         const parsed = new URL(value);
         const scheme = String(parsed.protocol || '').replace(':', '').toLowerCase();
-        const host = parsed.hostname;
+        const host = normalizeHost(parsed.hostname);
         const port = parsed.port ? Number.parseInt(parsed.port, 10) : (scheme === 'https' ? 443 : 53);
         if (scheme === 'https') {
           const server = {
@@ -829,7 +831,9 @@ export class ProxyService {
         if (domainResolver) server.domain_resolver = domainResolver;
         return server;
       } catch {
-        const [host, portText] = value.includes(':') ? value.split(':') : [value, '53'];
+        const fallbackValue = normalizeHost(value);
+        const ipv6Literal = isIpLiteralHost(fallbackValue) && fallbackValue.includes(':');
+        const [host, portText] = (!ipv6Literal && fallbackValue.includes(':')) ? fallbackValue.split(':') : [fallbackValue, '53'];
         return {
           type: 'udp',
           tag,
@@ -876,7 +880,7 @@ export class ProxyService {
       },
       experimental: {
         clash_api: {
-          external_controller: '127.0.0.1:9095',
+          external_controller: formatHostPort(resolveLoopbackHost(this.proxyListen), 9095),
           secret: '',
           default_mode: proxyMode
         }
@@ -1145,7 +1149,7 @@ export class ProxyService {
           id: Math.random().toString(36).substring(2, 9),
           name: json.ps || 'VMess',
           type: 'vmess',
-          server: json.add,
+          server: normalizeHost(json.add),
           port: parseInt(json.port, 10),
           uuid: json.id,
           security: json.scy || 'auto',
@@ -1154,7 +1158,7 @@ export class ProxyService {
           wsPath: json.path || '',
           wsHost: json.host || '',
           tls: json.tls === 'tls',
-          sni: json.sni || json.host || '',
+          sni: normalizeHost(json.sni || json.host || ''),
           serviceName: json.path || '',
           alpn: json.alpn || '',
           fp: json.fp || '',
@@ -1172,7 +1176,7 @@ export class ProxyService {
         id: nodeId,
         name,
         type: protocol,
-        server: url.hostname,
+        server: normalizeHost(url.hostname),
         port: parseInt(url.port, 10)
       };
 
@@ -1180,7 +1184,7 @@ export class ProxyService {
         config.port = (params.get('security') === 'tls' || params.get('tls') === '1') ? 443 : 80;
       }
 
-      if (params.get('sni')) config.sni = params.get('sni');
+      if (params.get('sni')) config.sni = normalizeHost(params.get('sni'));
       if (params.get('security')) config.security = params.get('security');
       if (['tls', '1', 'true'].includes(params.get('tls'))) config.tls = true;
       if (params.get('alpn')) config.alpn = params.get('alpn');
@@ -1208,7 +1212,7 @@ export class ProxyService {
       }
       if (params.get('plugin-opts') && !config.plugin_opts) config.plugin_opts = params.get('plugin-opts');
       if (params.get('plugin_opts') && !config.plugin_opts) config.plugin_opts = params.get('plugin_opts');
-      if (params.get('ip')) config.ip = params.get('ip');
+      if (params.get('ip')) config.ip = normalizeHost(params.get('ip'));
       if (params.get('obfs-password')) config.obfs_password = params.get('obfs-password');
       if (params.get('obfs_password')) config.obfs_password = params.get('obfs_password');
       if (params.get('upmbps')) config.up_mbps = toInt(params.get('upmbps'));
@@ -1350,7 +1354,7 @@ export class ProxyService {
       id: node.id || Math.random().toString(36).substring(2, 9),
       name: node.name || node.tag || `${type}-${index + 1}`,
       type,
-      server: node.server,
+      server: normalizeHost(node.server),
       port: toInt(node.port ?? node.server_port)
     };
 
@@ -1400,6 +1404,9 @@ export class ProxyService {
     };
 
     Object.entries(fieldMap).forEach(([key, value]) => applyIfPresent(normalized, key, value));
+    normalized.server = normalizeHost(normalized.server);
+    normalized.sni = normalizeHost(normalized.sni);
+    normalized.ip = normalizeHost(normalized.ip);
 
     if (normalized.type === 'shadowsocks' && normalized.plugin && !normalized.plugin_opts && node.plugin_opts) {
       normalized.plugin_opts = node.plugin_opts;
@@ -1472,15 +1479,16 @@ export class ProxyService {
     }
 
     const type = String(node.type).toLowerCase();
-    const name = encodeShareName(node.name, node.server);
-    const host = node.server;
+    const serverHost = normalizeHost(node.server);
+    const name = encodeShareName(node.name, serverHost);
+    const urlHost = formatHostForUrl(serverHost);
     const port = node.port ? Number.parseInt(node.port, 10) : null;
 
     if (type === 'vmess') {
       const payload = {
         v: '2',
-        ps: node.name || node.server || 'VMess',
-        add: host,
+        ps: node.name || serverHost || 'VMess',
+        add: serverHost,
         port: port || 443,
         id: node.uuid || '',
         aid: node.alterId || 0,
@@ -1507,7 +1515,7 @@ export class ProxyService {
           ? [node.plugin, node.plugin_opts].filter(Boolean).join(';')
           : undefined
       });
-      return `ss://${userInfo}@${host}:${port}${query}${name ? `#${name}` : ''}`;
+      return `ss://${userInfo}@${urlHost}:${port}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'trojan') {
@@ -1525,7 +1533,7 @@ export class ProxyService {
         fp: node.fp || undefined,
         allowInsecure: node.insecure ? '1' : undefined
       });
-      return `trojan://${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+      return `trojan://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'vless') {
@@ -1548,7 +1556,7 @@ export class ProxyService {
         packet_encoding: node.packet_encoding || undefined,
         allowInsecure: node.insecure ? '1' : undefined
       });
-      return `vless://${encodeURIComponent(node.uuid)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+      return `vless://${encodeURIComponent(node.uuid)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'hysteria2') {
@@ -1563,7 +1571,7 @@ export class ProxyService {
         sni: node.sni || undefined,
         insecure: node.insecure ? '1' : undefined
       });
-      return `hy2://${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+      return `hy2://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'tuic') {
@@ -1578,7 +1586,7 @@ export class ProxyService {
         sni: node.sni || undefined,
         allow_insecure: node.insecure ? '1' : undefined
       });
-      return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${host}:${port || 443}${query}${name ? `#${name}` : ''}`;
+      return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'socks' || type === 'http') {
@@ -1586,7 +1594,7 @@ export class ProxyService {
       const auth = node.username
         ? `${encodeURIComponent(node.username)}:${encodeURIComponent(node.password || '')}@`
         : '';
-      return `${scheme}://${auth}${host}:${port || (type === 'http' ? 80 : 1080)}${name ? `#${name}` : ''}`;
+      return `${scheme}://${auth}${urlHost}:${port || (type === 'http' ? 80 : 1080)}${name ? `#${name}` : ''}`;
     }
 
     return null;
@@ -1602,10 +1610,11 @@ export class ProxyService {
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
       throw new Error(`Subscription URL must use http or https`);
     }
-    const hostname = parsedUrl.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname.startsWith('127.') || hostname === '::1'
-        || hostname.startsWith('10.') || hostname.startsWith('192.168.')
-        || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+    const hostname = normalizeHost(parsedUrl.hostname).toLowerCase();
+    if (hostname === 'localhost' || hostname === '::' || hostname === '::1'
+        || hostname.startsWith('127.') || hostname.startsWith('10.') || hostname.startsWith('192.168.')
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+        || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')) {
       throw new Error(`Subscription URL must not point to a private/local address`);
     }
     const headers = {

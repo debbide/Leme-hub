@@ -103,6 +103,34 @@ test('generates dns block with configured servers', () => {
   assert.equal(config.dns.servers.some((server) => server.tag === 'dns-bootstrap' && server.server === '223.5.5.5'), true);
 });
 
+test('supports ipv6 literals in dns server settings', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    dnsRemoteServer: 'https://[2001:4860:4860::8888]/dns-query',
+    dnsDirectServer: '2001:4860:4860::8844',
+    dnsBootstrapServer: '2001:4860:4860::8844',
+    dnsFinal: 'dns-remote',
+    dnsStrategy: 'ipv6_only'
+  });
+
+  assert.equal(config.dns.strategy, 'ipv6_only');
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-remote' && server.server === '2001:4860:4860::8888' && server.path === '/dns-query'), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-local' && server.server === '2001:4860:4860::8844' && server.server_port === 53), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-bootstrap' && server.server === '2001:4860:4860::8844' && server.server_port === 53), true);
+});
+
+test('uses ipv6 loopback clash api when proxy listener is ipv6', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd(), proxyListen: '::' });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig();
+
+  assert.equal(config.experimental.clash_api.external_controller, '[::1]:9095');
+});
+
 test('uses remote default domain resolver and local outbound resolver for hostnames', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: 'example.com', port: 1080 }]);
@@ -534,6 +562,20 @@ test('toShareLink serializes shadowsocks nodes with plugin options', () => {
   assert.equal(link, 'ss://YWVzLTI1Ni1nY206c2VjcmV0@ss.example:8388?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dcdn.example%3Bpath%3D%2Fws#ss%20edge');
 });
 
+test('toShareLink brackets ipv6 literal hosts', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'hysteria2',
+    server: '2001:db8::1',
+    port: 443,
+    password: 'secret',
+    sni: 'edge.example',
+    name: 'ipv6 edge'
+  });
+
+  assert.equal(link, 'hy2://secret@[2001:db8::1]:443?sni=edge.example#ipv6%20edge');
+});
+
 test('parses hysteria2 bandwidth and obfs password fields', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=salamander&obfs-password=mask&upmbps=20&downmbps=80&sni=edge.example#hy2');
@@ -555,6 +597,14 @@ test('parses tuic extended parameters', () => {
   assert.equal(node.udp_relay_mode, 'native');
   assert.equal(node.heartbeat, '10s');
   assert.equal(node.zero_rtt_handshake, true);
+});
+
+test('parses ipv6 literal hosts without persisting square brackets', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('vless://00000000-0000-0000-0000-000000000000@[2001:db8::1]:443?security=tls&sni=[2001:db8::2]#ipv6-vless');
+
+  assert.equal(node.server, '2001:db8::1');
+  assert.equal(node.sni, '2001:db8::2');
 });
 
 test('parses tuic allow_insecure alias from imported share links', () => {
