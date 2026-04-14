@@ -202,6 +202,30 @@ test('adds localhost and lan domain bypass rules', () => {
   assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('lan')), true);
 });
 
+test('routes localhost dns through hosts and lan suffixes through platform resolver', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  const hostsServer = config.dns.servers.find((server) => server.tag === 'dns-hosts');
+  const platformServer = config.dns.servers.find((server) => server.tag === 'dns-platform');
+
+  assert.ok(hostsServer);
+  assert.equal(hostsServer.type, 'hosts');
+  assert.deepEqual(hostsServer.predefined.localhost, ['127.0.0.1', '::1']);
+  assert.ok(platformServer);
+  assert.equal(platformServer.type, 'local');
+  assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.domain) && rule.domain.includes('localhost') && rule.server === 'dns-hosts'), true);
+  assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('local') && rule.server === 'dns-platform'), true);
+});
+
 test('forces system traffic direct in direct mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

@@ -30,6 +30,8 @@ const LOCAL_DIRECT_IP_CIDRS = [
 ];
 const LOCAL_DIRECT_DOMAINS = ['localhost', 'localhost.'];
 const LOCAL_DIRECT_DOMAIN_SUFFIXES = ['local', 'lan', 'home.arpa', 'localdomain'];
+const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
+const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
 
 const resolveExistingFilePath = (candidatePath) => {
   const resolved = path.resolve(candidatePath);
@@ -878,6 +880,20 @@ export class ProxyService {
     };
 
     const dnsRuleSetTags = ['geosite-cn', 'geoip-cn'].filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
+    const dnsRules = [
+      {
+        domain: LOCAL_DIRECT_DOMAINS,
+        server: LOCALHOST_DNS_SERVER_TAG
+      },
+      {
+        domain_suffix: LOCAL_DIRECT_DOMAIN_SUFFIXES,
+        server: PLATFORM_LOCAL_DNS_SERVER_TAG
+      }
+    ];
+
+    if (dnsRuleSetTags.length) {
+      dnsRules.push({ rule_set: dnsRuleSetTags, server: 'dns-local' });
+    }
 
     return {
       log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
@@ -885,11 +901,22 @@ export class ProxyService {
       outbounds: [...outbounds, { type: 'direct', tag: 'direct' }],
       dns: {
         servers: [
+          {
+            type: 'hosts',
+            tag: LOCALHOST_DNS_SERVER_TAG,
+            predefined: {
+              localhost: ['127.0.0.1', '::1']
+            }
+          },
+          {
+            type: 'local',
+            tag: PLATFORM_LOCAL_DNS_SERVER_TAG
+          },
           buildDnsServer('dns-bootstrap', dnsBootstrapServer),
           buildDnsServer('dns-remote', dnsRemoteServer, String(activeOutbound || '').trim(), 'dns-bootstrap'),
           buildDnsServer('dns-local', dnsDirectServer, '', 'dns-bootstrap')
         ],
-        rules: dnsRuleSetTags.length ? [{ rule_set: dnsRuleSetTags, server: 'dns-local' }] : [],
+        rules: dnsRules,
         final: String(dnsFinal || '').trim() === 'dns-local' ? 'dns-local' : 'dns-remote',
         strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4',
         independent_cache: true
