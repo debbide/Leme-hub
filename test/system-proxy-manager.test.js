@@ -23,6 +23,26 @@ test('windows disabled status clears parsed proxy endpoints', async () => {
   assert.equal(status.socks, null);
 });
 
+test('windows status parses single proxy endpoint as http proxy', async () => {
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (_command, args) => {
+      const name = args[args.length - 1];
+      if (name === 'ProxyEnable') {
+        return { stdout: 'ProxyEnable    REG_DWORD    0x1' };
+      }
+
+      return { stdout: 'ProxyServer    REG_SZ    127.0.0.1:20101' };
+    }
+  });
+
+  const status = await manager.getStatus();
+
+  assert.equal(status.enabled, true);
+  assert.deepEqual(status.http, { host: '127.0.0.1', port: 20101 });
+  assert.equal(status.socks, null);
+});
+
 test('linux disabled status clears proxy endpoints', async () => {
   const manager = new SystemProxyManager({
     platform: 'linux',
@@ -46,7 +66,7 @@ test('linux disabled status clears proxy endpoints', async () => {
   assert.equal(status.socks, null);
 });
 
-test('windows apply writes http and socks proxy server', async () => {
+test('windows apply writes manual proxy, clears pac, and refreshes wininet', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
     platform: 'win32',
@@ -58,11 +78,55 @@ test('windows apply writes http and socks proxy server', async () => {
 
   await manager.setWindowsProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
 
-  assert.equal(calls[1][8], 'http=127.0.0.1:20101;https=127.0.0.1:20101;socks=127.0.0.1:20100');
+  assert.equal(calls[1][8], '127.0.0.1:20101');
   assert.equal(calls[2][4], 'ProxyOverride');
   assert.match(calls[2][8], /localhost/);
   assert.match(calls[2][8], /\*\.local/);
   assert.match(calls[2][8], /192\.168\.\*/);
+  assert.equal(calls[3][4], 'AutoConfigURL');
+  assert.equal(calls[3][8], '');
+  assert.equal(calls[4][0], 'powershell.exe');
+  assert.equal(calls[4][1], '-NoProfile');
+  assert.equal(calls[4][5], '-Command');
+  assert.match(calls[4][6], /InternetSetOption/);
+});
+
+test('windows apply normalizes wildcard host to loopback', async () => {
+  const calls = [];
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    }
+  });
+
+  await manager.setWindowsProxy({ host: '0.0.0.0', httpPort: 20101, socksPort: 20100 });
+
+  assert.equal(calls[1][8], '127.0.0.1:20101');
+});
+
+test('windows disable clears proxy values and refreshes wininet', async () => {
+  const calls = [];
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    }
+  });
+
+  await manager.disableWindowsProxy();
+
+  assert.equal(calls[0][4], 'ProxyEnable');
+  assert.equal(calls[0][8], '0');
+  assert.equal(calls[1][4], 'ProxyServer');
+  assert.equal(calls[1][8], '');
+  assert.equal(calls[2][4], 'ProxyOverride');
+  assert.equal(calls[2][8], '');
+  assert.equal(calls[3][4], 'AutoConfigURL');
+  assert.equal(calls[3][8], '');
+  assert.equal(calls[4][0], 'powershell.exe');
 });
 
 test('linux apply sets http and socks endpoints together', async () => {

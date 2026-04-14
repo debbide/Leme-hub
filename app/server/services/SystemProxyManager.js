@@ -3,6 +3,21 @@ import { execFile } from 'child_process';
 
 const execFileAsync = promisify(execFile);
 const WINDOWS_PROXY_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+const WINDOWS_INTERNET_OPTION_REFRESH = 37;
+const WINDOWS_INTERNET_OPTION_SETTINGS_CHANGED = 39;
+const WINDOWS_PROXY_REFRESH_SCRIPT = `
+$signature = @"
+using System;
+using System.Runtime.InteropServices;
+public static class WinInetProxyRefresh {
+  [DllImport("wininet.dll", SetLastError=true)]
+  public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+}
+"@;
+Add-Type -TypeDefinition $signature -ErrorAction SilentlyContinue | Out-Null;
+[void][WinInetProxyRefresh]::InternetSetOption([IntPtr]::Zero, ${WINDOWS_INTERNET_OPTION_SETTINGS_CHANGED}, [IntPtr]::Zero, 0);
+[void][WinInetProxyRefresh]::InternetSetOption([IntPtr]::Zero, ${WINDOWS_INTERNET_OPTION_REFRESH}, [IntPtr]::Zero, 0);
+`.trim();
 const WINDOWS_PROXY_OVERRIDE = [
   'localhost',
   '127.*',
@@ -59,6 +74,18 @@ const clearProxyEndpointsIfDisabled = (status) => status.enabled
       http: null,
       socks: null
     };
+const normalizeWindowsSystemProxyHost = (value) => {
+  const normalized = trimValue(value).replace(/^\[(.*)\]$/, '$1');
+  if (!normalized || normalized === '0.0.0.0' || normalized === '::') {
+    return '127.0.0.1';
+  }
+  return normalized;
+};
+const formatWindowsProxyServer = (host, port) => {
+  const normalizedHost = normalizeWindowsSystemProxyHost(host);
+  const displayHost = normalizedHost.includes(':') ? `[${normalizedHost}]` : normalizedHost;
+  return `${displayHost}:${port}`;
+};
 
 export class SystemProxyManager {
   constructor(options = {}) {
@@ -219,15 +246,25 @@ export class SystemProxyManager {
     });
   }
 
-  async setWindowsProxy({ host, httpPort, socksPort }) {
-    const proxyServer = `http=${host}:${httpPort};https=${host}:${httpPort};socks=${host}:${socksPort}`;
+  async setWindowsProxy({ host, httpPort }) {
+    const proxyServer = formatWindowsProxyServer(host, httpPort);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', proxyServer, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', WINDOWS_PROXY_OVERRIDE, '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.notifyWindowsProxyChanged();
   }
 
   async disableWindowsProxy() {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.notifyWindowsProxyChanged();
+  }
+
+  async notifyWindowsProxyChanged() {
+    await this.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_PROXY_REFRESH_SCRIPT]);
   }
 
   async gsettingsGet(schema, key) {
