@@ -644,6 +644,7 @@ export class ProxyService {
       }
       return activeOutbound;
     };
+    const resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote';
 
     const normalizedRoutingItems = Array.isArray(routingItems) && routingItems.length
       ? routingItems
@@ -668,8 +669,11 @@ export class ProxyService {
 
     const orderedInlineRuleSets = [];
     const orderedRouteRules = [];
+    const orderedDnsRules = [];
     const customRulesetBuckets = new Map();
     const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
+    const builtInCnDirectRuleSetTags = ['geosite-cn', 'geoip-cn']
+      .filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
     const localBypassRuleSetTag = registerRoutingHit(LOCAL_DIRECT_RULESET_TAG, {
       kind: 'builtin',
       name: 'Local Bypass',
@@ -705,6 +709,7 @@ export class ProxyService {
           rules: [{ [item.type]: [item.value] }]
         });
         orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
+        orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
         return;
       }
 
@@ -736,8 +741,10 @@ export class ProxyService {
         });
         if (remoteRuleSetTags.length) {
           orderedRouteRules.push({ inbound: systemInbounds, rule_set: remoteRuleSetTags, outbound });
+          orderedDnsRules.push({ inbound: systemInbounds, rule_set: remoteRuleSetTags, server: resolveDnsServerForOutbound(outbound) });
         }
         orderedRouteRules.push({ inbound: systemInbounds, rule_set: inlineTagName, outbound });
+        orderedDnsRules.push({ inbound: systemInbounds, rule_set: inlineTagName, server: resolveDnsServerForOutbound(outbound) });
         if (Array.isArray(builtin.entries) && builtin.entries.length) {
           orderedInlineRuleSets.push({
             type: 'inline',
@@ -776,6 +783,7 @@ export class ProxyService {
         customRulesetBuckets.set(tag, bucket);
         orderedInlineRuleSets.push(bucket);
         orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
+        orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
       }
     });
 
@@ -818,14 +826,6 @@ export class ProxyService {
     routeRules.unshift({ action: 'sniff' });
 
     if (systemProxyEnabled) {
-      if (systemInbounds.length) {
-        routeRules.push({
-          inbound: systemInbounds,
-          action: 'resolve',
-          server: 'dns-local'
-        });
-      }
-
       if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
         const systemOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
         routeRules.push({
@@ -833,13 +833,10 @@ export class ProxyService {
           outbound: systemOutbound
         });
       } else if (systemInbounds.length && proxyMode === 'rule') {
-        const builtInDatabaseTags = ['geosite-cn', 'geoip-cn']
-          .filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
-
-        if (builtInDatabaseTags.length) {
+        if (builtInCnDirectRuleSetTags.length) {
           routeRules.push({
             inbound: systemInbounds,
-            rule_set: builtInDatabaseTags,
+            rule_set: builtInCnDirectRuleSetTags,
             outbound: 'direct'
           });
         }
@@ -897,7 +894,6 @@ export class ProxyService {
       }
     };
 
-    const dnsRuleSetTags = ['geosite-cn', 'geoip-cn'].filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
     const dnsRules = [
       {
         domain: LOCAL_DIRECT_DOMAINS,
@@ -909,8 +905,32 @@ export class ProxyService {
       }
     ];
 
-    if (dnsRuleSetTags.length) {
-      dnsRules.push({ rule_set: dnsRuleSetTags, server: 'dns-local' });
+    if (systemProxyEnabled && systemInbounds.length) {
+      if (proxyMode === 'direct') {
+        dnsRules.push({
+          inbound: systemInbounds,
+          server: 'dns-local'
+        });
+      } else if (proxyMode === 'global') {
+        dnsRules.push({
+          inbound: systemInbounds,
+          server: resolveDnsServerForOutbound(activeOutbound)
+        });
+      } else if (proxyMode === 'rule') {
+        if (builtInCnDirectRuleSetTags.length) {
+          dnsRules.push({
+            inbound: systemInbounds,
+            rule_set: builtInCnDirectRuleSetTags,
+            server: 'dns-local'
+          });
+        }
+
+        orderedDnsRules.forEach((rule) => dnsRules.push(rule));
+        dnsRules.push({
+          inbound: systemInbounds,
+          server: resolveDnsServerForOutbound(activeOutbound)
+        });
+      }
     }
 
     return {

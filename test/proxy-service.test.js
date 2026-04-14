@@ -145,28 +145,6 @@ test('uses remote default domain resolver and local outbound resolver for hostna
   assert.equal(config.outbounds[0].domain_resolver, 'dns-local');
 });
 
-test('resolves system proxy destinations with local dns before routing', () => {
-  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
-  service.setNodes([{ id: 'n1', type: 'socks', server: 'example.com', port: 1080 }]);
-
-  const config = service.generateConfig({
-    activeNodeId: 'n1',
-    proxyMode: 'rule',
-    systemProxyEnabled: true,
-    systemProxyHttpPort: 20101,
-    systemProxySocksPort: 20100
-  });
-
-  assert.equal(
-    config.route.rules.some((rule) => Array.isArray(rule.inbound)
-      && rule.inbound.includes('system-http')
-      && rule.inbound.includes('system-socks')
-      && rule.action === 'resolve'
-      && rule.server === 'dns-local'),
-    true
-  );
-});
-
 test('keeps private traffic direct in rule mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
@@ -202,6 +180,13 @@ test('keeps local traffic direct in global mode', () => {
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'builtin-local-bypass' && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn')), false);
   assert.equal(config.route.final, 'out-n1');
+  assert.equal(
+    config.dns.rules.some((rule) => Array.isArray(rule.inbound)
+      && rule.inbound.includes('system-socks')
+      && rule.inbound.includes('system-http')
+      && rule.server === 'dns-remote'),
+    true
+  );
 });
 
 test('adds localhost and lan domain bypass rules', () => {
@@ -264,6 +249,13 @@ test('forces system traffic direct in direct mode', () => {
 
   assert.equal(config.route.final, 'direct');
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'direct'), true);
+  assert.equal(
+    config.dns.rules.some((rule) => Array.isArray(rule.inbound)
+      && rule.inbound.includes('system-socks')
+      && rule.inbound.includes('system-http')
+      && rule.server === 'dns-local'),
+    true
+  );
 });
 
 test('uses manual rules for system proxy routing in rule mode', () => {
@@ -288,6 +280,16 @@ test('uses manual rules for system proxy routing in rule mode', () => {
   assert.equal(config.log.level, 'debug');
   assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag.startsWith('usr-rule-')), true);
   assert.equal(config.route.rules.some((rule) => rule.rule_set && String(rule.rule_set).startsWith('usr-rule-')), true);
+  assert.equal(config.dns.rules.some((rule) => rule.rule_set === 'usr-rule-1' && rule.server === 'dns-local'), true);
+  assert.equal(config.dns.rules.some((rule) => rule.rule_set === 'usr-rule-2' && rule.server === 'dns-remote'), true);
+  assert.equal(
+    config.dns.rules.some((rule) => Array.isArray(rule.inbound)
+      && rule.inbound.includes('system-socks')
+      && rule.inbound.includes('system-http')
+      && rule.server === 'dns-remote'
+      && !rule.rule_set),
+    true
+  );
 });
 
 test('reports active routing observability labels for rule mode', () => {
@@ -498,6 +500,19 @@ test('rule mode adds built-in cn direct database rules when files exist', () => 
   assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geosite-cn' && ruleset.type === 'local'), true);
   assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag === 'geoip-cn' && ruleset.type === 'local'), true);
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn') && rule.outbound === 'direct'), true);
+  assert.equal(
+    config.dns.rules.some((rule) => Array.isArray(rule.rule_set)
+      && rule.rule_set.includes('geosite-cn')
+      && Array.isArray(rule.inbound)
+      && rule.inbound.includes('system-socks')
+      && rule.inbound.includes('system-http')
+      && rule.server === 'dns-local'),
+    true
+  );
+  assert.equal(
+    config.dns.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn') && !rule.inbound),
+    false
+  );
 });
 
 test('rule mode skips built-in cn direct database rules when files are missing', () => {
