@@ -200,6 +200,8 @@ test('adds localhost and lan domain bypass rules', () => {
   assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain) && rule.domain.includes('localhost')), true);
   assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('local')), true);
   assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('lan')), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.domain) && rule.domain.includes('localhost') && rule.action === 'resolve' && rule.server === 'dns-hosts'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('local') && rule.action === 'resolve' && rule.server === 'dns-platform'), true);
 });
 
 test('routes localhost dns through hosts and lan suffixes through platform resolver', () => {

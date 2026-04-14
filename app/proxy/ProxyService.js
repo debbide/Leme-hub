@@ -804,6 +804,16 @@ export class ProxyService {
       rule_set: localBypassRuleSetTag,
       outbound: 'direct'
     });
+    routeRules.unshift({
+      domain_suffix: LOCAL_DIRECT_DOMAIN_SUFFIXES,
+      action: 'resolve',
+      server: PLATFORM_LOCAL_DNS_SERVER_TAG
+    });
+    routeRules.unshift({
+      domain: LOCAL_DIRECT_DOMAINS,
+      action: 'resolve',
+      server: LOCALHOST_DNS_SERVER_TAG
+    });
 
     routeRules.unshift({ action: 'sniff' });
 
