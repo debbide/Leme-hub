@@ -386,10 +386,6 @@ export class ProxyService {
         server_port: node.port
       };
 
-      if (serverHost && !isIpLiteralHost(serverHost)) {
-        outbound.domain_resolver = 'dns-local';
-      }
-
       if (node.password) {
         outbound.password = node.password;
       }
@@ -448,8 +444,6 @@ export class ProxyService {
 
         if (node.alpn) {
           outbound.tls.alpn = toList(node.alpn);
-        } else if (node.transport === 'ws') {
-          outbound.tls.alpn = ['http/1.1'];
         }
 
         applyIfPresent(outbound.tls, 'min_version', node.tls_min_version);
@@ -974,7 +968,7 @@ export class ProxyService {
         ],
         rules: routeRules,
         auto_detect_interface: true,
-        default_domain_resolver: 'dns-remote',
+        default_domain_resolver: 'dns-local',
         final: finalOutbound
       },
       experimental: {

@@ -131,7 +131,7 @@ test('uses ipv6 loopback clash api when proxy listener is ipv6', () => {
   assert.equal(config.experimental.clash_api.external_controller, '[::1]:9095');
 });
 
-test('uses remote default domain resolver and local outbound resolver for hostnames', () => {
+test('uses local default domain resolver for hostnames without outbound override', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: 'example.com', port: 1080 }]);
 
@@ -141,8 +141,32 @@ test('uses remote default domain resolver and local outbound resolver for hostna
     dnsDirectServer: 'https://dns.alidns.com/dns-query'
   });
 
-  assert.equal(config.route.default_domain_resolver, 'dns-remote');
-  assert.equal(config.outbounds[0].domain_resolver, 'dns-local');
+  assert.equal(config.route.default_domain_resolver, 'dns-local');
+  assert.equal(Object.hasOwn(config.outbounds[0], 'domain_resolver'), false);
+});
+
+test('does not force ws tls alpn when node does not specify one', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vless',
+    server: 'edge.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    security: 'tls',
+    sni: 'edge.example',
+    transport: 'ws',
+    wsHost: 'edge.example',
+    wsPath: '/vless-argo?ed=2560'
+  }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(outbound.tls.alpn, undefined);
+  assert.equal(outbound.transport.path, '/vless-argo');
+  assert.equal(outbound.transport.max_early_data, 2560);
+  assert.equal(outbound.transport.early_data_header_name, 'Sec-WebSocket-Protocol');
 });
 
 test('keeps private traffic direct in rule mode', () => {
