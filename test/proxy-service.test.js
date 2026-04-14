@@ -145,6 +145,28 @@ test('uses remote default domain resolver and local outbound resolver for hostna
   assert.equal(config.outbounds[0].domain_resolver, 'dns-local');
 });
 
+test('resolves system proxy destinations with local dns before routing', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: 'example.com', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  assert.equal(
+    config.route.rules.some((rule) => Array.isArray(rule.inbound)
+      && rule.inbound.includes('system-http')
+      && rule.inbound.includes('system-socks')
+      && rule.action === 'resolve'
+      && rule.server === 'dns-local'),
+    true
+  );
+});
+
 test('keeps private traffic direct in rule mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

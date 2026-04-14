@@ -818,6 +818,14 @@ export class ProxyService {
     routeRules.unshift({ action: 'sniff' });
 
     if (systemProxyEnabled) {
+      if (systemInbounds.length) {
+        routeRules.push({
+          inbound: systemInbounds,
+          action: 'resolve',
+          server: 'dns-local'
+        });
+      }
+
       if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
         const systemOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
         routeRules.push({
