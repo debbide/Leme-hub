@@ -3,8 +3,55 @@ import { execFile } from 'child_process';
 
 const execFileAsync = promisify(execFile);
 const WINDOWS_PROXY_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+const WINDOWS_PROXY_OVERRIDE = [
+  'localhost',
+  '127.*',
+  '::1',
+  '[::1]',
+  '<local>',
+  '*.local',
+  '*.lan',
+  '*.home.arpa',
+  '10.*',
+  '172.16.*',
+  '172.17.*',
+  '172.18.*',
+  '172.19.*',
+  '172.20.*',
+  '172.21.*',
+  '172.22.*',
+  '172.23.*',
+  '172.24.*',
+  '172.25.*',
+  '172.26.*',
+  '172.27.*',
+  '172.28.*',
+  '172.29.*',
+  '172.30.*',
+  '172.31.*',
+  '192.168.*',
+  '169.254.*',
+  'fc*',
+  'fd*',
+  'fe80:*'
+].join(';');
+const LINUX_PROXY_IGNORE_HOSTS = [
+  'localhost',
+  '127.0.0.0/8',
+  '::1',
+  '*.local',
+  '*.lan',
+  '*.home.arpa',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '169.254.0.0/16',
+  'fc00::/7',
+  'fe80::/10'
+];
 
 const trimValue = (value) => String(value || '').trim();
+const formatGsettingsStringArray = (values) => `[${values.map((value) => `'${String(value).replace(/'/g, "\\'")}'`).join(', ')}]`;
 const clearProxyEndpointsIfDisabled = (status) => status.enabled
   ? status
   : {
@@ -176,6 +223,7 @@ export class SystemProxyManager {
     const proxyServer = `http=${host}:${httpPort};https=${host}:${httpPort};socks=${host}:${socksPort}`;
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', proxyServer, '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', WINDOWS_PROXY_OVERRIDE, '/f']);
   }
 
   async disableWindowsProxy() {
@@ -230,6 +278,7 @@ export class SystemProxyManager {
     await this.gsettingsSet('org.gnome.system.proxy.https', 'port', String(httpPort));
     await this.gsettingsSet('org.gnome.system.proxy.socks', 'host', host);
     await this.gsettingsSet('org.gnome.system.proxy.socks', 'port', String(socksPort));
+    await this.gsettingsSet('org.gnome.system.proxy', 'ignore-hosts', formatGsettingsStringArray(LINUX_PROXY_IGNORE_HOSTS));
     await this.gsettingsSet('org.gnome.system.proxy', 'mode', 'manual');
   }
 

@@ -59,6 +59,10 @@ test('windows apply writes http and socks proxy server', async () => {
   await manager.setWindowsProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
 
   assert.equal(calls[1][8], 'http=127.0.0.1:20101;https=127.0.0.1:20101;socks=127.0.0.1:20100');
+  assert.equal(calls[2][4], 'ProxyOverride');
+  assert.match(calls[2][8], /localhost/);
+  assert.match(calls[2][8], /\*\.local/);
+  assert.match(calls[2][8], /192\.168\.\*/);
 });
 
 test('linux apply sets http and socks endpoints together', async () => {
@@ -80,6 +84,7 @@ test('linux apply sets http and socks endpoints together', async () => {
     ['gsettings', 'set', 'org.gnome.system.proxy.https', 'port', '20101'],
     ['gsettings', 'set', 'org.gnome.system.proxy.socks', 'host', '127.0.0.1'],
     ['gsettings', 'set', 'org.gnome.system.proxy.socks', 'port', '20100'],
+    ['gsettings', 'set', 'org.gnome.system.proxy', 'ignore-hosts', "['localhost', '127.0.0.0/8', '::1', '*.local', '*.lan', '*.home.arpa', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', 'fc00::/7', 'fe80::/10']"],
     ['gsettings', 'set', 'org.gnome.system.proxy', 'mode', 'manual']
   ]);
 });

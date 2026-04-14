@@ -17,6 +17,19 @@ import { formatHostForUrl, formatHostPort, isIpLiteralHost, normalizeHost, resol
 
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
+const LOCAL_DIRECT_RULESET_TAG = 'builtin-local-bypass';
+const LOCAL_DIRECT_IP_CIDRS = [
+  '127.0.0.0/8',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '169.254.0.0/16',
+  '::1/128',
+  'fc00::/7',
+  'fe80::/10'
+];
+const LOCAL_DIRECT_DOMAINS = ['localhost', 'localhost.'];
+const LOCAL_DIRECT_DOMAIN_SUFFIXES = ['local', 'lan', 'home.arpa', 'localdomain'];
 
 const resolveExistingFilePath = (candidatePath) => {
   const resolved = path.resolve(candidatePath);
@@ -655,6 +668,21 @@ export class ProxyService {
     const orderedRouteRules = [];
     const customRulesetBuckets = new Map();
     const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
+    const localBypassRuleSetTag = registerRoutingHit(LOCAL_DIRECT_RULESET_TAG, {
+      kind: 'builtin',
+      name: 'Local Bypass',
+      target: 'direct',
+      descriptor: 'localhost / lan'
+    });
+
+    orderedInlineRuleSets.push({
+      type: 'inline',
+      tag: localBypassRuleSetTag,
+      rules: [
+        { domain: LOCAL_DIRECT_DOMAINS },
+        { domain_suffix: LOCAL_DIRECT_DOMAIN_SUFFIXES }
+      ]
+    });
 
     normalizedRoutingItems.forEach((item, index) => {
       if (!item || item.enabled === false) return;
@@ -762,12 +790,18 @@ export class ProxyService {
       }))
     ];
 
-    if (proxyMode === 'rule' || !systemProxyEnabled) {
-      routeRules.unshift({
-        ip_is_private: true,
-        outbound: 'direct'
-      });
-    }
+    routeRules.unshift({
+      ip_is_private: true,
+      outbound: 'direct'
+    });
+    routeRules.unshift({
+      ip_cidr: LOCAL_DIRECT_IP_CIDRS,
+      outbound: 'direct'
+    });
+    routeRules.unshift({
+      rule_set: localBypassRuleSetTag,
+      outbound: 'direct'
+    });
 
     routeRules.unshift({ action: 'sniff' });
 

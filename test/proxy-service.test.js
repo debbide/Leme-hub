@@ -158,11 +158,13 @@ test('keeps private traffic direct in rule mode', () => {
   });
 
   assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true && rule.outbound === 'direct'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.ip_cidr) && rule.ip_cidr.includes('127.0.0.0/8') && rule.outbound === 'direct'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'builtin-local-bypass' && rule.outbound === 'direct'), true);
   assert.equal(config.route.final, 'direct');
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
 });
 
-test('sends all traffic to active node in global mode', () => {
+test('keeps local traffic direct in global mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
 
@@ -174,9 +176,30 @@ test('sends all traffic to active node in global mode', () => {
     systemProxySocksPort: 20100
   });
 
-  assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true), false);
+  assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true && rule.outbound === 'direct'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'builtin-local-bypass' && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn')), false);
   assert.equal(config.route.final, 'out-n1');
+});
+
+test('adds localhost and lan domain bypass rules', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  const localBypassRuleSet = config.route.rule_set.find((ruleset) => ruleset.tag === 'builtin-local-bypass');
+
+  assert.ok(localBypassRuleSet);
+  assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain) && rule.domain.includes('localhost')), true);
+  assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('local')), true);
+  assert.equal(localBypassRuleSet.rules.some((rule) => Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes('lan')), true);
 });
 
 test('forces system traffic direct in direct mode', () => {
