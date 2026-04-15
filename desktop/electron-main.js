@@ -17,6 +17,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const BACKGROUND_ARG = '--background';
 const WINDOW_BACKGROUND_COLOR = '#0a0a0e';
+const DESKTOP_NET_TRACE_ENABLED = String(process.env.LEME_DESKTOP_NET_TRACE || '').trim() === '1';
 const DESKTOP_NET_TRACE_HOSTS = [
   'chatgpt.com',
   'openai.com',
@@ -85,6 +86,13 @@ async function refreshWindowCacheIfNeeded(window, context) {
   } catch {
     // ignore marker write failures and continue loading
   }
+}
+
+function logDesktopEvent(context, message, level = 'log') {
+  const line = `[desktop] ${message}`;
+  context?.store?.appendLog?.(line);
+  const logger = level === 'error' ? console.error : console.log;
+  logger(line);
 }
 
 function logDesktopNet(context, message) {
@@ -328,6 +336,7 @@ async function createWindow() {
     minWidth: 1080,
     minHeight: 720,
     autoHideMenuBar: true,
+    show: false,
     backgroundColor: WINDOW_BACKGROUND_COLOR,
     webPreferences: {
       contextIsolation: true,
@@ -349,27 +358,41 @@ async function createWindow() {
     mainWindow = null;
   });
 
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindow.show();
+  });
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) {
       return;
     }
-    console.error(`[desktop] failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
+    logDesktopEvent(context, `failed to load ${validatedURL}: ${errorCode} ${errorDescription}`, 'error');
   });
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error(`[desktop] renderer exited: ${details.reason}`);
+    logDesktopEvent(context, `renderer exited: ${details.reason}`, 'error');
   });
 
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     if (level >= 2) {
-      console.error(`[renderer] ${message} (${sourceId}:${line})`);
+      const rendered = `[renderer] ${message} (${sourceId}:${line})`;
+      context?.store?.appendLog?.(rendered);
+      console.error(rendered);
     }
   });
 
-  await installDesktopNetworkDiagnostics(mainWindow, context);
+  if (DESKTOP_NET_TRACE_ENABLED) {
+    await installDesktopNetworkDiagnostics(mainWindow, context);
+  }
   await refreshWindowCacheIfNeeded(mainWindow, context);
 
   await mainWindow.loadURL(context.runtime.publicOrigin);
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
   return mainWindow;
 }
 
