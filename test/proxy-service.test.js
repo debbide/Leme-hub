@@ -431,6 +431,52 @@ test('uses selected node from node group for manual system proxy rule', () => {
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-group' && rule.outbound === 'out-n2'), true);
 });
 
+test('uses system default node for unmatched system proxy traffic and dns when it differs from active node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    systemDefaultNodeId: 'n2',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    customRules: [
+      { id: 'rule-default', type: 'domain_keyword', value: 'stream', action: 'default' }
+    ]
+  });
+
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-default' && rule.outbound === 'out-n2'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n2'), true);
+  assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.server === 'dns-system-remote'), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-system-remote' && server.detour === 'out-n2'), true);
+});
+
+test('uses system default node in global mode when it differs from active node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    systemDefaultNodeId: 'n2',
+    proxyMode: 'global',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  assert.equal(config.route.final, 'out-n1');
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n2'), true);
+  assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.server === 'dns-system-remote'), true);
+});
+
 test('reports inactive routing observability labels when system proxy is disabled', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);

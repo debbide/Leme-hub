@@ -82,6 +82,31 @@
                     <select id="dash-active-node-select" class="dash-node-select">
                       <option value="">载入中...</option>
                     </select>
+                    <section class="dashboard-auto-switch-panel">
+                      <div class="dashboard-auto-switch-head">
+                        <label class="dashboard-auto-switch-toggle" for="dash-system-auto-switch-enabled">
+                          <input type="checkbox" id="dash-system-auto-switch-enabled">
+                          <span>系统代理自动切换</span>
+                        </label>
+                        <span class="dashboard-auto-switch-hint">固定 18999 入口，按时间在节点组内随机切换</span>
+                      </div>
+                      <div class="dashboard-auto-switch-grid">
+                        <label class="dashboard-auto-switch-field">
+                          <span>节点组</span>
+                          <select id="dash-system-auto-switch-group" class="dash-node-select">
+                            <option value="">请选择节点组</option>
+                          </select>
+                        </label>
+                        <label class="dashboard-auto-switch-field">
+                          <span>切换间隔（分钟）</span>
+                          <input id="dash-system-auto-switch-interval" class="dashboard-auto-switch-input" type="number" min="1" step="1" value="10">
+                        </label>
+                      </div>
+                      <div class="dashboard-auto-switch-meta">
+                        <span id="dash-system-auto-switch-current">当前接管节点：--</span>
+                        <span id="dash-system-auto-switch-next">下次切换：--</span>
+                      </div>
+                    </section>
                     <h2 id="master-status-text">系统代理已关闭</h2>
                   </div>
                 </section>

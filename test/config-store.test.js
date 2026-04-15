@@ -89,3 +89,15 @@ test('desktop mode migrates legacy unified proxy preference into system proxy ca
   assert.equal(settings.systemProxyEnabled, true);
   assert.equal(settings.systemProxyCaptureEnabled, true);
 });
+
+test('initializes system proxy auto switch settings with sane defaults', () => {
+  const paths = createPaths();
+
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+  const settings = store.getSettings();
+
+  assert.equal(settings.systemProxyAutoSwitchEnabled, false);
+  assert.equal(settings.systemProxyAutoSwitchGroupId, null);
+  assert.equal(settings.systemProxyAutoSwitchIntervalSec, 600);
+  assert.equal(settings.systemProxyAutoSwitchLastAt, null);
+});

@@ -1,7 +1,7 @@
 import { createToastController, showConfirmModal, showInputModal } from './lib/ui.js';
 import { createNodesPanelController } from './lib/nodes-panel.js';
 import { createRoutingController } from './lib/routing-controller.js';
-import { pollTraffic as pollTrafficView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
+import { pollTraffic as pollTrafficView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyAutoSwitchControls as renderSystemProxyAutoSwitchControlsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
 import { createNodeGroupsController } from './lib/node-groups-controller.js';
 import { bindNodeFormRuntime, closeNodeEditModal as closeNodeEditModalView, openNodeEditModal as openNodeEditModalView, prepareManualNodeDraft, saveNodeEdit } from './lib/node-edit-modal.js';
 import { bindNodeEditEvents } from './lib/node-edit-bindings.js';
@@ -41,6 +41,11 @@ const toastContainer = document.querySelector('#toast-container');
 const coreStatusIndicator = document.querySelector('#core-status-indicator');
 const systemProxyModeSelect = document.querySelector('.system-proxy-mode');
 const dashActiveNodeSelect = document.querySelector('#dash-active-node-select');
+const dashSystemAutoSwitchToggle = document.querySelector('#dash-system-auto-switch-enabled');
+const dashSystemAutoSwitchGroupSelect = document.querySelector('#dash-system-auto-switch-group');
+const dashSystemAutoSwitchIntervalInput = document.querySelector('#dash-system-auto-switch-interval');
+const dashSystemAutoSwitchCurrent = document.querySelector('#dash-system-auto-switch-current');
+const dashSystemAutoSwitchNext = document.querySelector('#dash-system-auto-switch-next');
 const dashUptime = document.querySelector('#dash-uptime');
 const dashSpeedValue = document.querySelector('#dash-speed-value');
 const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
@@ -269,6 +274,15 @@ const renderProxyEndpoints = (proxyProfile = {}) => renderProxyEndpointsView({
   sidebarDefaultProxy,
 });
 
+const renderSystemProxyAutoSwitchControls = (proxyProfile = {}) => renderSystemProxyAutoSwitchControlsView({
+  proxyProfile,
+  dashSystemAutoSwitchToggle,
+  dashSystemAutoSwitchGroupSelect,
+  dashSystemAutoSwitchIntervalInput,
+  dashSystemAutoSwitchCurrent,
+  dashSystemAutoSwitchNext,
+});
+
 const updateCoreStatus = (core) => updateCoreStatusView({
   core,
   setCurrentCoreState: (value) => { currentCoreState = value; },
@@ -282,6 +296,7 @@ const updateCoreStatus = (core) => updateCoreStatusView({
   setUptimeTimer: (value) => { uptimeTimer = value; },
   dashUptime,
   renderProxyEndpoints,
+  renderSystemProxyAutoSwitchControls,
 });
 
 
@@ -325,6 +340,7 @@ const nodeGroupsController = createNodeGroupsController({
   nodeGroupSearchCount,
   requestJson,
   showToast,
+  showInputModal,
   updateCoreStatus,
   loadNodes: () => loadNodes(),
   showInlineMessage,
@@ -563,7 +579,11 @@ bindSystemEvents({
   loadNodes,
   loadSystemStatus,
   dashActiveNodeSelect,
+  dashSystemAutoSwitchToggle,
+  dashSystemAutoSwitchGroupSelect,
+  dashSystemAutoSwitchIntervalInput,
   renderSystemProxyNodeOptions,
+  renderSystemProxyAutoSwitchControls,
   getNodesData: () => nodesPanel.getNodesData(),
   updateRestartWarning,
   getCurrentCoreState: () => currentCoreState,

@@ -39,6 +39,7 @@ export const createNodeGroupsController = ({
   nodeGroupSearchCount,
   requestJson,
   showToast,
+  showInputModal,
   updateCoreStatus,
   loadNodes,
   showInlineMessage,
@@ -148,9 +149,33 @@ export const createNodeGroupsController = ({
       await loadNodeGroups();
     },
     onCountryOverride: async (nodeId) => {
+      const node = getRoutingNodeOptions().find((item) => item.id === nodeId);
+      if (!node) {
+        return;
+      }
+
+      const currentValue = String(node.countryCodeOverride || node.countryCode || '').trim().toUpperCase();
+      const input = await showInputModal('设置国家代码（ISO2，留空清除手动覆盖）', currentValue);
+      if (input === null) {
+        return;
+      }
+
+      const normalized = String(input || '').trim().toUpperCase();
+      if (normalized && !/^[A-Z]{2}$/u.test(normalized)) {
+        showToast('国家代码格式错误，请输入 2 位字母，例如 JP / US', 'error');
+        return;
+      }
+
       try {
-        await requestJson('/api/nodes/country', { method: 'PUT', body: JSON.stringify({ id: nodeId, countryCode: null }) });
+        const payload = await requestJson('/api/nodes/country', {
+          method: 'PUT',
+          body: JSON.stringify({ id: nodeId, countryCode: normalized || null })
+        });
+        if (payload.core) {
+          updateCoreStatus(payload.core);
+        }
         await Promise.all([loadNodes(), loadNodeGroups()]);
+        showToast(normalized ? '国家归属已更新' : '手动国家归属已清除', 'success');
       } catch (error) {
         showToast(`国家归属更新失败: ${error.message}`, 'error');
       }

@@ -8,7 +8,11 @@ export const bindSystemEvents = ({
   loadNodes,
   loadSystemStatus,
   dashActiveNodeSelect,
+  dashSystemAutoSwitchToggle,
+  dashSystemAutoSwitchGroupSelect,
+  dashSystemAutoSwitchIntervalInput,
   renderSystemProxyNodeOptions,
+  renderSystemProxyAutoSwitchControls,
   getNodesData,
   updateRestartWarning,
   getCurrentCoreState,
@@ -109,6 +113,97 @@ export const bindSystemEvents = ({
         if (getCurrentCoreState()?.proxy?.activeNodeId !== undefined) {
           dashActiveNodeSelect.value = getCurrentCoreState().proxy.activeNodeId || '';
         }
+      }
+    });
+  }
+
+  const restoreAutoSwitchControls = () => {
+    const proxy = getCurrentCoreState()?.proxy || {};
+    if (typeof renderSystemProxyAutoSwitchControls === 'function') {
+      renderSystemProxyAutoSwitchControls(proxy);
+    }
+  };
+
+  if (dashSystemAutoSwitchToggle) {
+    dashSystemAutoSwitchToggle.addEventListener('change', async (event) => {
+      const isEnabled = !!event.target.checked;
+      const groupId = dashSystemAutoSwitchGroupSelect?.value
+        || dashSystemAutoSwitchGroupSelect?.querySelector('option[value]:not([value=""])')?.value
+        || null;
+      if (isEnabled && !groupId) {
+        showToast('请先选择一个可用的节点组', 'error');
+        restoreAutoSwitchControls();
+        return;
+      }
+      try {
+        const payload = await requestJson('/api/system/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            systemProxyAutoSwitchEnabled: isEnabled,
+            ...(isEnabled ? { systemProxyAutoSwitchGroupId: groupId } : {})
+          })
+        });
+        if (payload.core) updateCoreStatus(payload.core);
+        updateRestartWarning(payload.restartRequired);
+        showToast(payload.autoRestarted
+          ? '系统代理自动切换已更新并自动应用'
+          : `系统代理自动切换已${isEnabled ? '开启' : '关闭'}`, 'success');
+      } catch (error) {
+        showToast(`自动切换设置失败: ${error.message}`, 'error');
+        restoreAutoSwitchControls();
+      }
+    });
+  }
+
+  if (dashSystemAutoSwitchGroupSelect) {
+    dashSystemAutoSwitchGroupSelect.addEventListener('change', async (event) => {
+      const groupId = event.target.value || null;
+      const currentAutoSwitch = getCurrentCoreState()?.proxy?.systemProxyAutoSwitch || {};
+      if (currentAutoSwitch.enabled && !groupId) {
+        showToast('开启自动切换时必须选择节点组', 'error');
+        restoreAutoSwitchControls();
+        return;
+      }
+      try {
+        const payload = await requestJson('/api/system/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            systemProxyAutoSwitchGroupId: groupId,
+            ...(currentAutoSwitch.enabled ? { systemProxyAutoSwitchEnabled: true } : {})
+          })
+        });
+        if (payload.core) updateCoreStatus(payload.core);
+        updateRestartWarning(payload.restartRequired);
+        showToast(payload.autoRestarted ? '自动切换节点组已切换并自动应用' : '自动切换节点组已更新', 'success');
+      } catch (error) {
+        showToast(`节点组更新失败: ${error.message}`, 'error');
+        restoreAutoSwitchControls();
+      }
+    });
+  }
+
+  if (dashSystemAutoSwitchIntervalInput) {
+    dashSystemAutoSwitchIntervalInput.addEventListener('change', async (event) => {
+      const rawMinutes = Number.parseInt(event.target.value, 10);
+      if (!Number.isInteger(rawMinutes) || rawMinutes < 1) {
+        showToast('切换时间必须是大于 0 的整数分钟', 'error');
+        restoreAutoSwitchControls();
+        return;
+      }
+
+      try {
+        const payload = await requestJson('/api/system/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            systemProxyAutoSwitchIntervalSec: rawMinutes * 60
+          })
+        });
+        if (payload.core) updateCoreStatus(payload.core);
+        updateRestartWarning(payload.restartRequired);
+        showToast('自动切换时间已更新', 'success');
+      } catch (error) {
+        showToast(`切换时间更新失败: ${error.message}`, 'error');
+        restoreAutoSwitchControls();
       }
     });
   }

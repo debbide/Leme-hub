@@ -45,6 +45,10 @@ const NODE_GROUP_ICON_MODES = ['auto', 'emoji', 'none'];
 const NODE_GROUP_AUTO_TEST_MIN_SEC = 60;
 const NODE_GROUP_AUTO_TEST_MAX_SEC = 3600;
 const NODE_GROUP_AUTO_TEST_DEFAULT_SEC = 300;
+const SYSTEM_PROXY_AUTO_SWITCH_MIN_SEC = 60;
+const SYSTEM_PROXY_AUTO_SWITCH_MAX_SEC = 86400;
+const SYSTEM_PROXY_AUTO_SWITCH_DEFAULT_SEC = 600;
+const SYSTEM_PROXY_AUTO_SWITCH_TICK_MS = 15000;
 
 const normalizeIsoTimestamp = (value) => {
   if (!value) {
@@ -64,6 +68,64 @@ const normalizeNodeGroupAutoTestIntervalSec = (value) => {
     return NODE_GROUP_AUTO_TEST_DEFAULT_SEC;
   }
   return Math.min(NODE_GROUP_AUTO_TEST_MAX_SEC, Math.max(NODE_GROUP_AUTO_TEST_MIN_SEC, parsed));
+};
+
+const normalizeSystemProxyAutoSwitchIntervalSec = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) {
+    return SYSTEM_PROXY_AUTO_SWITCH_DEFAULT_SEC;
+  }
+
+  return Math.min(SYSTEM_PROXY_AUTO_SWITCH_MAX_SEC, Math.max(SYSTEM_PROXY_AUTO_SWITCH_MIN_SEC, parsed));
+};
+
+const getNodeGroupById = (nodeGroups = [], groupId = null) => {
+  const normalizedGroupId = groupId == null ? null : String(groupId).trim();
+  if (!normalizedGroupId) {
+    return null;
+  }
+
+  return nodeGroups.find((group) => group.id === normalizedGroupId) || null;
+};
+
+const getNodeGroupSelectedNodeId = (group) => {
+  const selectedNodeId = group?.selectedNodeId == null ? null : String(group.selectedNodeId).trim();
+  if (!selectedNodeId) {
+    return null;
+  }
+
+  return Array.isArray(group?.nodeIds) && group.nodeIds.includes(selectedNodeId) ? selectedNodeId : null;
+};
+
+const normalizeSystemProxyAutoSwitchSettings = (settings = {}, nodeGroups = [], options = {}) => {
+  const { strict = false } = options;
+  const requestedEnabled = !!settings.systemProxyAutoSwitchEnabled;
+  const requestedGroupId = settings.systemProxyAutoSwitchGroupId == null
+    ? null
+    : String(settings.systemProxyAutoSwitchGroupId).trim() || null;
+  const group = getNodeGroupById(nodeGroups, requestedGroupId);
+  const selectedNodeId = getNodeGroupSelectedNodeId(group);
+
+  if (strict && requestedEnabled) {
+    if (!requestedGroupId) {
+      throw createHttpError('systemProxyAutoSwitchGroupId is required when auto switch is enabled', 400);
+    }
+    if (!group) {
+      throw createHttpError('systemProxyAutoSwitchGroupId must reference an existing node group', 400);
+    }
+    if (!selectedNodeId) {
+      throw createHttpError('systemProxyAutoSwitchGroupId must reference a node group with an active node', 400);
+    }
+  }
+
+  return {
+    enabled: requestedEnabled && Boolean(selectedNodeId),
+    groupId: group ? group.id : null,
+    intervalSec: normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec),
+    lastAt: normalizeIsoTimestamp(settings.systemProxyAutoSwitchLastAt),
+    group,
+    selectedNodeId
+  };
 };
 
 const normalizeNodeGroupLatencyCache = (value) => {
@@ -800,6 +862,12 @@ export class CoreManager {
       log: this.createLogger(),
       onRoutingHit: (hit) => this.appendRoutingHitHistory(hit)
     });
+
+    this._systemProxyAutoSwitchBusy = false;
+    this._systemProxyAutoSwitchTimer = setInterval(() => {
+      void this.runSystemProxyAutoSwitchTick();
+    }, SYSTEM_PROXY_AUTO_SWITCH_TICK_MS);
+    this._systemProxyAutoSwitchTimer.unref?.();
   }
 
   createLogger() {
@@ -898,6 +966,8 @@ export class CoreManager {
       normalizedNodeGroups = [];
     }
 
+    const normalizedSystemProxyAutoSwitch = normalizeSystemProxyAutoSwitchSettings(settings, normalizedNodeGroups);
+
     let normalizedRoutingItems;
     let customRules;
     let rulesets;
@@ -937,7 +1007,11 @@ export class CoreManager {
       || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
       || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
       || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
-      || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)) {
+      || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)
+      || !!settings.systemProxyAutoSwitchEnabled !== normalizedSystemProxyAutoSwitch.enabled
+      || (settings.systemProxyAutoSwitchGroupId ?? null) !== normalizedSystemProxyAutoSwitch.groupId
+      || settings.systemProxyAutoSwitchIntervalSec !== normalizedSystemProxyAutoSwitch.intervalSec
+      || (settings.systemProxyAutoSwitchLastAt ?? null) !== normalizedSystemProxyAutoSwitch.lastAt) {
       return this.store.saveSettings({
         ...settings,
         routingItems: normalizedRoutingItems,
@@ -946,7 +1020,11 @@ export class CoreManager {
         nodeGroups: normalizedNodeGroups,
         subscriptions: normalizedSubscriptions,
         nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
+        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
+        systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
+        systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
+        systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
+        systemProxyAutoSwitchLastAt: normalizedSystemProxyAutoSwitch.lastAt
       });
     }
 
@@ -958,7 +1036,11 @@ export class CoreManager {
       nodeGroups: normalizedNodeGroups,
       subscriptions: normalizedSubscriptions,
       nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-      nodeGroupLatencyCache: normalizedNodeGroupLatencyCache
+      nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
+      systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
+      systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
+      systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
+      systemProxyAutoSwitchLastAt: normalizedSystemProxyAutoSwitch.lastAt
     };
   }
 
@@ -1023,10 +1105,49 @@ export class CoreManager {
     return nodes[0]?.id || null;
   }
 
+  resolveSystemProxyDefaultNodeId(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    if (settings.systemProxyAutoSwitchEnabled) {
+      const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
+      const selectedNodeId = getNodeGroupSelectedNodeId(group);
+      if (selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
+        return selectedNodeId;
+      }
+    }
+
+    return this.resolveActiveNodeId(settings, nodes);
+  }
+
+  getSystemProxyAutoSwitchProfile(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
+    const selectedNodeId = getNodeGroupSelectedNodeId(group);
+    const effectiveNodeId = this.resolveSystemProxyDefaultNodeId(settings, nodes);
+    const effectiveNode = nodes.find((node) => node.id === effectiveNodeId) || null;
+    const lastAt = normalizeIsoTimestamp(settings.systemProxyAutoSwitchLastAt);
+    const intervalSec = normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec);
+    const nextAt = settings.systemProxyAutoSwitchEnabled && lastAt
+      ? new Date(Date.parse(lastAt) + (intervalSec * 1000)).toISOString()
+      : null;
+
+    return {
+      enabled: !!settings.systemProxyAutoSwitchEnabled,
+      groupId: settings.systemProxyAutoSwitchGroupId || null,
+      intervalSec,
+      lastAt,
+      nextAt,
+      group: group || null,
+      selectedNodeId,
+      selectedNode: selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) || null : null,
+      effectiveNodeId,
+      effectiveNode
+    };
+  }
+
   getProxyProfile() {
     const settings = this.getSettingsSnapshot();
     const nodes = this.store.getNodes();
     const activeNodeId = this.resolveActiveNodeId(settings, nodes);
+    const systemDefaultNodeId = this.resolveSystemProxyDefaultNodeId(settings, nodes);
+    const systemProxyAutoSwitch = this.getSystemProxyAutoSwitchProfile(settings, nodes);
     const listenHost = settings.proxyListenHost;
     const unifiedSocksPort = settings.systemProxySocksPort;
     const unifiedHttpPort = settings.systemProxyHttpPort;
@@ -1036,6 +1157,7 @@ export class CoreManager {
       systemProxyEnabled: !!settings.systemProxyEnabled,
       systemProxyCaptureEnabled: !!settings.systemProxyCaptureEnabled,
       activeNodeId,
+      systemDefaultNodeId,
       unifiedHttpPort,
       unifiedSocksPort,
       manualPortRangeStart: settings.proxyBasePort,
@@ -1062,7 +1184,9 @@ export class CoreManager {
       rulesets: settings.rulesets || [],
       routingItems: settings.routingItems || [],
       nodeGroups: settings.nodeGroups || [],
-      activeNode: nodes.find((node) => node.id === activeNodeId) || null
+      activeNode: nodes.find((node) => node.id === activeNodeId) || null,
+      systemDefaultNode: nodes.find((node) => node.id === systemDefaultNodeId) || null,
+      systemProxyAutoSwitch
     };
   }
 
@@ -1267,6 +1391,7 @@ export class CoreManager {
     const snapshot = this.getSettingsSnapshot();
     return {
       activeNodeId: this.resolveActiveNodeId(snapshot, nodes),
+      systemDefaultNodeId: this.resolveSystemProxyDefaultNodeId(snapshot, nodes),
       customRules: snapshot.customRules,
       rulesets: snapshot.rulesets || [],
       routingItems: snapshot.routingItems || [],
@@ -1374,10 +1499,42 @@ export class CoreManager {
       }
       next.nodeGroupLatencyCache = normalizeNodeGroupLatencyCache(patch.nodeGroupLatencyCache);
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled')) {
+      next.systemProxyAutoSwitchEnabled = !!patch.systemProxyAutoSwitchEnabled;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')) {
+      next.systemProxyAutoSwitchGroupId = patch.systemProxyAutoSwitchGroupId == null
+        ? null
+        : String(patch.systemProxyAutoSwitchGroupId).trim() || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchIntervalSec')) {
+      const parsedIntervalSec = Number.parseInt(patch.systemProxyAutoSwitchIntervalSec, 10);
+      if (!Number.isInteger(parsedIntervalSec)) {
+        throw createHttpError('systemProxyAutoSwitchIntervalSec must be an integer', 400);
+      }
+      next.systemProxyAutoSwitchIntervalSec = normalizeSystemProxyAutoSwitchIntervalSec(parsedIntervalSec);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchLastAt')) {
+      next.systemProxyAutoSwitchLastAt = normalizeIsoTimestamp(patch.systemProxyAutoSwitchLastAt);
+    }
 
     const nodeGroups = Array.isArray(next.nodeGroups)
       ? normalizeNodeGroups(next.nodeGroups, this.store.getNodes())
       : current.nodeGroups;
+    const systemProxyAutoSwitch = normalizeSystemProxyAutoSwitchSettings(next, nodeGroups, {
+      strict: Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled')
+        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')
+    });
+    const shouldResetSystemProxyAutoSwitchLastAt = systemProxyAutoSwitch.enabled
+      && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchLastAt')
+      && (
+        (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled') && !!patch.systemProxyAutoSwitchEnabled)
+        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')
+        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchIntervalSec')
+      );
+    const systemProxyAutoSwitchLastAt = shouldResetSystemProxyAutoSwitchLastAt
+      ? new Date().toISOString()
+      : systemProxyAutoSwitch.lastAt;
 
     if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
       next.customRules = normalizeCustomRules(next.customRules || [], nodeGroups);
@@ -1452,12 +1609,16 @@ export class CoreManager {
       activeNodeId,
       autoStart: !!next.autoStart,
       nodeGroupAutoTestIntervalSec: normalizeNodeGroupAutoTestIntervalSec(next.nodeGroupAutoTestIntervalSec),
-      nodeGroupLatencyCache: normalizeNodeGroupLatencyCache(next.nodeGroupLatencyCache)
+      nodeGroupLatencyCache: normalizeNodeGroupLatencyCache(next.nodeGroupLatencyCache),
+      systemProxyAutoSwitchEnabled: systemProxyAutoSwitch.enabled,
+      systemProxyAutoSwitchGroupId: systemProxyAutoSwitch.groupId,
+      systemProxyAutoSwitchIntervalSec: systemProxyAutoSwitch.intervalSec,
+      systemProxyAutoSwitchLastAt: systemProxyAutoSwitchLastAt
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
     this.refreshConnectionsServiceBaseUrl(saved);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -1501,6 +1662,71 @@ export class CoreManager {
       nodes: this.store.getNodes(),
       recentLogs: this.store.getRecentLogs(200)
     };
+  }
+
+  async runSystemProxyAutoSwitchTick() {
+    if (this._systemProxyAutoSwitchBusy) {
+      return false;
+    }
+
+    const settings = this.getSettingsSnapshot();
+    if (this.state.status !== 'running' || !settings.systemProxyEnabled || !settings.systemProxyAutoSwitchEnabled) {
+      return false;
+    }
+
+    const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
+    const selectedNodeId = getNodeGroupSelectedNodeId(group);
+    if (!group || !selectedNodeId) {
+      return false;
+    }
+
+    const intervalMs = normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec) * 1000;
+    const nowMs = Date.now();
+    const lastAtMs = settings.systemProxyAutoSwitchLastAt ? Date.parse(settings.systemProxyAutoSwitchLastAt) : Number.NaN;
+    if (Number.isFinite(lastAtMs) && (nowMs - lastAtMs) < intervalMs) {
+      return false;
+    }
+
+    const nodes = this.store.getNodes();
+    const validNodeIds = (Array.isArray(group.nodeIds) ? group.nodeIds : [])
+      .map((nodeId) => String(nodeId || '').trim())
+      .filter((nodeId) => nodes.some((node) => node.id === nodeId));
+    if (!validNodeIds.length) {
+      return false;
+    }
+
+    this._systemProxyAutoSwitchBusy = true;
+    try {
+      const currentSelectedNodeId = validNodeIds.includes(selectedNodeId) ? selectedNodeId : (validNodeIds[0] || null);
+      const candidateNodeIds = validNodeIds.length > 1
+        ? validNodeIds.filter((nodeId) => nodeId !== currentSelectedNodeId)
+        : validNodeIds;
+      const nextSelectedNodeId = candidateNodeIds[Math.floor(Math.random() * candidateNodeIds.length)] || currentSelectedNodeId;
+      const nextLastAt = new Date(nowMs).toISOString();
+
+      if (!nextSelectedNodeId || nextSelectedNodeId === currentSelectedNodeId) {
+        await this.updateSettings({
+          systemProxyAutoSwitchLastAt: nextLastAt
+        });
+        return false;
+      }
+
+      this.store.appendLog(`[CoreManager] System proxy auto-switch selected ${nextSelectedNodeId} from group ${group.id}`);
+      await this.updateSettings({
+        nodeGroups: (settings.nodeGroups || []).map((item) => (
+          item.id === group.id
+            ? { ...item, selectedNodeId: nextSelectedNodeId }
+            : item
+        )),
+        systemProxyAutoSwitchLastAt: nextLastAt
+      });
+      return true;
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] System proxy auto-switch failed: ${error.message}`);
+      return false;
+    } finally {
+      this._systemProxyAutoSwitchBusy = false;
+    }
   }
 
   async initializeGeoIp() {

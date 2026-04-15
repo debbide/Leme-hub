@@ -33,6 +33,7 @@ const LOCAL_DIRECT_DOMAINS = ['localhost', 'localhost.'];
 const LOCAL_DIRECT_DOMAIN_SUFFIXES = ['local', 'lan', 'home.arpa', 'localdomain'];
 const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
 const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
+const SYSTEM_REMOTE_DNS_SERVER_TAG = 'dns-system-remote';
 const FRAGMENTABLE_TLS_OUTBOUND_TYPES = new Set(['vmess', 'vless', 'trojan']);
 
 const resolveExistingFilePath = (candidatePath) => {
@@ -193,6 +194,7 @@ const normalizeImportedProxyLink = (value) => {
 const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
   const {
     activeNodeId = null,
+    systemDefaultNodeId = null,
     proxyMode = 'rule',
     customRules = [],
     rulesets = [],
@@ -207,6 +209,7 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     && rule.inbound.includes('system-http'));
   const systemFallback = rules[rules.length - 1];
   const activeOutbound = activeNodeId ? `out-${activeNodeId}` : 'direct';
+  const systemDefaultOutbound = systemDefaultNodeId ? `out-${systemDefaultNodeId}` : activeOutbound;
   const lines = [];
 
   if (!systemProxyEnabled) {
@@ -219,11 +222,14 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
       ? routingItems.length
       : customRules.length + rulesets.length;
     const label = hasRoutingItems ? 'routing item(s)' : 'manual rule(s)';
-    lines.push(`[Routing] rule routing active: ${routingItemCount} ${label}, active outbound ${activeOutbound}`);
+    const outboundLabel = systemDefaultOutbound === activeOutbound
+      ? `active outbound ${activeOutbound}`
+      : `system outbound ${systemDefaultOutbound} (active ${activeOutbound})`;
+    lines.push(`[Routing] rule routing active: ${routingItemCount} ${label}, ${outboundLabel}`);
   }
 
   if (systemProxyEnabled) {
-    const defaultOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
+    const defaultOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;
     const fallbackOutbound = systemFallback?.outbound || systemRule?.outbound || route.final || defaultOutbound;
     lines.push(`[Routing] unmatched system traffic -> ${fallbackOutbound}`);
   }
@@ -352,6 +358,7 @@ export class ProxyService {
   generateConfig(options = {}) {
     const {
       activeNodeId = null,
+      systemDefaultNodeId = null,
       proxyMode = 'rule',
       customRules = [],
       rulesets = [],
@@ -391,6 +398,7 @@ export class ProxyService {
     this.nodes = validNodes;
     this.updatePortMap();
     const effectiveNodeId = this.resolveDefaultNodeId(validNodes, activeNodeId);
+    const effectiveSystemNodeId = this.resolveDefaultNodeId(validNodes, systemDefaultNodeId || activeNodeId);
 
     const inbounds = validNodes.map((node, index) => ({
       type: 'socks',
@@ -626,6 +634,7 @@ export class ProxyService {
     }
 
     const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
+    const systemDefaultOutbound = effectiveSystemNodeId ? `out-${effectiveSystemNodeId}` : activeOutbound;
     const nodeGroupMap = new Map((nodeGroups || []).map((group) => [group.id, group]));
     this.routingHitMap = new Map();
     const registerRoutingHit = (tag, meta) => {
@@ -647,11 +656,11 @@ export class ProxyService {
           return `out-${group.selectedNodeId}`;
         }
       }
-      return activeOutbound;
+      return systemDefaultOutbound;
     };
     const buildRulesetOutbound = (ruleset) => {
       if (ruleset.target === 'direct') return 'direct';
-      if (ruleset.target === 'default') return activeOutbound;
+      if (ruleset.target === 'default') return systemDefaultOutbound;
       if (ruleset.target === 'node' && ruleset.nodeId && validNodes.some((node) => node.id === ruleset.nodeId)) {
         return `out-${ruleset.nodeId}`;
       }
@@ -661,7 +670,7 @@ export class ProxyService {
           return `out-${group.selectedNodeId}`;
         }
       }
-      return activeOutbound;
+      return systemDefaultOutbound;
     };
     const resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote';
     const upstreamServerDomains = [...new Set(validNodes
@@ -849,7 +858,7 @@ export class ProxyService {
 
     if (systemProxyEnabled) {
       if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
-        const systemOutbound = proxyMode === 'direct' ? 'direct' : activeOutbound;
+        const systemOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;
         routeRules.push({
           inbound: systemInbounds,
           outbound: systemOutbound
@@ -867,7 +876,7 @@ export class ProxyService {
 
         routeRules.push({
           inbound: systemInbounds,
-          outbound: activeOutbound
+          outbound: systemDefaultOutbound
         });
       }
     }
@@ -942,7 +951,7 @@ export class ProxyService {
       } else if (proxyMode === 'global') {
         dnsRules.push({
           inbound: systemInbounds,
-          server: resolveDnsServerForOutbound(activeOutbound)
+          server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG
         });
       } else if (proxyMode === 'rule') {
         if (builtInCnDirectRuleSetTags.length) {
@@ -956,7 +965,7 @@ export class ProxyService {
         orderedDnsRules.forEach((rule) => dnsRules.push(rule));
         dnsRules.push({
           inbound: systemInbounds,
-          server: resolveDnsServerForOutbound(activeOutbound)
+          server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG
         });
       }
     }
@@ -980,6 +989,7 @@ export class ProxyService {
           },
           buildDnsServer('dns-bootstrap', dnsBootstrapServer),
           buildDnsServer('dns-remote', dnsRemoteServer, String(activeOutbound || '').trim(), 'dns-bootstrap'),
+          buildDnsServer(SYSTEM_REMOTE_DNS_SERVER_TAG, dnsRemoteServer, String(systemDefaultOutbound || '').trim(), 'dns-bootstrap'),
           buildDnsServer('dns-local', dnsDirectServer, '', 'dns-bootstrap')
         ],
         rules: dnsRules,

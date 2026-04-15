@@ -35,6 +35,10 @@ const defaultSettings = (paths, options = {}) => {
     tlsFragmentEnabled: true,
     systemProxyEnabled: false,
     systemProxyCaptureEnabled: false,
+    systemProxyAutoSwitchEnabled: false,
+    systemProxyAutoSwitchGroupId: null,
+    systemProxyAutoSwitchIntervalSec: 600,
+    systemProxyAutoSwitchLastAt: null,
     autoStart: false,
     systemProxySocksPort: DEFAULT_SYSTEM_PROXY_SOCKS_PORT,
     systemProxyHttpPort: DEFAULT_SYSTEM_PROXY_HTTP_PORT,
@@ -81,6 +85,19 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
     : mode === 'desktop'
       ? normalized.systemProxyEnabled
       : false;
+  normalized.systemProxyAutoSwitchEnabled = !!normalized.systemProxyAutoSwitchEnabled;
+  normalized.systemProxyAutoSwitchGroupId = normalized.systemProxyAutoSwitchGroupId == null
+    ? null
+    : String(normalized.systemProxyAutoSwitchGroupId).trim() || null;
+  {
+    const parsedInterval = Number.parseInt(normalized.systemProxyAutoSwitchIntervalSec, 10);
+    normalized.systemProxyAutoSwitchIntervalSec = Number.isInteger(parsedInterval) ? parsedInterval : defaults.systemProxyAutoSwitchIntervalSec;
+  }
+  {
+    const lastAt = String(normalized.systemProxyAutoSwitchLastAt || '').trim();
+    const timestamp = lastAt ? Date.parse(lastAt) : Number.NaN;
+    normalized.systemProxyAutoSwitchLastAt = Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+  }
   if (!normalized.systemProxyEnabled) {
     normalized.systemProxyCaptureEnabled = false;
   }

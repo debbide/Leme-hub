@@ -5,6 +5,15 @@ const formatHostForUrl = (value) => {
   return host.includes(':') ? `[${host}]` : host;
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '--';
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return '--';
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    hour12: false
+  });
+};
+
 export const renderSystemProxyNodeOptions = ({ dashActiveNodeSelect, nodes, activeNodeId }) => {
   if (!dashActiveNodeSelect) return;
 
@@ -29,6 +38,57 @@ export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy })
   };
   if (sidebarDefaultProxy) {
     sidebarDefaultProxy.textContent = defaultEndpoint.url;
+  }
+};
+
+export const renderSystemProxyAutoSwitchControls = ({
+  proxyProfile = {},
+  dashSystemAutoSwitchToggle,
+  dashSystemAutoSwitchGroupSelect,
+  dashSystemAutoSwitchIntervalInput,
+  dashSystemAutoSwitchCurrent,
+  dashSystemAutoSwitchNext
+}) => {
+  const autoSwitch = proxyProfile.systemProxyAutoSwitch || {};
+  const nodeGroups = Array.isArray(proxyProfile.nodeGroups)
+    ? proxyProfile.nodeGroups.filter((group) => group && group.selectedNodeId)
+    : [];
+
+  if (dashSystemAutoSwitchGroupSelect) {
+    const currentValue = autoSwitch.groupId || '';
+    dashSystemAutoSwitchGroupSelect.innerHTML = [
+      `<option value="">${nodeGroups.length ? '请选择节点组' : '暂无可用节点组'}</option>`,
+      ...nodeGroups.map((group) => `<option value="${group.id}">${group.name || group.id}</option>`)
+    ].join('');
+    dashSystemAutoSwitchGroupSelect.value = nodeGroups.some((group) => group.id === currentValue) ? currentValue : '';
+    dashSystemAutoSwitchGroupSelect.disabled = nodeGroups.length === 0;
+  }
+
+  if (dashSystemAutoSwitchToggle) {
+    dashSystemAutoSwitchToggle.checked = !!autoSwitch.enabled;
+    dashSystemAutoSwitchToggle.disabled = nodeGroups.length === 0;
+  }
+
+  if (dashSystemAutoSwitchIntervalInput) {
+    const intervalMinutes = Math.max(1, Math.round((Number(autoSwitch.intervalSec) || 600) / 60));
+    dashSystemAutoSwitchIntervalInput.value = String(intervalMinutes);
+  }
+
+  if (dashSystemAutoSwitchCurrent) {
+    const currentNode = autoSwitch.effectiveNode?.name
+      || autoSwitch.effectiveNode?.server
+      || proxyProfile.systemDefaultNode?.name
+      || proxyProfile.systemDefaultNode?.server
+      || '--';
+    dashSystemAutoSwitchCurrent.textContent = autoSwitch.enabled
+      ? `当前接管节点：${currentNode}`
+      : `当前系统节点：${currentNode}`;
+  }
+
+  if (dashSystemAutoSwitchNext) {
+    dashSystemAutoSwitchNext.textContent = autoSwitch.enabled
+      ? `下次切换：${formatDateTime(autoSwitch.nextAt)}`
+      : '下次切换：未启用';
   }
 };
 
@@ -122,6 +182,7 @@ export const updateCoreStatus = ({
   setUptimeTimer,
   dashUptime,
   renderProxyEndpoints,
+  renderSystemProxyAutoSwitchControls,
 }) => {
   if (!core) return;
   setCurrentCoreState(core);
@@ -133,6 +194,9 @@ export const updateCoreStatus = ({
   const unifiedProxyEnabled = !!proxyProfile.systemProxyEnabled;
 
   renderProxyEndpoints(proxyProfile);
+  if (typeof renderSystemProxyAutoSwitchControls === 'function') {
+    renderSystemProxyAutoSwitchControls(proxyProfile);
+  }
 
   if (systemProxyModeSelect && proxyProfile.mode) {
     systemProxyModeSelect.value = proxyProfile.mode;

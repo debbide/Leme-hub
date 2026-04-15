@@ -13,6 +13,10 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
     proxyBasePort: 20000,
     systemProxyEnabled: false,
     systemProxyCaptureEnabled: false,
+    systemProxyAutoSwitchEnabled: false,
+    systemProxyAutoSwitchGroupId: null,
+    systemProxyAutoSwitchIntervalSec: 600,
+    systemProxyAutoSwitchLastAt: null,
     systemProxySocksPort: 18998,
     systemProxyHttpPort: 18999,
     dnsRemoteServer: 'https://cloudflare-dns.com/dns-query',
@@ -990,6 +994,78 @@ test('getStatus formats ipv6 unified proxy endpoints with brackets', () => {
     port: 18998,
     url: 'socks5://[::1]:18998'
   });
+});
+
+test('getStatus exposes system proxy auto switch profile and effective node', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    activeNodeId: 'n1',
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }],
+    systemProxyAutoSwitchEnabled: true,
+    systemProxyAutoSwitchGroupId: 'g1',
+    systemProxyAutoSwitchIntervalSec: 900,
+    systemProxyAutoSwitchLastAt: '2026-04-15T10:00:00.000Z'
+  });
+
+  const status = manager.getStatus();
+
+  assert.equal(status.proxy.activeNodeId, 'n1');
+  assert.equal(status.proxy.systemDefaultNodeId, 'n2');
+  assert.equal(status.proxy.systemDefaultNode?.id, 'n2');
+  assert.equal(status.proxy.systemProxyAutoSwitch.enabled, true);
+  assert.equal(status.proxy.systemProxyAutoSwitch.groupId, 'g1');
+  assert.equal(status.proxy.systemProxyAutoSwitch.intervalSec, 900);
+  assert.equal(status.proxy.systemProxyAutoSwitch.effectiveNodeId, 'n2');
+  assert.equal(status.proxy.systemProxyAutoSwitch.nextAt, '2026-04-15T10:15:00.000Z');
+});
+
+test('updateSettings rejects enabling system proxy auto switch without a valid node group', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    systemProxyAutoSwitchEnabled: true
+  }), /systemProxyAutoSwitchGroupId is required/);
+});
+
+test('runSystemProxyAutoSwitchTick rotates the selected group node and persists timestamp', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    systemProxyEnabled: true,
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n1' }],
+    systemProxyAutoSwitchEnabled: true,
+    systemProxyAutoSwitchGroupId: 'g1',
+    systemProxyAutoSwitchIntervalSec: 60,
+    systemProxyAutoSwitchLastAt: '2000-01-01T00:00:00.000Z'
+  });
+
+  manager.state.status = 'running';
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const switched = await manager.runSystemProxyAutoSwitchTick();
+    const settings = manager.getSettingsSnapshot();
+
+    assert.equal(switched, true);
+    assert.equal(restarted, true);
+    assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
+    assert.equal(settings.systemProxyAutoSwitchLastAt !== null, true);
+  } finally {
+    Math.random = originalRandom;
+  }
 });
 
 test('applySystemProxy uses current unified proxy ports', async () => {
