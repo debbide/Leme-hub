@@ -29,6 +29,74 @@ export const requestJson = async (url, options = {}) => {
   return body;
 };
 
+const removeClipboardTextarea = (textarea) => {
+  if (!textarea) {
+    return;
+  }
+
+  if (typeof textarea.remove === 'function') {
+    textarea.remove();
+    return;
+  }
+
+  if (textarea.parentNode && typeof textarea.parentNode.removeChild === 'function') {
+    textarea.parentNode.removeChild(textarea);
+  }
+};
+
+const copyTextWithExecCommand = (value) => {
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
+    return false;
+  }
+
+  const container = document.body || document.documentElement;
+  if (!container || typeof container.appendChild !== 'function') {
+    return false;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute?.('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-9999px';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+
+  container.appendChild(textarea);
+  textarea.focus?.();
+  textarea.select?.();
+
+  try {
+    return typeof document.execCommand === 'function'
+      ? document.execCommand('copy')
+      : false;
+  } finally {
+    removeClipboardTextarea(textarea);
+  }
+};
+
+export const copyTextToClipboard = async (value) => {
+  const text = String(value ?? '');
+  let lastError = null;
+
+  if (typeof navigator !== 'undefined'
+    && navigator.clipboard
+    && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (copyTextWithExecCommand(text)) {
+    return;
+  }
+
+  throw lastError || new Error('请检查浏览器剪贴板权限');
+};
+
 export const flagFromCountryCode = (countryCode) => {
   const normalized = String(countryCode || '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/u.test(normalized)) {

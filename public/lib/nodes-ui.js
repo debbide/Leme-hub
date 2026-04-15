@@ -1,4 +1,4 @@
-import { flagFromCountryCode } from './utils.js';
+import { copyTextToClipboard, flagFromCountryCode } from './utils.js';
 
 export const showInlineMessage = (target, message, tone = '') => {
   target.textContent = message;
@@ -98,7 +98,7 @@ export const copyNodeShareLink = async ({ id, nodesData, showToast }) => {
   }
 
   try {
-    await navigator.clipboard.writeText(node.shareLink);
+    await copyTextToClipboard(node.shareLink);
     showToast('代理链接已复制', 'success');
   } catch (error) {
     showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
