@@ -241,7 +241,7 @@ test('keeps local traffic direct in global mode', () => {
     config.dns.rules.some((rule) => Array.isArray(rule.inbound)
       && rule.inbound.includes('system-socks')
       && rule.inbound.includes('system-http')
-      && rule.server === 'dns-remote'),
+      && rule.server === 'dns-system-remote'),
     true
   );
 });
