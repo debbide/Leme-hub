@@ -32,6 +32,7 @@ const defaultSettings = (paths, options = {}) => {
     uiPort: DEFAULT_UI_PORT,
     proxyListenHost: mode === 'server' ? DEFAULT_SERVER_PROXY_LISTEN_HOST : DEFAULT_PROXY_LISTEN_HOST,
     proxyBasePort: DEFAULT_PROXY_BASE_PORT,
+    tlsFragmentEnabled: true,
     systemProxyEnabled: false,
     systemProxyCaptureEnabled: false,
     autoStart: false,
@@ -73,6 +74,7 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
   normalized.uiHost = normalizeHost(normalized.uiHost, defaults.uiHost);
   normalized.proxyListenHost = normalizeHost(normalized.proxyListenHost, defaults.proxyListenHost);
 
+  normalized.tlsFragmentEnabled = !!normalized.tlsFragmentEnabled;
   normalized.systemProxyEnabled = !!normalized.systemProxyEnabled;
   normalized.systemProxyCaptureEnabled = hasCapturePreference
     ? !!normalized.systemProxyCaptureEnabled

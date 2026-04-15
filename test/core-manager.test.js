@@ -63,6 +63,19 @@ const createPaths = () => {
   };
 };
 
+const attachPassiveNodeServices = (manager, getLocalPort = () => 20000) => {
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+};
+
 test('start bootstraps binary before starting proxy', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   const calls = [];
@@ -453,6 +466,39 @@ test('syncSubscription decorates imported nodes and persists them through CoreMa
   assert.equal(result.subscription.lastNodeCount, 1);
 });
 
+test('syncSubscription reuses the running local proxy as a subscription fallback', async () => {
+  const store = createStore();
+  store.saveSettings({ ...store.getSettings(), activeNodeId: 'n1', proxyListenHost: '0.0.0.0' });
+  const manager = new CoreManager(createPaths(), store);
+  let capturedOptions = null;
+
+  manager.state = { ...manager.state, status: 'running' };
+  manager.restart = async () => manager.getStatus();
+  manager.proxyService = {
+    syncSubscription: async (_url, options) => {
+      capturedOptions = options;
+      return [{ type: 'socks', server: 'sub.example', port: 1082 }];
+    },
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  await manager.syncSubscription('https://example.com/sub');
+
+  assert.deepEqual(capturedOptions, {
+    allowInternalProxy: true,
+    activeNodeId: 'n1',
+    localPort: 20000,
+    proxyListen: '0.0.0.0'
+  });
+});
+
 test('syncSubscription replaces older nodes from the same subscription url', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'old-sub', type: 'socks', server: 'old.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub' },
@@ -472,6 +518,101 @@ test('syncSubscription replaces older nodes from the same subscription url', asy
   assert.equal(result.nodes.some((node) => node.server === 'old.example'), false);
   assert.equal(result.nodes.some((node) => node.server === 'manual.example'), true);
   assert.equal(result.nodes.some((node) => node.server === 'new.example'), true);
+});
+
+test('syncSubscription auto-creates a dedicated group and refresh by id keeps the binding', async () => {
+  const manager = new CoreManager(createPaths(), createStore([]));
+  let syncCount = 0;
+
+  manager.proxyService = {
+    syncSubscription: async () => {
+      syncCount += 1;
+      return syncCount === 1
+        ? [{ type: 'socks', server: 'first.example', port: 1080 }]
+        : [{ type: 'socks', server: 'second.example', port: 1081 }];
+    },
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+
+  const first = await manager.syncSubscription({ url: 'https://example.com/sub', name: 'My Feed' });
+  const refreshed = await manager.syncSubscription({ id: first.subscription.id });
+
+  assert.equal(first.subscription.groupName, 'My Feed');
+  assert.equal(manager.getGroups().includes('My Feed'), true);
+  assert.equal(refreshed.subscription.groupName, 'My Feed');
+  assert.equal(refreshed.nodes.some((node) => node.server === 'first.example'), false);
+  assert.equal(refreshed.nodes.some((node) => node.server === 'second.example' && node.group === 'My Feed'), true);
+});
+
+test('renameGroup updates the bound subscription group name', async () => {
+  const store = createStore([
+    { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' }
+  ]);
+  store.saveSettings({
+    ...store.getSettings(),
+    groups: ['Feed A'],
+    subscriptions: [{ id: 'sub-1', url: 'https://example.com/sub', name: 'Feed A', groupName: 'Feed A' }]
+  });
+
+  const manager = new CoreManager(createPaths(), store);
+  attachPassiveNodeServices(manager);
+
+  const result = await manager.renameGroup('Feed A', 'Feed B');
+
+  assert.equal(result.nodes[0].group, 'Feed B');
+  assert.equal(manager.getSubscriptions()[0].groupName, 'Feed B');
+});
+
+test('setNodeGroup rejects subscription nodes', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' }
+  ]));
+
+  await assert.rejects(() => manager.setNodeGroup(['sub-node'], 'Other'), /dedicated group/);
+});
+
+test('deleteGroup rejects subscription-managed groups', async () => {
+  const store = createStore([
+    { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' }
+  ]);
+  store.saveSettings({
+    ...store.getSettings(),
+    groups: ['Feed A'],
+    subscriptions: [{ id: 'sub-1', url: 'https://example.com/sub', name: 'Feed A', groupName: 'Feed A' }]
+  });
+
+  const manager = new CoreManager(createPaths(), store);
+
+  await assert.rejects(() => manager.deleteGroup('Feed A'), /Delete the subscription instead/);
+});
+
+test('deleteSubscription removes imported nodes and cleans up the dedicated group', async () => {
+  const store = createStore([
+    { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' },
+    { id: 'manual', type: 'socks', server: 'manual.example', port: 1081, group: 'Manual' }
+  ]);
+  store.saveSettings({
+    ...store.getSettings(),
+    groups: ['Feed A', 'Manual'],
+    subscriptions: [{ id: 'sub-1', url: 'https://example.com/sub', name: 'Feed A', groupName: 'Feed A' }]
+  });
+
+  const manager = new CoreManager(createPaths(), store);
+  attachPassiveNodeServices(manager, (nodeId) => nodeId === 'manual' ? 20001 : 20000);
+
+  const result = await manager.deleteSubscription('sub-1');
+
+  assert.equal(result.nodes.some((node) => node.subscriptionUrl === 'https://example.com/sub'), false);
+  assert.equal(result.nodes.some((node) => node.id === 'manual'), true);
+  assert.equal(manager.getSubscriptions().length, 0);
+  assert.equal(manager.getGroups().includes('Feed A'), false);
 });
 
 test('getNodeRecords exposes ready-to-copy endpoint metadata', async () => {

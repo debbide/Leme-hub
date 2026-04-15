@@ -1,7 +1,20 @@
 import { bindNodesPanelEvents } from './nodes-bindings.js';
 import { renderGroupTabs as renderGroupTabsView, testAllNodes as testAllNodesView, updateBulkBar as updateBulkBarView } from './nodes-controller.js';
-import { deleteNodeRecord, importNodeLink, loadNodesData, syncSubscriptionNodes, testSingleNode } from './nodes-data.js';
+import { deleteNodeRecord, deleteSubscriptionRecord, importNodeLink, loadNodesData, refreshSubscriptionNodes, syncSubscriptionNodes, testSingleNode } from './nodes-data.js';
 import { applyLatencyResult, copyNodeShareLink, renderNodeRow, resetLatencyPlaceholders, showInlineMessage } from './nodes-ui.js';
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '未同步';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '未同步';
+  }
+
+  return date.toLocaleString('zh-CN');
+};
 
 export const createNodesPanelController = ({
   nodesList,
@@ -19,9 +32,14 @@ export const createNodesPanelController = ({
   syncForm,
   importUrlInput,
   syncUrlInput,
+  syncNameInput,
   nodeCountLabel,
   groupTabsEl,
   addGroupBtn,
+  subscriptionsPanel,
+  subscriptionsEmpty,
+  subscriptionsList,
+  subscriptionsSummary,
   showInputModal,
   showConfirmModal,
   showToast,
@@ -38,6 +56,7 @@ export const createNodesPanelController = ({
 }) => {
   let nodesData = [];
   let groupsData = [];
+  let subscriptionsData = [];
   let nodeSearchQuery = '';
   let selectedNodeIds = new Set();
   let currentGroup = null;
@@ -51,6 +70,10 @@ export const createNodesPanelController = ({
     groupsData = value || [];
   };
 
+  const setSubscriptionsData = (value) => {
+    subscriptionsData = value || [];
+  };
+
   const clearSelectedNodeIds = () => {
     selectedNodeIds.clear();
   };
@@ -60,10 +83,140 @@ export const createNodesPanelController = ({
     renderNodesElement();
   };
 
+  const renderSubscriptions = () => {
+    if (!subscriptionsPanel || !subscriptionsList || !subscriptionsEmpty) {
+      return;
+    }
+
+    const items = [...subscriptionsData];
+    if (subscriptionsSummary) {
+      subscriptionsSummary.textContent = items.length
+        ? `共 ${items.length} 个订阅，后续刷新会继续写入各自的专属分组`
+        : '还没有添加订阅，首次同步后会自动创建专属分组';
+    }
+
+    if (!items.length) {
+      subscriptionsPanel.classList.remove('hidden');
+      subscriptionsEmpty.classList.remove('hidden');
+      subscriptionsList.innerHTML = '';
+      return;
+    }
+
+    subscriptionsPanel.classList.remove('hidden');
+    subscriptionsEmpty.classList.add('hidden');
+    subscriptionsList.innerHTML = items.map((subscription) => {
+      const statusClass = subscription.lastStatus === 'success'
+        ? 'is-success'
+        : subscription.lastStatus === 'error'
+          ? 'is-error'
+          : 'is-idle';
+      const statusLabel = subscription.lastStatus === 'success'
+        ? '正常'
+        : subscription.lastStatus === 'error'
+          ? '失败'
+          : '未同步';
+      const lastDetail = subscription.lastError
+        ? `最近错误：${escapeHtml(subscription.lastError)}`
+        : `上次同步：${escapeHtml(formatDateTime(subscription.lastSyncedAt))}`;
+
+      return `
+        <article class="subscription-item" data-id="${escapeHtml(subscription.id)}">
+          <div class="subscription-item-main">
+            <div class="subscription-item-title-row">
+              <strong class="subscription-item-title">${escapeHtml(subscription.name || subscription.url)}</strong>
+              <span class="subscription-status ${statusClass}">${statusLabel}</span>
+            </div>
+            <div class="subscription-item-meta">
+              <span>分组：${escapeHtml(subscription.groupName || '未分配')}</span>
+              <span>节点：${escapeHtml(String(subscription.lastNodeCount || 0))}</span>
+              <span>导入：${escapeHtml(String(subscription.importedCount || 0))}</span>
+            </div>
+            <div class="subscription-item-url">${escapeHtml(subscription.url)}</div>
+            <div class="subscription-item-note">${lastDetail}</div>
+          </div>
+          <div class="subscription-item-actions">
+            <button type="button" class="btn-outline subscription-refresh-btn" data-id="${escapeHtml(subscription.id)}">刷新</button>
+            <button type="button" class="btn-outline subscription-delete-btn" data-id="${escapeHtml(subscription.id)}">删除</button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    subscriptionsList.querySelectorAll('.subscription-refresh-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const id = button.dataset.id;
+        button.disabled = true;
+        button.textContent = '刷新中...';
+        try {
+          await refreshSubscriptionNodes({
+            subscriptionId: id,
+            requestJson,
+            setNodesData,
+            setGroupsData,
+            setSubscriptionsData,
+            renderSubscriptions,
+            renderGroupTabs,
+            renderNodesElement,
+            syncNodeMutationFeedback,
+            showToast,
+          });
+        } catch (error) {
+          showToast(`订阅刷新失败: ${error.message}`, 'error');
+          await loadNodes();
+        } finally {
+          if (button.isConnected) {
+            button.disabled = false;
+            button.textContent = '刷新';
+          }
+        }
+      });
+    });
+
+    subscriptionsList.querySelectorAll('.subscription-delete-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const id = button.dataset.id;
+        const subscription = subscriptionsData.find((item) => item.id === id);
+        if (!subscription) {
+          return;
+        }
+
+        const confirmed = await showConfirmModal(
+          `删除订阅 “${subscription.name || subscription.url}”`,
+          '这会删除该订阅导入的节点，并清理对应的专属分组。'
+        );
+        if (!confirmed) {
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = '删除中...';
+        try {
+          await deleteSubscriptionRecord({
+            id,
+            requestJson,
+            setNodesData,
+            setGroupsData,
+            setSubscriptionsData,
+            renderSubscriptions,
+            renderGroupTabs,
+            renderNodesElement,
+            syncNodeMutationFeedback,
+            showToast,
+          });
+        } catch (error) {
+          showToast(`删除订阅失败: ${error.message}`, 'error');
+          button.disabled = false;
+          button.textContent = '删除';
+        }
+      });
+    });
+  };
+
   const renderGroupTabs = () => renderGroupTabsView({
     groupTabsEl,
     nodesData,
     groupsData,
+    subscriptionsData,
     activeGroupTab,
     setActiveGroupTab: (value) => { activeGroupTab = value; },
     setCurrentGroup: (value) => { currentGroup = value; },
@@ -89,7 +242,7 @@ export const createNodesPanelController = ({
 
     const normalized = String(input || '').trim().toUpperCase();
     if (normalized && !/^[A-Z]{2}$/u.test(normalized)) {
-      showToast('国家代码格式错误，请输入 2 位字母（如 JP / US）', 'error');
+      showToast('国家代码格式错误，请输入 2 位字母，例如 JP / US', 'error');
       return;
     }
 
@@ -101,7 +254,7 @@ export const createNodesPanelController = ({
       setNodesData(payload.nodes || nodesData);
       setGroupsData(payload.groups || groupsData);
       refreshNodesView();
-      showToast(normalized ? '国家归属已修正' : '已清除手动国家覆盖', 'success');
+      showToast(normalized ? '国家归属已更新' : '手动国家归属已清除', 'success');
     } catch (error) {
       showToast(`国家归属更新失败: ${error.message}`, 'error');
     }
@@ -121,7 +274,7 @@ export const createNodesPanelController = ({
       nodesState.classList.remove('hidden');
       nodesEmpty.classList.remove('hidden');
       nodesList.classList.add('hidden');
-      nodeCountLabel.textContent = '节点数: 0';
+      nodeCountLabel.textContent = '节点数 0';
       return;
     }
 
@@ -135,19 +288,19 @@ export const createNodesPanelController = ({
         ? nodesData.filter((node) => !node.group)
         : nodesData.filter((node) => node.group === activeGroupTab);
 
-    const q = nodeSearchQuery.toLowerCase();
-    if (q) {
+    const query = nodeSearchQuery.toLowerCase();
+    if (query) {
       visibleNodes = visibleNodes.filter((node) =>
-        (node.name || '').toLowerCase().includes(q)
-        || (node.server || '').toLowerCase().includes(q)
+        (node.name || '').toLowerCase().includes(query)
+        || (node.server || '').toLowerCase().includes(query)
       );
     }
 
     if (visibleNodes.length === 0) {
       nodesState.classList.remove('hidden');
       nodesList.classList.add('hidden');
-      nodeCountLabel.textContent = `节点数: ${nodesData.length}`;
-      if (q) {
+      nodeCountLabel.textContent = `节点数 ${nodesData.length}`;
+      if (query) {
         nodesSearchEmpty?.classList.remove('hidden');
       } else {
         nodesGroupEmpty?.classList.remove('hidden');
@@ -157,7 +310,7 @@ export const createNodesPanelController = ({
 
     nodesState.classList.add('hidden');
     nodesList.classList.remove('hidden');
-    nodeCountLabel.textContent = `节点数: ${nodesData.length}（显示 ${visibleNodes.length}）`;
+    nodeCountLabel.textContent = `节点数 ${nodesData.length}（显示 ${visibleNodes.length}）`;
 
     nodesTbody.innerHTML = visibleNodes.map((node) => renderNodeRow({
       node,
@@ -221,7 +374,7 @@ export const createNodesPanelController = ({
             setNodesData(payload.nodes);
             setGroupsData(payload.groups || groupsData);
             refreshNodesView();
-            showToast('节点已移至分组', 'success');
+            showToast('节点已移动到分组', 'success');
           } catch (error) {
             showToast(`移动失败: ${error.message}`, 'error');
           }
@@ -238,8 +391,8 @@ export const createNodesPanelController = ({
         sortTh.querySelector('.sort-indicator').textContent = asc ? '↑' : '↓';
         const getMs = (id) => {
           const el = document.getElementById(`test-result-${id}`);
-          const value = parseInt(el?.textContent);
-          return Number.isNaN(value) ? (asc ? Infinity : -1) : value;
+          const value = parseInt(el?.textContent, 10);
+          return Number.isNaN(value) ? (asc ? Number.POSITIVE_INFINITY : -1) : value;
         };
         setNodesData([...nodesData].sort((a, b) => (asc ? getMs(a.id) - getMs(b.id) : getMs(b.id) - getMs(a.id))));
         renderNodesElement();
@@ -264,6 +417,7 @@ export const createNodesPanelController = ({
         });
       }
     }
+
     nodesTbody.querySelectorAll('.node-checkbox').forEach((cb) => {
       cb.checked = selectedNodeIds.has(cb.dataset.id);
       cb.addEventListener('change', (event) => {
@@ -272,9 +426,10 @@ export const createNodesPanelController = ({
         else selectedNodeIds.delete(cb.dataset.id);
         const all = nodesTbody.querySelectorAll('.node-checkbox');
         const checked = [...all].filter((item) => item.checked).length;
-        if (selectAllCb) {
-          selectAllCb.checked = checked === all.length;
-          selectAllCb.indeterminate = checked > 0 && checked < all.length;
+        const selectAll = document.getElementById('select-all-nodes');
+        if (selectAll) {
+          selectAll.checked = checked === all.length;
+          selectAll.indeterminate = checked > 0 && checked < all.length;
         }
         updateBulkBar();
       });
@@ -290,7 +445,7 @@ export const createNodesPanelController = ({
             method: 'PUT',
             body: JSON.stringify({ activeNodeId: nodeId })
           });
-          showToast('节点切换触发，引擎重载中...', 'info');
+          showToast('节点切换已触发，核心正在重载...', 'info');
           loadNodes();
         } catch (error) {
           showToast(`节点切换失败: ${error.message}`, 'error');
@@ -308,8 +463,10 @@ export const createNodesPanelController = ({
     requestJson,
     setNodesData,
     setGroupsData,
+    setSubscriptionsData,
     setGeoIpStatus: (value) => { setGeoIpStatus(value || null); },
     clearSelectedNodeIds,
+    renderSubscriptions,
     renderGroupTabs,
     renderNodesElement,
     renderGeoIpStatus,
@@ -333,9 +490,14 @@ export const createNodesPanelController = ({
   const syncSub = (event) => syncSubscriptionNodes({
     event,
     syncUrlInput,
+    syncNameInput,
     syncForm,
     requestJson,
     setNodesData,
+    setGroupsData,
+    setSubscriptionsData,
+    renderSubscriptions,
+    renderGroupTabs,
     renderNodesElement,
     syncNodeMutationFeedback,
     showInlineMessage,
@@ -440,4 +602,3 @@ export const createNodesPanelController = ({
     setNodesData,
   };
 };
-

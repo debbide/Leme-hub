@@ -6,6 +6,7 @@ export function createNodeRoutes({ coreManager }) {
       ok: true,
       nodes: await coreManager.getNodeRecords(),
       groups: coreManager.getGroups(),
+      subscriptions: coreManager.getSubscriptions(),
       core: coreManager.getStatus(),
       geoIp: coreManager.getGeoIpStatus()
     }),
@@ -125,12 +126,27 @@ export function createNodeRoutes({ coreManager }) {
 
     'POST /api/subscriptions/sync': async ({ body }) => {
       const url = body?.url?.trim();
-      if (!url) {
-        return json({ ok: false, error: 'Missing subscription url' }, 400);
+      const id = String(body?.id || '').trim();
+      const name = String(body?.name || '').trim();
+      if (!url && !id) {
+        return json({ ok: false, error: 'Missing subscription url or id' }, 400);
       }
 
       try {
-        return json({ ok: true, ...(await coreManager.syncSubscription(url)) });
+        return json({ ok: true, ...(await coreManager.syncSubscription({ id, url, name })) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
+    'DELETE /api/subscriptions': async ({ body }) => {
+      const id = String(body?.id || '').trim();
+      if (!id) {
+        return json({ ok: false, error: 'Missing subscription id' }, 400);
+      }
+
+      try {
+        return json({ ok: true, ...(await coreManager.deleteSubscription(id)) });
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }

@@ -145,6 +145,38 @@ test('uses local default domain resolver for hostnames without outbound override
   assert.equal(Object.hasOwn(config.outbounds[0], 'domain_resolver'), false);
 });
 
+test('resolves upstream proxy server domains through bootstrap dns', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'vless', server: 'edge.example', port: 443, uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd', security: 'tls', sni: 'edge.example' }]);
+
+  const config = service.generateConfig();
+
+  assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.domain)
+    && rule.domain.includes('edge.example')
+    && rule.server === 'dns-bootstrap'), true);
+});
+
+test('enables tls record fragment from runtime settings for tls proxy outbounds', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vless',
+    server: 'edge.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    security: 'tls',
+    sni: 'edge.example',
+    transport: 'ws',
+    wsHost: 'edge.example',
+    wsPath: '/vless-argo?ed=2560'
+  }]);
+
+  const config = service.generateConfig({ tlsFragmentEnabled: true });
+  const outbound = config.outbounds[0];
+
+  assert.equal(outbound.tls.record_fragment, true);
+});
+
 test('does not force ws tls alpn when node does not specify one', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{
@@ -1040,6 +1072,157 @@ test('syncSubscription reports http status failures clearly', async () => {
   };
 
   await assert.rejects(() => service.syncSubscription('https://example.com/sub'), /Failed to download subscription: HTTP 403/);
+});
+
+test('syncSubscription retries direct when proxy-backed download fails', async () => {
+  const service = new ProxyService({
+    configDir: createTempDir(),
+    projectRoot: process.cwd(),
+    log: { warn: () => {} }
+  });
+  const originalHttpsProxy = process.env.HTTPS_PROXY;
+  const originalHttpProxy = process.env.HTTP_PROXY;
+  const originalAllProxy = process.env.ALL_PROXY;
+  const originalNoProxy = process.env.NO_PROXY;
+  const capturedOptions = [];
+
+  process.env.HTTPS_PROXY = 'http://127.0.0.1:18999';
+  delete process.env.HTTP_PROXY;
+  delete process.env.ALL_PROXY;
+  delete process.env.NO_PROXY;
+
+  axios.get = async (_url, options) => {
+    capturedOptions.push(options);
+    if (capturedOptions.length === 1) {
+      const error = new Error('Request failed with status code 403');
+      error.response = { status: 403 };
+      throw error;
+    }
+    return { data: '' };
+  };
+
+  try {
+    await service.syncSubscription('https://example.com/sub');
+  } finally {
+    if (originalHttpsProxy === undefined) {
+      delete process.env.HTTPS_PROXY;
+    } else {
+      process.env.HTTPS_PROXY = originalHttpsProxy;
+    }
+    if (originalHttpProxy === undefined) {
+      delete process.env.HTTP_PROXY;
+    } else {
+      process.env.HTTP_PROXY = originalHttpProxy;
+    }
+    if (originalAllProxy === undefined) {
+      delete process.env.ALL_PROXY;
+    } else {
+      process.env.ALL_PROXY = originalAllProxy;
+    }
+    if (originalNoProxy === undefined) {
+      delete process.env.NO_PROXY;
+    } else {
+      process.env.NO_PROXY = originalNoProxy;
+    }
+  }
+
+  assert.equal(capturedOptions.length, 2);
+  assert.equal(capturedOptions[0].proxy, undefined);
+  assert.equal(capturedOptions[1].proxy, false);
+  assert.equal(capturedOptions[1].headers['User-Agent'], 'Leme-Hub/0.1');
+});
+
+test('syncSubscription retries through internal socks proxy after direct failure', async () => {
+  const service = new ProxyService({
+    configDir: createTempDir(),
+    projectRoot: process.cwd(),
+    proxyListen: '0.0.0.0',
+    log: { warn: () => {}, log: () => {} }
+  });
+  service.setNodes([{ id: 'n1', type: 'socks', server: 'edge.example', port: 1080 }]);
+  const capturedOptions = [];
+
+  axios.get = async (_url, options) => {
+    capturedOptions.push(options);
+    if (capturedOptions.length === 1) {
+      const error = new Error('Request failed with status code 403');
+      error.response = { status: 403 };
+      throw error;
+    }
+    return {
+      data: 'socks://demo.example:1080#demo'
+    };
+  };
+
+  const nodes = await service.syncSubscription('https://example.com/sub', {
+    allowInternalProxy: true,
+    activeNodeId: 'n1'
+  });
+
+  assert.equal(nodes.length, 1);
+  assert.equal(capturedOptions.length, 2);
+  assert.equal(capturedOptions[0].proxy, undefined);
+  assert.equal(capturedOptions[1].proxy, false);
+  assert.equal(capturedOptions[1].httpAgent?.constructor?.name, 'SocksProxyAgent');
+  assert.equal(capturedOptions[1].httpAgent, capturedOptions[1].httpsAgent);
+  assert.equal(capturedOptions[1].httpAgent?.proxy?.host, '127.0.0.1');
+  assert.equal(capturedOptions[1].httpAgent?.proxy?.port, 20000);
+});
+
+test('syncSubscription retries compatible user agents after repeated 403 responses', async () => {
+  const service = new ProxyService({
+    configDir: createTempDir(),
+    projectRoot: process.cwd(),
+    proxyListen: '0.0.0.0',
+    log: { warn: () => {}, log: () => {} }
+  });
+  service.setNodes([{ id: 'n1', type: 'socks', server: 'edge.example', port: 1080 }]);
+  const capturedOptions = [];
+
+  axios.get = async (_url, options) => {
+    capturedOptions.push(options);
+    if (capturedOptions.length < 3) {
+      const error = new Error('Request failed with status code 403');
+      error.response = {
+        status: 403,
+        data: '<html><title>403 Forbidden</title></html>'
+      };
+      throw error;
+    }
+    return {
+      data: 'socks://demo.example:1080#demo'
+    };
+  };
+
+  const nodes = await service.syncSubscription('https://example.com/sub', {
+    allowInternalProxy: true,
+    activeNodeId: 'n1'
+  });
+
+  assert.equal(nodes.length, 1);
+  assert.equal(capturedOptions.length, 3);
+  assert.equal(capturedOptions[0].headers['User-Agent'], 'Leme-Hub/0.1');
+  assert.equal(capturedOptions[1].headers['User-Agent'], 'Leme-Hub/0.1');
+  assert.equal(capturedOptions[2].headers['User-Agent'], 'v2rayN/7.20.0');
+  assert.equal(capturedOptions[2].proxy, false);
+  assert.equal(capturedOptions[2].httpAgent?.constructor?.name, 'SocksProxyAgent');
+});
+
+test('syncSubscription surfaces cloudflare-style 403 hints in the error detail', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd(), log: { warn: () => {} } });
+  axios.get = async () => {
+    const error = new Error('Request failed with status code 403');
+    error.response = {
+      status: 403,
+      data: '<html><title>Attention Required! | Cloudflare</title></html>'
+    };
+    throw error;
+  };
+
+  await assert.rejects(
+    () => service.syncSubscription('https://example.com/sub'),
+    /Failed to download subscription: HTTP 403 \(Cloudflare challenge\)/
+  );
 });
 
 test('parseProxyLinks splits multi-line share links into separate nodes', () => {

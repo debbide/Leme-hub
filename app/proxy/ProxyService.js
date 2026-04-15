@@ -4,6 +4,7 @@ import net from 'net';
 import path from 'path';
 
 import axios from 'axios';
+import { getProxyForUrl } from 'proxy-from-env';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
 import {
@@ -32,6 +33,7 @@ const LOCAL_DIRECT_DOMAINS = ['localhost', 'localhost.'];
 const LOCAL_DIRECT_DOMAIN_SUFFIXES = ['local', 'lan', 'home.arpa', 'localdomain'];
 const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
 const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
+const FRAGMENTABLE_TLS_OUTBOUND_TYPES = new Set(['vmess', 'vless', 'trojan']);
 
 const resolveExistingFilePath = (candidatePath) => {
   const resolved = path.resolve(candidatePath);
@@ -92,6 +94,9 @@ const parsePluginString = (value) => {
 };
 
 const SUBSCRIPTION_USER_AGENT = 'Leme-Hub/0.1';
+const SUBSCRIPTION_V2RAYN_USER_AGENT = 'v2rayN/7.20.0';
+const SUBSCRIPTION_BROWSER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
+const SUBSCRIPTION_TIMEOUT_MS = 15000;
 const PROXY_LINK_SCHEME_RE = /^(vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2):\/\//u;
 
 const trimBase64Padding = (value) => value.replace(/=+$/u, '');
@@ -134,6 +139,21 @@ const decodeBase64Payload = (value) => {
 const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('base64');
 
 const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
+const normalizeSubscriptionResponseSnippet = (value) => String(value || '').replace(/\s+/gu, ' ').trim().slice(0, 160);
+
+const detectSubscriptionResponseHint = (value) => {
+  const normalized = normalizeSubscriptionResponseSnippet(value).toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.includes('cloudflare') || normalized.includes('attention required') || normalized.includes('just a moment') || normalized.includes('challenge')) {
+    return 'Cloudflare challenge';
+  }
+  if (normalized.includes('forbidden') || normalized.includes('access denied') || normalized.includes('blocked')) {
+    return 'Access blocked by subscription host';
+  }
+  return '';
+};
 
 const buildQuery = (params) => {
   const search = new URLSearchParams();
@@ -341,6 +361,7 @@ export class ProxyService {
       dnsBootstrapServer = '223.5.5.5',
       dnsFinal = 'dns-remote',
       dnsStrategy = 'prefer_ipv4',
+      tlsFragmentEnabled = false,
       systemProxyEnabled = false,
       systemProxyHttpPort,
       systemProxySocksPort
@@ -440,6 +461,8 @@ export class ProxyService {
 
         if (node.record_fragment !== undefined) {
           outbound.tls.record_fragment = !!node.record_fragment;
+        } else if (tlsFragmentEnabled && FRAGMENTABLE_TLS_OUTBOUND_TYPES.has(node.type)) {
+          outbound.tls.record_fragment = true;
         }
 
         if (node.alpn) {
@@ -639,6 +662,9 @@ export class ProxyService {
       return activeOutbound;
     };
     const resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote';
+    const upstreamServerDomains = [...new Set(validNodes
+      .map((node) => normalizeHost(node?.server))
+      .filter((host) => host && !isIpLiteralHost(host)))];
 
     const normalizedRoutingItems = Array.isArray(routingItems) && routingItems.length
       ? routingItems
@@ -889,6 +915,12 @@ export class ProxyService {
     };
 
     const dnsRules = [
+      ...(upstreamServerDomains.length
+        ? [{
+            domain: upstreamServerDomains,
+            server: 'dns-bootstrap'
+          }]
+        : []),
       {
         domain: LOCAL_DIRECT_DOMAINS,
         server: LOCALHOST_DNS_SERVER_TAG
@@ -1693,7 +1725,7 @@ export class ProxyService {
     return null;
   }
 
-  async syncSubscription(url) {
+  async syncSubscription(url, options = {}) {
     let parsedUrl;
     try {
       parsedUrl = new URL(url);
@@ -1710,25 +1742,120 @@ export class ProxyService {
         || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')) {
       throw new Error(`Subscription URL must not point to a private/local address`);
     }
-    const headers = {
-      'User-Agent': SUBSCRIPTION_USER_AGENT,
-      Accept: 'text/plain, application/json;q=0.9, */*;q=0.8'
+    const explicitUserAgent = String(options.userAgent || '').trim();
+    const authHeader = (parsedUrl.username || parsedUrl.password)
+      ? `Basic ${Buffer.from(parsedUrl.username ? `${parsedUrl.username}:${parsedUrl.password}` : `:${parsedUrl.password}`).toString('base64')}`
+      : '';
+    const buildHeaders = (profile = {}) => {
+      const headers = {
+        'User-Agent': profile.userAgent || explicitUserAgent || SUBSCRIPTION_USER_AGENT,
+        Accept: profile.accept || 'text/plain, application/json;q=0.9, */*;q=0.8'
+      };
+      if (authHeader) {
+        headers.Authorization = authHeader;
+      }
+      if (profile.extraHeaders && typeof profile.extraHeaders === 'object') {
+        Object.assign(headers, profile.extraHeaders);
+      }
+      return headers;
     };
-    if (parsedUrl.username || parsedUrl.password) {
-      headers.Authorization = `Basic ${Buffer.from(parsedUrl.username ? `${parsedUrl.username}:${parsedUrl.password}` : `:${parsedUrl.password}`).toString('base64')}`;
-    }
+
+    const requestOptions = {
+      responseType: 'text',
+      timeout: SUBSCRIPTION_TIMEOUT_MS,
+      transformResponse: [(data) => data],
+      validateStatus: (status) => status >= 200 && status < 300
+    };
+    const proxyUrl = getProxyForUrl(url);
+    const internalProxy = this.resolveSubscriptionInternalProxy(options);
+    const transports = [
+      {
+        mode: proxyUrl ? 'proxy-aware' : 'direct',
+        config: {}
+      },
+      ...(proxyUrl
+        ? [{
+            mode: 'direct',
+            config: { proxy: false }
+          }]
+        : []),
+      ...(internalProxy
+        ? [{
+            mode: 'internal-socks',
+            config: {
+              httpAgent: internalProxy.agent,
+              httpsAgent: internalProxy.agent,
+              proxy: false
+            }
+          }]
+        : [])
+    ];
+    this.log.log?.(`[ProxyService] Subscription sync start host=${hostname} viaProxy=${proxyUrl ? 'yes' : 'no'} internalFallback=${internalProxy ? 'yes' : 'no'}`);
 
     let response;
-    try {
-      response = await axios.get(url, {
-        headers,
-        responseType: 'text',
-        transformResponse: [(data) => data],
-        validateStatus: (status) => status >= 200 && status < 300
-      });
-    } catch (error) {
-      const status = error?.response?.status;
-      const detail = status ? `HTTP ${status}` : error.message;
+    let lastError;
+    const tryDownload = async (transport, headerProfile) => {
+      try {
+        response = await axios.get(url, {
+          ...requestOptions,
+          ...transport.config,
+          headers: buildHeaders(headerProfile)
+        });
+        this.log.log?.(`[ProxyService] Subscription download success host=${hostname} mode=${transport.mode} ua=${headerProfile.label}`);
+        lastError = null;
+        return true;
+      } catch (error) {
+        lastError = error;
+        return false;
+      }
+    };
+
+    if (!(await tryDownload(transports[0], { label: explicitUserAgent ? 'custom' : 'app' }))) {
+      if (proxyUrl && transports[1]) {
+        this.log.warn?.(`[ProxyService] Subscription download via proxy failed, retrying direct: ${lastError?.message || 'unknown error'}`);
+        await tryDownload(transports[1], { label: explicitUserAgent ? 'custom' : 'app' });
+      }
+      if (!response && internalProxy) {
+        this.log.warn?.(`[ProxyService] Subscription download failed before internal fallback, retrying via local proxy: ${lastError?.message || 'unknown error'}`);
+        await tryDownload(transports[transports.length - 1], { label: explicitUserAgent ? 'custom' : 'app' });
+      }
+      if (!response && !explicitUserAgent && lastError?.response?.status === 403) {
+        const compatTransport = transports[transports.length - 1];
+        this.log.warn?.('[ProxyService] Subscription download returned HTTP 403, retrying with compatible user agents');
+        for (const profile of [
+          {
+            label: 'v2rayn',
+            userAgent: SUBSCRIPTION_V2RAYN_USER_AGENT,
+            accept: '*/*'
+          },
+          {
+            label: 'browser',
+            userAgent: SUBSCRIPTION_BROWSER_USER_AGENT,
+            accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            extraHeaders: {
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Cache-Control': 'no-cache',
+              Pragma: 'no-cache'
+            }
+          }
+        ]) {
+          if (await tryDownload(compatTransport, profile)) {
+            break;
+          }
+        }
+      }
+    }
+    if (!response) {
+      const status = lastError?.response?.status;
+      const bodyPreview = normalizeSubscriptionResponseSnippet(lastError?.response?.data);
+      const hint = detectSubscriptionResponseHint(bodyPreview);
+      const detail = status
+        ? `HTTP ${status}${hint ? ` (${hint})` : ''}`
+        : lastError?.message || 'Unknown error';
+      if (bodyPreview) {
+        this.log.warn?.(`[ProxyService] Subscription response preview host=${hostname} preview=${bodyPreview}`);
+      }
+      this.log.error?.(`[ProxyService] Subscription download failed host=${hostname} detail=${detail}`);
       throw new Error(`Failed to download subscription: ${detail}`);
     }
 
@@ -1739,6 +1866,33 @@ export class ProxyService {
     }
 
     return this.parseProxyLinks(content);
+  }
+
+  resolveSubscriptionInternalProxy(options = {}) {
+    if (!options.allowInternalProxy) {
+      return null;
+    }
+
+    const nodeId = String(options.activeNodeId || '').trim();
+    if (!nodeId) {
+      return null;
+    }
+
+    const localPort = toInt(options.localPort ?? this.getLocalPort(nodeId));
+    if (!Number.isInteger(localPort) || localPort <= 0) {
+      return null;
+    }
+
+    const listenHost = normalizeHost(options.proxyListen || this.proxyListen, DEFAULT_PROXY_LISTEN_HOST);
+    const connectHost = resolveLoopbackHost(listenHost);
+    const proxyUrl = `socks5h://${formatHostForUrl(connectHost)}:${localPort}`;
+
+    return {
+      nodeId,
+      host: connectHost,
+      port: localPort,
+      agent: new SocksProxyAgent(proxyUrl)
+    };
   }
 
   async testNode(nodeId) {

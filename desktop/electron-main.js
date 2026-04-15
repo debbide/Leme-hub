@@ -6,12 +6,33 @@ import { app, BrowserWindow, Menu, Tray } from 'electron';
 
 import { createAppServer } from '../app/server/createServer.js';
 import { resolveProjectPaths } from '../app/shared/paths.js';
+import {
+  buildSecondInstanceRelaunchArgs,
+  resolveSecondInstanceExecutablePath,
+  shouldHandoffToNewExecutable
+} from './instance-handoff.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const BACKGROUND_ARG = '--background';
 const WINDOW_BACKGROUND_COLOR = '#0a0a0e';
+const DESKTOP_NET_TRACE_HOSTS = [
+  'chatgpt.com',
+  'openai.com',
+  'oaistatic.com',
+  'oaiusercontent.com'
+];
+const DESKTOP_NET_TRACE_RESOURCE_TYPES = new Set(['Document', 'Fetch', 'XHR']);
+const DESKTOP_NET_TRACE_HEADER_NAMES = [
+  'content-type',
+  'content-length',
+  'location',
+  'server',
+  'cf-ray',
+  'cf-cache-status',
+  'alt-svc'
+];
 
 let serverContext = null;
 let mainWindow = null;
@@ -64,6 +85,174 @@ async function refreshWindowCacheIfNeeded(window, context) {
   } catch {
     // ignore marker write failures and continue loading
   }
+}
+
+function logDesktopNet(context, message) {
+  const line = `[DesktopNet] ${message}`;
+  context?.store?.appendLog?.(line);
+  console.error(line);
+}
+
+function shouldTraceDesktopUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const hostname = String(parsed.hostname || '').toLowerCase();
+    return DESKTOP_NET_TRACE_HOSTS.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
+function pickDesktopResponseHeaders(headers = {}) {
+  const normalized = Object.fromEntries(Object.entries(headers || {}).map(([key, value]) => [String(key).toLowerCase(), value]));
+  const picked = {};
+  DESKTOP_NET_TRACE_HEADER_NAMES.forEach((name) => {
+    if (normalized[name] !== undefined) {
+      picked[name] = normalized[name];
+    }
+  });
+  return picked;
+}
+
+function previewDesktopResponseBody(body = '', limit = 240) {
+  return String(body || '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, limit);
+}
+
+async function installDesktopNetworkDiagnostics(window, context) {
+  const debuggerApi = window.webContents.debugger;
+  const requests = new Map();
+
+  if (debuggerApi.isAttached()) {
+    return;
+  }
+
+  try {
+    debuggerApi.attach('1.3');
+    await debuggerApi.sendCommand('Network.enable');
+  } catch (error) {
+    logDesktopNet(context, `failed to attach debugger: ${error.message}`);
+    return;
+  }
+
+  logDesktopNet(context, 'attached Chromium network diagnostics');
+
+  debuggerApi.on('detach', (_event, reason) => {
+    logDesktopNet(context, `debugger detached: ${reason}`);
+  });
+
+  debuggerApi.on('message', async (_event, method, params) => {
+    try {
+      if (method === 'Network.requestWillBeSent') {
+        const requestId = params.requestId;
+        const url = params.request?.url || '';
+        const resourceType = params.type || '';
+        if (!shouldTraceDesktopUrl(url) || !DESKTOP_NET_TRACE_RESOURCE_TYPES.has(resourceType)) {
+          return;
+        }
+
+        const meta = {
+          url,
+          method: params.request?.method || 'GET',
+          resourceType,
+          status: null
+        };
+        requests.set(requestId, meta);
+
+        if (params.redirectResponse) {
+          logDesktopNet(
+            context,
+            `redirect ${meta.method} ${url} from_status=${params.redirectResponse.status} headers=${JSON.stringify(pickDesktopResponseHeaders(params.redirectResponse.headers))}`
+          );
+        }
+
+        logDesktopNet(context, `request ${resourceType} ${meta.method} ${url}`);
+        return;
+      }
+
+      if (method === 'Network.responseReceived') {
+        const requestId = params.requestId;
+        const existing = requests.get(requestId);
+        const url = params.response?.url || existing?.url || '';
+        const resourceType = params.type || existing?.resourceType || '';
+        if (!shouldTraceDesktopUrl(url) || !DESKTOP_NET_TRACE_RESOURCE_TYPES.has(resourceType)) {
+          return;
+        }
+
+        const meta = {
+          ...(existing || {}),
+          url,
+          resourceType,
+          status: params.response?.status ?? null
+        };
+        requests.set(requestId, meta);
+
+        const shouldLogResponse = meta.status >= 400 || url.includes('/backend-api/') || url.includes('/oauth') || url.includes('/authorize') || url.includes('/callback');
+        if (shouldLogResponse) {
+          logDesktopNet(
+            context,
+            `response ${resourceType} status=${meta.status} url=${url} headers=${JSON.stringify(pickDesktopResponseHeaders(params.response?.headers))}`
+          );
+        }
+        return;
+      }
+
+      if (method === 'Network.loadingFailed') {
+        const requestId = params.requestId;
+        const meta = requests.get(requestId);
+        if (!meta || !shouldTraceDesktopUrl(meta.url)) {
+          return;
+        }
+
+        logDesktopNet(
+          context,
+          `failed ${meta.resourceType} ${meta.method} ${meta.url} error=${params.errorText} canceled=${params.canceled ? 'true' : 'false'} blocked=${params.blockedReason || 'none'}`
+        );
+        requests.delete(requestId);
+        return;
+      }
+
+      if (method === 'Network.loadingFinished') {
+        const requestId = params.requestId;
+        const meta = requests.get(requestId);
+        if (!meta || !shouldTraceDesktopUrl(meta.url)) {
+          return;
+        }
+
+        if (meta.status >= 400) {
+          try {
+            const bodyResult = await debuggerApi.sendCommand('Network.getResponseBody', { requestId });
+            const bodyText = bodyResult?.base64Encoded
+              ? Buffer.from(bodyResult.body || '', 'base64').toString('utf8')
+              : bodyResult?.body || '';
+            logDesktopNet(
+              context,
+              `body status=${meta.status} url=${meta.url} preview=${JSON.stringify(previewDesktopResponseBody(bodyText))}`
+            );
+          } catch (error) {
+            logDesktopNet(context, `body-read-failed status=${meta.status} url=${meta.url} error=${error.message}`);
+          }
+        }
+
+        requests.delete(requestId);
+      }
+    } catch (error) {
+      logDesktopNet(context, `diagnostic-handler-error method=${method} error=${error.message}`);
+    }
+  });
+
+  window.on('closed', () => {
+    requests.clear();
+    if (debuggerApi.isAttached()) {
+      try {
+        debuggerApi.detach();
+      } catch {
+        // ignore detach races
+      }
+    }
+  });
 }
 
 function isBackgroundLaunch(argv = process.argv) {
@@ -177,6 +366,7 @@ async function createWindow() {
     }
   });
 
+  await installDesktopNetworkDiagnostics(mainWindow, context);
   await refreshWindowCacheIfNeeded(mainWindow, context);
 
   await mainWindow.loadURL(context.runtime.publicOrigin);
@@ -251,12 +441,30 @@ async function shutdownBackend() {
   serverContext = null;
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const hasSingleInstanceLock = app.requestSingleInstanceLock({
+  execPath: process.execPath
+});
 
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', async (_event, argv) => {
+  app.on('second-instance', async (_event, argv, workingDirectory, additionalData) => {
+    const nextExecPath = resolveSecondInstanceExecutablePath({
+      argv,
+      workingDirectory,
+      additionalData
+    });
+
+    if (shouldHandoffToNewExecutable(process.execPath, nextExecPath)) {
+      isQuitting = true;
+      app.relaunch({
+        execPath: nextExecPath,
+        args: buildSecondInstanceRelaunchArgs(argv)
+      });
+      app.quit();
+      return;
+    }
+
     if (isBackgroundLaunch(argv)) {
       return;
     }

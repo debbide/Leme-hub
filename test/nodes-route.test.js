@@ -30,6 +30,7 @@ test('node routes expose geo ip status alongside enriched node records', async (
     coreManager: {
       getNodeRecords: async () => ([{ id: 'n1', server: '1.1.1.1', countryCode: 'AU', flagEmoji: '🇦🇺' }]),
       getGroups: () => ['Default'],
+      getSubscriptions: () => ([{ id: 'sub-1', url: 'https://example.com/sub', groupName: 'Default' }]),
       getStatus: () => ({ status: 'running' }),
       getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null })
     }
@@ -39,6 +40,7 @@ test('node routes expose geo ip status alongside enriched node records', async (
 
   assert.equal(response.body.ok, true);
   assert.equal(response.body.nodes[0].countryCode, 'AU');
+  assert.equal(response.body.subscriptions[0].id, 'sub-1');
   assert.equal(response.body.geoIp.ready, true);
 });
 
@@ -46,6 +48,7 @@ test('node routes expose country grouping and override endpoints', async () => {
   const routes = createNodeRoutes({
     coreManager: {
       getNodeRecords: async () => [],
+      getSubscriptions: () => [],
       getGroups: () => ['国家/JP'],
       getStatus: () => ({ status: 'running' }),
       getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
@@ -63,6 +66,36 @@ test('node routes expose country grouping and override endpoints', async () => {
   assert.equal(overrideResponse.body.ok, true);
   assert.equal(overrideResponse.body.node.countryCodeOverride, 'JP');
   assert.equal(invalidResponse.status, 400);
+});
+
+test('subscription routes support sync by url or id and delete by id', async () => {
+  const syncCalls = [];
+  const deleteCalls = [];
+  const routes = createNodeRoutes({
+    coreManager: {
+      syncSubscription: async (payload) => {
+        syncCalls.push(payload);
+        return { subscription: { id: 'sub-1' }, subscriptions: [{ id: 'sub-1' }], groups: ['Feed'], nodes: [] };
+      },
+      deleteSubscription: async (id) => {
+        deleteCalls.push(id);
+        return { subscriptions: [], groups: [], nodes: [] };
+      }
+    }
+  });
+
+  const createResponse = await routes['POST /api/subscriptions/sync']({ body: { url: 'https://example.com/sub', name: 'Feed' } });
+  const refreshResponse = await routes['POST /api/subscriptions/sync']({ body: { id: 'sub-1' } });
+  const deleteResponse = await routes['DELETE /api/subscriptions']({ body: { id: 'sub-1' } });
+
+  assert.equal(createResponse.body.ok, true);
+  assert.equal(refreshResponse.body.ok, true);
+  assert.equal(deleteResponse.body.ok, true);
+  assert.deepEqual(syncCalls, [
+    { id: '', url: 'https://example.com/sub', name: 'Feed' },
+    { id: 'sub-1', url: undefined, name: '' }
+  ]);
+  assert.deepEqual(deleteCalls, ['sub-1']);
 });
 
 test('system routes expose geo ip status and refresh endpoint', async () => {

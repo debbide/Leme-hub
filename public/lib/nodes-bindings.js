@@ -35,12 +35,16 @@ export const bindNodesPanelEvents = ({
   document.getElementById('bulk-move-btn')?.addEventListener('click', (event) => {
     event.stopPropagation();
     const menu = document.getElementById('bulk-group-menu');
+    const trigger = document.getElementById('bulk-move-btn');
+    if (trigger?.disabled) {
+      return;
+    }
     if (menu) menu.classList.toggle('open');
   });
 
   document.getElementById('bulk-delete-btn')?.addEventListener('click', async () => {
     if (!selectedNodeIds.size) return;
-    if (!await showConfirmModal(`删除 ${selectedNodeIds.size} 个节点`, '此操作不可撤销，确认删除所选节点？')) return;
+    if (!await showConfirmModal(`删除 ${selectedNodeIds.size} 个节点`, '此操作不可撤销，确认删除所选节点吗？')) return;
     try {
       await Promise.all([...selectedNodeIds].map((id) =>
         requestJson('/api/nodes', { method: 'DELETE', body: JSON.stringify({ id }) })

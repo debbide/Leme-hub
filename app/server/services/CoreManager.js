@@ -624,8 +624,38 @@ const normalizeSubscriptionRecord = (record, index) => {
     groupName: String(record.groupName || '').trim() || null,
     importedCount: Number.parseInt(record.importedCount, 10) || 0,
     lastSyncedAt: record.lastSyncedAt || null,
-    lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0
+    lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0,
+    lastStatus: String(record.lastStatus || '').trim() || 'idle',
+    lastError: String(record.lastError || '').trim() || null
   };
+};
+
+const deriveSubscriptionDisplayName = (url, preferredName = '') => {
+  const normalizedName = String(preferredName || '').trim();
+  if (normalizedName) {
+    return normalizedName;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname || url;
+  } catch {
+    return url;
+  }
+};
+
+const buildUniqueSubscriptionGroupName = (baseName, occupiedNames) => {
+  const normalizedBase = String(baseName || '').trim() || 'Subscription';
+  if (!occupiedNames.has(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  let suffix = 2;
+  while (occupiedNames.has(`${normalizedBase} ${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${normalizedBase} ${suffix}`;
 };
 
 export const assignStableLocalPorts = (nodes, basePort) => {
@@ -1075,29 +1105,92 @@ export class CoreManager {
     return this.state.autoStart;
   }
 
-  updateSubscriptionRecord(url, importedCount, nodes) {
-    const settings = this.getSettingsSnapshot();
-    const now = new Date().toISOString();
-    const nextRecord = {
-      id: settings.subscriptions.find((item) => item.url === url)?.id || `subscription-${Date.now()}`,
-      url,
-      name: url,
-      importedCount,
-      lastSyncedAt: now,
-      lastNodeCount: nodes.filter((node) => node.subscriptionUrl === url).length
-    };
+  getSubscriptions() {
+    return this.getSettingsSnapshot().subscriptions || [];
+  }
 
-    const subscriptions = [
-      ...settings.subscriptions.filter((item) => item.url !== url),
+  ensureStoredGroup(settings, groupName) {
+    if (!groupName) {
+      return settings;
+    }
+
+    const groups = Array.isArray(settings.groups) ? settings.groups : [];
+    if (groups.includes(groupName)) {
+      return settings;
+    }
+
+    return {
+      ...settings,
+      groups: [...groups, groupName]
+    };
+  }
+
+  allocateSubscriptionGroupName(settings, preferredName, subscriptionId = null) {
+    const occupiedNames = new Set(this.getGroups());
+    for (const record of settings.subscriptions || []) {
+      if (!record?.groupName || (subscriptionId && record.id === subscriptionId)) {
+        continue;
+      }
+      occupiedNames.add(record.groupName);
+    }
+
+    return buildUniqueSubscriptionGroupName(preferredName, occupiedNames);
+  }
+
+  updateSubscriptionRecord(recordInput, options = {}) {
+    const settings = options.settings || this.getSettingsSnapshot();
+    const subscriptions = Array.isArray(settings.subscriptions) ? settings.subscriptions : [];
+    const existingRecord = subscriptions.find((item) =>
+      (recordInput.id && item.id === recordInput.id)
+      || (recordInput.url && item.url === recordInput.url)
+    ) || null;
+    const nextRecord = normalizeSubscriptionRecord({
+      ...existingRecord,
+      ...recordInput,
+      id: recordInput.id || existingRecord?.id || `subscription-${Date.now()}`,
+      name: deriveSubscriptionDisplayName(recordInput.url || existingRecord?.url || '', recordInput.name || existingRecord?.name || '')
+    }, existingRecord ? subscriptions.indexOf(existingRecord) : subscriptions.length);
+    const nextSubscriptions = [
+      ...subscriptions.filter((item) => item.id !== existingRecord?.id),
       nextRecord
     ];
-
-    this.store.saveSettings({
+    const nextSettings = {
       ...settings,
-      subscriptions
-    });
+      subscriptions: nextSubscriptions
+    };
 
+    this.store.saveSettings(nextSettings);
     return nextRecord;
+  }
+
+  updateSubscriptionRecordError(record, errorMessage) {
+    if (!record) {
+      return null;
+    }
+
+    return this.updateSubscriptionRecord({
+      ...record,
+      lastStatus: 'error',
+      lastError: String(errorMessage || '').trim() || 'Sync failed'
+    });
+  }
+
+  findSubscriptionRecord(input, settings = this.getSettingsSnapshot()) {
+    const subscriptions = Array.isArray(settings.subscriptions) ? settings.subscriptions : [];
+    if (typeof input === 'string') {
+      const url = String(input || '').trim();
+      return subscriptions.find((item) => item.url === url) || null;
+    }
+
+    const id = String(input?.id || '').trim();
+    const url = String(input?.url || '').trim();
+    if (id) {
+      return subscriptions.find((item) => item.id === id) || null;
+    }
+    if (url) {
+      return subscriptions.find((item) => item.url === url) || null;
+    }
+    return null;
   }
 
   async refreshSystemProxyState() {
@@ -1183,6 +1276,7 @@ export class CoreManager {
       dnsBootstrapServer: snapshot.dnsBootstrapServer,
       dnsFinal: snapshot.dnsFinal,
       dnsStrategy: snapshot.dnsStrategy,
+      tlsFragmentEnabled: !!snapshot.tlsFragmentEnabled,
       proxyMode: snapshot.routingMode,
       systemProxyEnabled: !!snapshot.systemProxyEnabled,
       systemProxyCaptureEnabled: !!snapshot.systemProxyCaptureEnabled,
@@ -1207,6 +1301,7 @@ export class CoreManager {
 
     next.systemProxyEnabled = !!next.systemProxyEnabled;
     next.systemProxyCaptureEnabled = !!next.systemProxyCaptureEnabled;
+    next.tlsFragmentEnabled = !!next.tlsFragmentEnabled;
     if (this.runtimeMode === 'desktop'
       && Object.prototype.hasOwnProperty.call(patch, 'systemProxyEnabled')
       && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyCaptureEnabled')) {
@@ -1345,6 +1440,7 @@ export class CoreManager {
       ...next,
       proxyListenHost: next.proxyListenHost,
       proxyBasePort,
+      tlsFragmentEnabled: !!next.tlsFragmentEnabled,
       systemProxyEnabled: !!next.systemProxyEnabled,
       systemProxyCaptureEnabled: !!next.systemProxyCaptureEnabled,
       systemProxySocksPort,
@@ -1361,7 +1457,7 @@ export class CoreManager {
     this.state.autoStart = this.buildAutoStartState(autoStart);
     this.refreshConnectionsServiceBaseUrl(saved);
 
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort'];
+    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort'];
     const shouldAutoRestart = this.state.status === 'running'
       && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -1664,10 +1760,29 @@ export class CoreManager {
       throw createHttpError('Node not found', 404);
     }
 
+    const currentNode = nodes[index];
+    if (currentNode.source === 'subscription') {
+      const requestedGroup = Object.prototype.hasOwnProperty.call(patch || {}, 'group')
+        ? (patch.group ? String(patch.group).trim() || null : null)
+        : currentNode.group || null;
+      const currentGroup = currentNode.group ? String(currentNode.group).trim() || null : null;
+
+      if (requestedGroup !== currentGroup) {
+        throw createHttpError('Subscription nodes must stay in their dedicated group', 400);
+      }
+    }
+
     nodes[index] = {
-      ...nodes[index],
+      ...currentNode,
       ...patch,
-      id: nodeId
+      id: nodeId,
+      ...(currentNode.source === 'subscription'
+        ? {
+            source: currentNode.source,
+            subscriptionUrl: currentNode.subscriptionUrl,
+            group: currentNode.group || null
+          }
+        : {})
     };
 
     const savedNodes = this.saveNodes(nodes);
@@ -1715,10 +1830,16 @@ export class CoreManager {
 
   async setNodeGroup(nodeIds, group) {
     const normalizedGroup = group ? String(group).trim() || null : null;
-    const nodes = this.store.getNodes().map((node) =>
+    const nodes = this.store.getNodes();
+    const selectedSubscriptionNode = nodes.find((node) => nodeIds.includes(node.id) && node.source === 'subscription');
+    if (selectedSubscriptionNode) {
+      throw createHttpError('Subscription nodes must stay in their dedicated group', 400);
+    }
+
+    const updatedNodes = nodes.map((node) =>
       nodeIds.includes(node.id) ? { ...node, group: normalizedGroup } : node
     );
-    const savedNodes = this.saveNodes(nodes);
+    const savedNodes = this.saveNodes(updatedNodes);
     return this.applyNodeChanges(savedNodes);
   }
 
@@ -1730,16 +1851,24 @@ export class CoreManager {
     );
     const settings = this.getSettingsSnapshot();
     const groups = (settings.groups || []).map(g => g === oldName ? trimmedNew : g);
-    this.store.saveSettings({ ...settings, groups });
+    const subscriptions = (settings.subscriptions || []).map((record) =>
+      record.groupName === oldName ? { ...record, groupName: trimmedNew } : record
+    );
+    this.store.saveSettings({ ...settings, groups, subscriptions });
     const savedNodes = this.saveNodes(nodes);
     return this.applyNodeChanges(savedNodes);
   }
 
   async deleteGroup(groupName) {
+    const settings = this.getSettingsSnapshot();
+    const boundSubscription = (settings.subscriptions || []).find((record) => record.groupName === groupName);
+    if (boundSubscription) {
+      throw createHttpError('This group is managed by a subscription. Delete the subscription instead.', 400);
+    }
+
     const nodes = this.store.getNodes().map((node) =>
       node.group === groupName ? { ...node, group: null } : node
     );
-    const settings = this.getSettingsSnapshot();
     const groups = (settings.groups || []).filter(g => g !== groupName);
     this.store.saveSettings({ ...settings, groups });
     const savedNodes = this.saveNodes(nodes);
@@ -1983,15 +2112,82 @@ export class CoreManager {
     return this.updateSettings({ nodeGroups: nextGroups });
   }
 
-  async syncSubscription(url) {
-    const importedNodes = await this.proxyService.syncSubscription(url);
+  async deleteSubscription(id) {
+    const settings = this.getSettingsSnapshot();
+    const subscription = this.findSubscriptionRecord({ id }, settings);
+    if (!subscription) {
+      throw createHttpError('Subscription not found', 404);
+    }
+
+    const remainingSubscriptions = (settings.subscriptions || []).filter((item) => item.id !== subscription.id);
+    const remainingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== subscription.url);
+    const remainingGroups = (settings.groups || []).filter((groupName) => {
+      if (groupName !== subscription.groupName) {
+        return true;
+      }
+
+      const stillUsedBySubscription = remainingSubscriptions.some((item) => item.groupName === groupName);
+      const stillUsedByNode = remainingNodes.some((node) => node.group === groupName);
+      return stillUsedBySubscription || stillUsedByNode;
+    });
+
+    this.store.saveSettings({
+      ...settings,
+      groups: remainingGroups,
+      subscriptions: remainingSubscriptions
+    });
+
+    const savedNodes = this.saveNodes(remainingNodes);
+    const applied = await this.applyNodeChanges(savedNodes);
+    return {
+      subscription,
+      subscriptions: this.getSubscriptions(),
+      groups: this.getGroups(),
+      ...applied
+    };
+  }
+
+  async syncSubscription(input) {
+    const request = typeof input === 'string'
+      ? { url: input }
+      : (input && typeof input === 'object' ? input : {});
+    let settings = this.getSettingsSnapshot();
+    const existingRecord = this.findSubscriptionRecord(request, settings);
+    const url = String(request.url || existingRecord?.url || '').trim();
+    if (!url) {
+      throw createHttpError('Missing subscription url', 400);
+    }
+
+    const displayName = deriveSubscriptionDisplayName(url, request.name || existingRecord?.name || '');
+    let groupName = existingRecord?.groupName || null;
+    const groupOwnedByOtherSubscription = groupName && (settings.subscriptions || []).some((record) =>
+      record.id !== existingRecord?.id && record.groupName === groupName
+    );
+    if (!groupName || groupOwnedByOtherSubscription) {
+      groupName = this.allocateSubscriptionGroupName(settings, displayName, existingRecord?.id || null);
+    }
+
+    let importedNodes;
+    try {
+      const activeNodeId = this.resolveActiveNodeId(settings, this.store.getNodes());
+      importedNodes = await this.proxyService.syncSubscription(url, {
+        allowInternalProxy: this.state.status === 'running',
+        activeNodeId,
+        localPort: activeNodeId ? this.proxyService.getLocalPort(activeNodeId) : null,
+        proxyListen: settings.proxyListenHost
+      });
+    } catch (error) {
+      this.updateSubscriptionRecordError(existingRecord, error.message);
+      throw error;
+    }
+
     if (!importedNodes.length) {
+      this.updateSubscriptionRecordError(existingRecord, 'Subscription returned no usable nodes');
       throw createHttpError('Subscription returned no usable nodes', 400);
     }
 
-    const settings = this.getSettingsSnapshot();
-    const subRecord = settings.subscriptions.find((s) => s.url === url);
-    const groupName = subRecord?.groupName || null;
+    settings = this.ensureStoredGroup(settings, groupName);
+    this.store.saveSettings(settings);
 
     const existingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== url);
     const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, importedNodes.map((node) => ({
@@ -2002,11 +2198,23 @@ export class CoreManager {
     }))));
 
     const applied = await this.applyNodeChanges(savedNodes);
-    const subscription = this.updateSubscriptionRecord(url, importedNodes.length, applied.nodes);
+    const subscription = this.updateSubscriptionRecord({
+      id: existingRecord?.id,
+      url,
+      name: displayName,
+      groupName,
+      importedCount: importedNodes.length,
+      lastSyncedAt: new Date().toISOString(),
+      lastNodeCount: applied.nodes.filter((node) => node.subscriptionUrl === url).length,
+      lastStatus: 'success',
+      lastError: null
+    }, { settings: this.getSettingsSnapshot() });
 
     return {
       importedCount: importedNodes.length,
       subscription,
+      subscriptions: this.getSubscriptions(),
+      groups: this.getGroups(),
       ...applied
     };
   }

@@ -140,10 +140,22 @@
               </form>
               <form id="sync-form" class="hidden action-form">
                 <input type="url" id="sync-url" placeholder="https://example.com/sub" required class="text-input">
+                <input type="text" id="sync-name" placeholder="订阅名称（可选）" class="text-input">
                 <button type="submit">开始同步</button>
                 <button type="button" class="cancel-btn">取消</button>
               </form>
             </div>
+
+            <section id="subscriptions-panel" class="subscription-panel">
+              <div class="subscription-panel-head">
+                <div>
+                  <h3 class="subscription-panel-title">订阅管理</h3>
+                  <p id="subscriptions-summary" class="subscription-panel-summary">还没有添加订阅，首次同步后会自动创建专属分组</p>
+                </div>
+              </div>
+              <p id="subscriptions-empty" class="state-msg">暂无订阅，点击“同步订阅”后会自动创建独立分组。</p>
+              <div id="subscriptions-list" class="subscription-list"></div>
+            </section>
 
             <!-- Group Tabs -->
             <div class="group-tabs-bar">

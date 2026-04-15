@@ -1,8 +1,21 @@
+const resetGroupInputState = (editNodeGroupInput) => {
+  if (!editNodeGroupInput) {
+    return;
+  }
+
+  editNodeGroupInput.disabled = false;
+  editNodeGroupInput.title = '';
+  editNodeGroupInput.placeholder = '留空则归入未分组';
+};
+
 export const closeNodeEditModal = ({ editModal, setCurrentEditNodeId, editJsonInput, editNodeGroupInput, editCountryOverrideInput }) => {
   editModal.classList.remove('active');
   setCurrentEditNodeId(null);
   editJsonInput.value = '';
-  if (editNodeGroupInput) editNodeGroupInput.value = '';
+  if (editNodeGroupInput) {
+    editNodeGroupInput.value = '';
+    resetGroupInputState(editNodeGroupInput);
+  }
   if (editCountryOverrideInput) editCountryOverrideInput.value = '';
 };
 
@@ -15,7 +28,18 @@ export const openNodeEditModal = ({ id, nodesData, setCurrentEditNodeId, editNod
   delete editData.countryName;
   delete editData.flagEmoji;
   delete editData.countryOverridden;
-  if (editNodeGroupInput) editNodeGroupInput.value = node.group || '';
+
+  if (editNodeGroupInput) {
+    editNodeGroupInput.value = node.group || '';
+    if (node.source === 'subscription') {
+      editNodeGroupInput.disabled = true;
+      editNodeGroupInput.title = '订阅节点固定在专属分组';
+      editNodeGroupInput.placeholder = '订阅节点固定在专属分组';
+    } else {
+      resetGroupInputState(editNodeGroupInput);
+    }
+  }
+
   if (editCountryOverrideInput) editCountryOverrideInput.value = node.countryCodeOverride || '';
   editJsonInput.value = JSON.stringify(editData, null, 2);
   editModal.classList.add('active');
@@ -32,7 +56,10 @@ export const prepareManualNodeDraft = ({ currentGroup, setCurrentEditNodeId, edi
     security: 'none'
   };
   editJsonInput.value = JSON.stringify(skeleton, null, 2);
-  if (editNodeGroupInput) editNodeGroupInput.value = currentGroup || '';
+  if (editNodeGroupInput) {
+    editNodeGroupInput.value = currentGroup || '';
+    resetGroupInputState(editNodeGroupInput);
+  }
   if (editCountryOverrideInput) editCountryOverrideInput.value = '';
   editModal.classList.add('active');
 };
@@ -45,7 +72,7 @@ export const saveNodeEdit = async ({ saveNodeBtn, editJsonInput, editNodeGroupIn
     const groupValue = editNodeGroupInput ? editNodeGroupInput.value.trim() || null : undefined;
     const countryOverrideValue = editCountryOverrideInput ? editCountryOverrideInput.value.trim().toUpperCase() : '';
     if (countryOverrideValue && !/^[A-Z]{2}$/u.test(countryOverrideValue)) {
-      throw new Error('国家代码格式错误，请填写 2 位字母（如 JP / US）');
+      throw new Error('国家代码格式错误，请填写 2 位字母，例如 JP / US');
     }
     if (groupValue !== undefined) updatedData.group = groupValue;
     if (editCountryOverrideInput) updatedData.countryCodeOverride = countryOverrideValue || null;
@@ -69,7 +96,7 @@ export const saveNodeEdit = async ({ saveNodeBtn, editJsonInput, editNodeGroupIn
     syncNodeMutationFeedback(payload);
     closeModal();
     if (!payload.autoRestarted) {
-      showToast(currentEditNodeId ? '节点配置已更新。' : '节点已手动添加。', 'success');
+      showToast(currentEditNodeId ? '节点配置已更新' : '节点已手动添加', 'success');
     }
   } catch (error) {
     showToast(`保存失败: ${error.message}`, 'error');

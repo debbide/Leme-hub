@@ -2,6 +2,7 @@ export const renderGroupTabs = ({
   groupTabsEl,
   nodesData,
   groupsData,
+  subscriptionsData,
   activeGroupTab,
   setActiveGroupTab,
   setCurrentGroup,
@@ -16,25 +17,42 @@ export const renderGroupTabs = ({
 
   const nodeGroups = nodesData.map((node) => node.group).filter(Boolean);
   const allGroups = [...new Set([...groupsData, ...nodeGroups])];
+  const subscriptionGroups = new Set((subscriptionsData || []).map((item) => item.groupName).filter(Boolean));
   const hasUngrouped = nodesData.some((node) => !node.group);
 
   const tabs = [
     { key: null, label: '全部', count: nodesData.length }
   ];
   for (const group of allGroups) {
-    tabs.push({ key: group, label: group, count: nodesData.filter((node) => node.group === group).length, renameable: true });
+    tabs.push({
+      key: group,
+      label: group,
+      count: nodesData.filter((node) => node.group === group).length,
+      renameable: true,
+      deleteable: !subscriptionGroups.has(group),
+      managedBySubscription: subscriptionGroups.has(group)
+    });
   }
   if (hasUngrouped) {
     tabs.push({ key: '__ungrouped__', label: '未分组', count: nodesData.filter((node) => !node.group).length });
   }
 
+  const validKeys = new Set(tabs.map((tab) => tab.key));
+  if (!validKeys.has(activeGroupTab)) {
+    setActiveGroupTab(null);
+    setCurrentGroup(null);
+  }
+
   groupTabsEl.innerHTML = tabs.map((tab) => {
     const isActive = activeGroupTab === tab.key;
-    const actions = tab.renameable ? `<span class="group-tab-actions">
-      <button class="group-tab-action-btn group-rename-btn" data-group="${tab.key}" title="重命名">✎</button>
-      <button class="group-tab-action-btn group-delete-btn" data-group="${tab.key}" title="删除">✕</button>
-    </span>` : '';
-    return `<button type="button" class="group-tab${isActive ? ' active' : ''}" data-key="${tab.key ?? ''}">${tab.label}<span class="group-tab-count">${tab.count}</span>${actions}</button>`;
+    const actions = tab.renameable ? `
+      <span class="group-tab-actions">
+        <button class="group-tab-action-btn group-rename-btn" data-group="${tab.key}" title="重命名">改名</button>
+        ${tab.deleteable ? `<button class="group-tab-action-btn group-delete-btn" data-group="${tab.key}" title="删除">删除</button>` : ''}
+      </span>
+    ` : '';
+    const badge = tab.managedBySubscription ? '<span class="group-tab-badge">订阅</span>' : '';
+    return `<button type="button" class="group-tab${isActive ? ' active' : ''}" data-key="${tab.key ?? ''}">${tab.label}${badge}<span class="group-tab-count">${tab.count}</span>${actions}</button>`;
   }).join('');
 
   groupTabsEl.querySelectorAll('.group-tab').forEach((button) => {
@@ -51,7 +69,7 @@ export const renderGroupTabs = ({
     button.addEventListener('click', async (event) => {
       event.stopPropagation();
       const oldName = button.dataset.group;
-      const newName = await showInputModal(`重命名分组 "${oldName}"`, oldName);
+      const newName = await showInputModal(`重命名分组 “${oldName}”`, oldName);
       if (!newName || newName.trim() === oldName) return;
       try {
         await requestJson('/api/groups/rename', { method: 'PUT', body: JSON.stringify({ from: oldName, to: newName.trim() }) });
@@ -71,7 +89,7 @@ export const renderGroupTabs = ({
     button.addEventListener('click', async (event) => {
       event.stopPropagation();
       const name = button.dataset.group;
-      if (!await showConfirmModal(`删除分组 "${name}"`, '该分组下的所有节点将移入未分组。')) return;
+      if (!await showConfirmModal(`删除分组 “${name}”`, '该分组下的所有节点将移入未分组，确认继续吗？')) return;
       try {
         await requestJson('/api/groups', { method: 'DELETE', body: JSON.stringify({ name }) });
         if (activeGroupTab === name) {
@@ -101,15 +119,30 @@ export const updateBulkBar = ({
 }) => {
   const bar = document.getElementById('bulk-action-bar');
   const label = document.getElementById('bulk-count-label');
+  const trigger = document.getElementById('bulk-move-btn');
   if (!bar) return;
   if (selectedNodeIds.size === 0) {
     bar.classList.add('hidden');
     return;
   }
   bar.classList.remove('hidden');
-  label.textContent = `已选 ${selectedNodeIds.size} 个节点`;
+
+  const selectedNodes = nodesData.filter((node) => selectedNodeIds.has(node.id));
+  const containsSubscriptionNode = selectedNodes.some((node) => node.source === 'subscription');
+  label.textContent = containsSubscriptionNode
+    ? `已选 ${selectedNodeIds.size} 个节点（含订阅节点，不能改组）`
+    : `已选 ${selectedNodeIds.size} 个节点`;
+
+  if (trigger) {
+    trigger.disabled = containsSubscriptionNode;
+    trigger.title = containsSubscriptionNode ? '订阅节点固定在专属分组，不能批量改组' : '';
+  }
+
   const menu = document.getElementById('bulk-group-menu');
   if (!menu) return;
+  if (containsSubscriptionNode) {
+    menu.classList.remove('open');
+  }
 
   const allGroups = [...new Set([...groupsData, ...nodesData.map((node) => node.group).filter(Boolean)])];
   menu.innerHTML = [
@@ -132,7 +165,7 @@ export const updateBulkBar = ({
         clearSelectedNodeIds();
         renderGroupTabs();
         renderNodesElement();
-        showToast('批量移至分组完成', 'success');
+        showToast('批量移动分组完成', 'success');
       } catch (error) {
         showToast(`移动失败: ${error.message}`, 'error');
       }

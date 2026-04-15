@@ -68,6 +68,7 @@ test('server mode defaults proxy listener to all interfaces without system proxy
   const settings = store.getSettings();
 
   assert.equal(settings.proxyListenHost, '0.0.0.0');
+  assert.equal(settings.tlsFragmentEnabled, true);
   assert.equal(settings.systemProxyEnabled, false);
   assert.equal(settings.systemProxyCaptureEnabled, false);
 });
@@ -84,6 +85,7 @@ test('desktop mode migrates legacy unified proxy preference into system proxy ca
   const store = new ConfigStore(paths, { mode: 'desktop' });
   const settings = store.getSettings();
 
+  assert.equal(settings.tlsFragmentEnabled, true);
   assert.equal(settings.systemProxyEnabled, true);
   assert.equal(settings.systemProxyCaptureEnabled, true);
 });
