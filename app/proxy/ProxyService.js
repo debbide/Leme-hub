@@ -73,6 +73,7 @@ const toBool = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || ''
 const toList = (value) => Array.isArray(value)
   ? value.filter(Boolean)
   : String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+const defaultTlsAlpnForNode = (node) => (String(node?.type || '').toLowerCase() === 'tuic' ? ['h3'] : []);
 
 const applyIfPresent = (target, key, value) => {
   if (value !== undefined && value !== null && value !== '') {
@@ -465,8 +466,9 @@ export class ProxyService {
           outbound.tls.record_fragment = true;
         }
 
-        if (node.alpn) {
-          outbound.tls.alpn = toList(node.alpn);
+        const tlsAlpn = toList(node.alpn);
+        if (tlsAlpn.length) {
+          outbound.tls.alpn = tlsAlpn;
         }
 
         applyIfPresent(outbound.tls, 'min_version', node.tls_min_version);
@@ -588,10 +590,10 @@ export class ProxyService {
             server_name: normalizeHost(node.sni) || serverHost,
             insecure: !!node.insecure
           };
-          if (node.alpn) {
-            outbound.tls.alpn = Array.isArray(node.alpn) ? node.alpn : [node.alpn];
-          }
         }
+
+        const tuicAlpn = toList(node.alpn);
+        outbound.tls.alpn = tuicAlpn.length ? tuicAlpn : defaultTlsAlpnForNode(node);
 
         if (outbound.tls && outbound.tls.utls) {
           delete outbound.tls.utls;
@@ -1164,7 +1166,7 @@ export class ProxyService {
     this.writeConfig(config);
     buildRoutingObservabilityLines(options.runtime || {}, config)
       .forEach((line) => this.log.log(line));
-    this.stop();
+    await this.stop();
 
     const execPath = this.resolveExecutablePath(options.binPath);
     this.proxyProcess = spawn(execPath, ['run', '-c', this.configPath]);
@@ -1248,11 +1250,52 @@ export class ProxyService {
     };
   }
 
-  stop() {
-    if (this.proxyProcess) {
-      this.proxyProcess.kill();
-      this.proxyProcess = null;
+  async stop() {
+    if (!this.proxyProcess) {
+      return;
     }
+
+    const processRef = this.proxyProcess;
+    this.proxyProcess = null;
+
+    if (processRef.exitCode !== null || processRef.killed) {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      let settled = false;
+      let forceTimer = null;
+      let resolveTimer = null;
+
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (forceTimer) clearTimeout(forceTimer);
+        if (resolveTimer) clearTimeout(resolveTimer);
+        resolve();
+      };
+
+      processRef.once('exit', finish);
+
+      try {
+        processRef.kill();
+      } catch {
+        finish();
+        return;
+      }
+
+      forceTimer = setTimeout(() => {
+        try {
+          processRef.kill('SIGKILL');
+        } catch {
+          finish();
+        }
+      }, 1500);
+
+      resolveTimer = setTimeout(finish, 4000);
+    });
   }
 
   async restart(nodes, options = {}) {
@@ -1374,6 +1417,17 @@ export class ProxyService {
         } else {
           config.uuid = rawUser;
           config.password = rawPass;
+        }
+        config.tls = true;
+        config.security = config.security || 'tls';
+        if (!config.sni) {
+          config.sni = config.server;
+        }
+        if (!config.alpn) {
+          config.alpn = 'h3';
+        }
+        if (!url.port) {
+          config.port = 443;
         }
       } else if (protocol === 'hysteria2' || protocol === 'hy2') {
         config.type = 'hysteria2';
@@ -1547,6 +1601,13 @@ export class ProxyService {
       normalized.sni = normalized.sni || normalized.server;
     }
 
+    if (normalized.type === 'tuic') {
+      normalized.tls = true;
+      normalized.security = normalized.security || 'tls';
+      normalized.sni = normalized.sni || normalized.server;
+      normalized.alpn = normalized.alpn || 'h3';
+    }
+
     if (normalized.type === 'trojan') {
       normalized.tls = true;
       normalized.security = normalized.security || 'tls';
@@ -1694,7 +1755,9 @@ export class ProxyService {
         upmbps: node.up_mbps || undefined,
         downmbps: node.down_mbps || undefined,
         sni: node.sni || undefined,
-        insecure: node.insecure ? '1' : undefined
+        alpn: node.alpn || undefined,
+        insecure: node.insecure ? '1' : undefined,
+        allowInsecure: node.insecure ? '1' : undefined
       });
       return `hy2://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
@@ -1709,6 +1772,7 @@ export class ProxyService {
         heartbeat: node.heartbeat || undefined,
         zero_rtt_handshake: node.zero_rtt_handshake,
         sni: node.sni || undefined,
+        alpn: node.alpn || 'h3',
         allow_insecure: node.insecure ? '1' : undefined
       });
       return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;

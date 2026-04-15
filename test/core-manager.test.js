@@ -1291,6 +1291,43 @@ test('setNodeCountryOverride normalizes country code and overrides geo result', 
   assert.equal(result.node.flagEmoji, '🇯🇵');
 });
 
+test('updateNode replaces form-managed fields while preserving local port', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    {
+      id: 'n1',
+      type: 'vless',
+      server: 'old.example.com',
+      port: 443,
+      uuid: '00000000-0000-0000-0000-000000000000',
+      transport: 'ws',
+      wsPath: '/old',
+      wsHost: 'old.example.com',
+      headers: { Host: 'old.example.com', 'User-Agent': 'Leme' },
+      local_port: 20100
+    }
+  ]));
+  attachPassiveNodeServices(manager, () => 20100);
+
+  const result = await manager.updateNode('n1', {
+    type: 'trojan',
+    name: 'Trojan Node',
+    server: 'new.example.com',
+    port: 8443,
+    password: 'secret',
+    transport: 'tcp',
+    group: '新分组',
+    countryCodeOverride: null
+  });
+
+  assert.equal(result.node.type, 'trojan');
+  assert.equal(result.node.server, 'new.example.com');
+  assert.equal(result.node.transport, 'tcp');
+  assert.equal(result.node.localPort, 20100);
+  assert.equal(result.node.group, '新分组');
+  assert.equal('wsPath' in result.node, false);
+  assert.equal('headers' in result.node, false);
+});
+
 test('groupNodesByCountry updates only nodes with country code', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

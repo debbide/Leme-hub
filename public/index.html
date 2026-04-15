@@ -448,25 +448,275 @@
 
     <!-- Edit Node Modal -->
     <div id="edit-modal" class="modal-overlay">
-      <div class="modal">
+      <div class="modal node-form-modal">
         <div class="modal-header">
-          <h2 class="modal-title">编辑高级节点 (JSON)</h2>
+          <h2 class="modal-title" id="edit-modal-title">手动添加节点</h2>
           <button type="button" class="btn-icon modal-close-btn" id="close-modal-top">&times;</button>
         </div>
-        <div class="modal-body">
-          <div style="margin-bottom:0.75rem;">
-            <label class="modal-field-label" for="edit-node-group">分组（可选）</label>
-            <input type="text" id="edit-node-group" class="modal-field-input" placeholder="留空则归入未分组" autocomplete="off">
-          </div>
-          <div style="margin-bottom:0.75rem;">
-            <label class="modal-field-label" for="edit-node-country-override">国家代码（可选，ISO2）</label>
-            <input type="text" id="edit-node-country-override" class="modal-field-input" placeholder="例如 JP / US，留空使用 GeoIP" maxlength="2" autocomplete="off">
-          </div>
-          <textarea id="edit-json-input" class="json-editor" spellcheck="false"></textarea>
+        <div class="modal-body node-form-modal-body">
+          <form id="edit-node-form" class="node-form" autocomplete="off">
+            <section class="node-form-section" data-form-section="basic">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">基础信息</h3>
+                <p class="node-form-section-note">先填协议、地址和分组，协议切换后其余字段会自动切换。</p>
+              </div>
+              <div class="node-form-grid">
+                <div class="node-form-field-wrap" data-form-field="type">
+                  <label class="modal-field-label" for="edit-node-type">协议</label>
+                  <select id="edit-node-type" name="type" class="modal-field-input">
+                    <option value="vless">VLESS</option>
+                    <option value="vmess">VMess</option>
+                    <option value="trojan">Trojan</option>
+                    <option value="tuic">TUIC</option>
+                    <option value="hysteria2">Hysteria2</option>
+                    <option value="shadowsocks">Shadowsocks</option>
+                    <option value="socks">SOCKS</option>
+                    <option value="http">HTTP</option>
+                  </select>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="name">
+                  <label class="modal-field-label" for="edit-node-name">节点名称</label>
+                  <input type="text" id="edit-node-name" name="name" class="modal-field-input" placeholder="留空则使用服务器地址" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="server">
+                  <label class="modal-field-label" for="edit-node-server">服务器地址</label>
+                  <input type="text" id="edit-node-server" name="server" class="modal-field-input" placeholder="例如 1.2.3.4 / example.com" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="port">
+                  <label class="modal-field-label" for="edit-node-port">端口</label>
+                  <input type="number" id="edit-node-port" name="port" class="modal-field-input" min="1" max="65535" placeholder="443" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="group">
+                  <label class="modal-field-label" for="edit-node-group">分组（可选）</label>
+                  <input type="text" id="edit-node-group" name="group" class="modal-field-input" placeholder="留空则归入未分组" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="countryCodeOverride">
+                  <label class="modal-field-label" for="edit-node-country-override">国家代码（可选）</label>
+                  <input type="text" id="edit-node-country-override" name="countryCodeOverride" class="modal-field-input" placeholder="例如 JP / US" maxlength="2" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <section class="node-form-section" data-form-section="connection">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">连接参数</h3>
+                <p class="node-form-section-note">按协议填写认证和传输方式，隐藏字段不会参与保存。</p>
+              </div>
+              <div class="node-form-grid">
+                <div class="node-form-field-wrap" data-form-field="security">
+                  <label class="modal-field-label" for="edit-node-security">安全层</label>
+                  <select id="edit-node-security" name="security" class="modal-field-input">
+                    <option value="none">none</option>
+                    <option value="tls">tls</option>
+                    <option value="reality">reality</option>
+                  </select>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="transport">
+                  <label class="modal-field-label" for="edit-node-transport">传输方式</label>
+                  <select id="edit-node-transport" name="transport" class="modal-field-input">
+                    <option value="tcp">tcp</option>
+                    <option value="ws">ws</option>
+                    <option value="grpc">grpc</option>
+                  </select>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="uuid">
+                  <label class="modal-field-label" for="edit-node-uuid">UUID</label>
+                  <input type="text" id="edit-node-uuid" name="uuid" class="modal-field-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="password">
+                  <label class="modal-field-label" for="edit-node-password">密码</label>
+                  <input type="text" id="edit-node-password" name="password" class="modal-field-input" placeholder="Trojan / TUIC / Hysteria2 / SS 密码" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="username">
+                  <label class="modal-field-label" for="edit-node-username">用户名</label>
+                  <input type="text" id="edit-node-username" name="username" class="modal-field-input" placeholder="SOCKS / HTTP 可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="method">
+                  <label class="modal-field-label" for="edit-node-method">加密方法</label>
+                  <input type="text" id="edit-node-method" name="method" class="modal-field-input" placeholder="例如 aes-256-gcm / 2022-blake3-aes-128-gcm" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="version">
+                  <label class="modal-field-label" for="edit-node-version">SOCKS 版本</label>
+                  <select id="edit-node-version" name="version" class="modal-field-input">
+                    <option value="5">5</option>
+                    <option value="4">4</option>
+                  </select>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="alterId">
+                  <label class="modal-field-label" for="edit-node-alter-id">Alter ID</label>
+                  <input type="number" id="edit-node-alter-id" name="alterId" class="modal-field-input" min="0" placeholder="0" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="flow">
+                  <label class="modal-field-label" for="edit-node-flow">Flow</label>
+                  <input type="text" id="edit-node-flow" name="flow" class="modal-field-input" placeholder="例如 xtls-rprx-vision" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="packet_encoding">
+                  <label class="modal-field-label" for="edit-node-packet-encoding">Packet Encoding</label>
+                  <input type="text" id="edit-node-packet-encoding" name="packet_encoding" class="modal-field-input" placeholder="VMess 默认 packetaddr，VLESS 默认 xudp" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <section class="node-form-section" data-form-section="transport">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">传输设置</h3>
+                <p class="node-form-section-note">只显示当前传输方式需要的字段。</p>
+              </div>
+              <div class="node-form-grid">
+                <div class="node-form-field-wrap" data-form-field="wsPath">
+                  <label class="modal-field-label" for="edit-node-ws-path">WS Path</label>
+                  <input type="text" id="edit-node-ws-path" name="wsPath" class="modal-field-input" placeholder="/ws" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="wsHost">
+                  <label class="modal-field-label" for="edit-node-ws-host">WS Host</label>
+                  <input type="text" id="edit-node-ws-host" name="wsHost" class="modal-field-input" placeholder="例如 cdn.example.com" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="max_early_data">
+                  <label class="modal-field-label" for="edit-node-max-early-data">WS Early Data</label>
+                  <input type="number" id="edit-node-max-early-data" name="max_early_data" class="modal-field-input" min="0" placeholder="可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="early_data_header_name">
+                  <label class="modal-field-label" for="edit-node-early-data-header-name">Early Data Header</label>
+                  <input type="text" id="edit-node-early-data-header-name" name="early_data_header_name" class="modal-field-input" placeholder="例如 Sec-WebSocket-Protocol" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="serviceName">
+                  <label class="modal-field-label" for="edit-node-service-name">gRPC Service Name</label>
+                  <input type="text" id="edit-node-service-name" name="serviceName" class="modal-field-input" placeholder="例如 grpc-service" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <section class="node-form-section" data-form-section="tls">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">TLS / Reality</h3>
+                <p class="node-form-section-note">需要 TLS 时填写，Reality 的公钥也在这里。</p>
+              </div>
+              <div class="node-form-grid">
+                <div class="node-form-field-wrap" data-form-field="sni">
+                  <label class="modal-field-label" for="edit-node-sni">SNI / Server Name</label>
+                  <input type="text" id="edit-node-sni" name="sni" class="modal-field-input" placeholder="留空时使用服务器地址" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap node-form-toggle-wrap" data-form-field="insecure">
+                  <label class="node-form-toggle">
+                    <input type="checkbox" id="edit-node-insecure" name="insecure">
+                    <span>跳过证书验证</span>
+                  </label>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="alpn">
+                  <label class="modal-field-label" for="edit-node-alpn">ALPN</label>
+                  <input type="text" id="edit-node-alpn" name="alpn" class="modal-field-input" placeholder="多个值用逗号分隔，例如 h2,h3" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="fp">
+                  <label class="modal-field-label" for="edit-node-fp">uTLS 指纹</label>
+                  <input type="text" id="edit-node-fp" name="fp" class="modal-field-input" placeholder="例如 chrome / safari / edge" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="pbk">
+                  <label class="modal-field-label" for="edit-node-pbk">Reality 公钥</label>
+                  <input type="text" id="edit-node-pbk" name="pbk" class="modal-field-input" placeholder="必填" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="sid">
+                  <label class="modal-field-label" for="edit-node-sid">Reality Short ID</label>
+                  <input type="text" id="edit-node-sid" name="sid" class="modal-field-input" placeholder="可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="spx">
+                  <label class="modal-field-label" for="edit-node-spx">Reality Spider X</label>
+                  <input type="text" id="edit-node-spx" name="spx" class="modal-field-input" placeholder="例如 /" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="tls_min_version">
+                  <label class="modal-field-label" for="edit-node-tls-min-version">TLS 最低版本</label>
+                  <input type="text" id="edit-node-tls-min-version" name="tls_min_version" class="modal-field-input" placeholder="例如 1.2" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="tls_max_version">
+                  <label class="modal-field-label" for="edit-node-tls-max-version">TLS 最高版本</label>
+                  <input type="text" id="edit-node-tls-max-version" name="tls_max_version" class="modal-field-input" placeholder="例如 1.3" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="tls_cipher_suites">
+                  <label class="modal-field-label" for="edit-node-tls-cipher-suites">TLS Cipher Suites</label>
+                  <input type="text" id="edit-node-tls-cipher-suites" name="tls_cipher_suites" class="modal-field-input" placeholder="多个值用逗号分隔" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="certificate_public_key_sha256">
+                  <label class="modal-field-label" for="edit-node-certificate-public-key-sha256">证书公钥 SHA256</label>
+                  <input type="text" id="edit-node-certificate-public-key-sha256" name="certificate_public_key_sha256" class="modal-field-input" placeholder="多个值用逗号分隔" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <section class="node-form-section" data-form-section="protocol">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">协议专属</h3>
+                <p class="node-form-section-note">仅保留当前协议有意义的参数。</p>
+              </div>
+              <div class="node-form-grid">
+                <div class="node-form-field-wrap" data-form-field="plugin">
+                  <label class="modal-field-label" for="edit-node-plugin">Plugin</label>
+                  <input type="text" id="edit-node-plugin" name="plugin" class="modal-field-input" placeholder="Shadowsocks 可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="plugin_opts">
+                  <label class="modal-field-label" for="edit-node-plugin-opts">Plugin Opts</label>
+                  <input type="text" id="edit-node-plugin-opts" name="plugin_opts" class="modal-field-input" placeholder="例如 mode=websocket;host=example.com" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="obfs">
+                  <label class="modal-field-label" for="edit-node-obfs">Obfs</label>
+                  <input type="text" id="edit-node-obfs" name="obfs" class="modal-field-input" placeholder="例如 salamander" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="obfs_password">
+                  <label class="modal-field-label" for="edit-node-obfs-password">Obfs Password</label>
+                  <input type="text" id="edit-node-obfs-password" name="obfs_password" class="modal-field-input" placeholder="Hysteria2 可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="up_mbps">
+                  <label class="modal-field-label" for="edit-node-up-mbps">上行带宽 Mbps</label>
+                  <input type="number" id="edit-node-up-mbps" name="up_mbps" class="modal-field-input" min="0" step="0.1" placeholder="可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="down_mbps">
+                  <label class="modal-field-label" for="edit-node-down-mbps">下行带宽 Mbps</label>
+                  <input type="number" id="edit-node-down-mbps" name="down_mbps" class="modal-field-input" min="0" step="0.1" placeholder="可选" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="congestion_control">
+                  <label class="modal-field-label" for="edit-node-congestion-control">Congestion Control</label>
+                  <input type="text" id="edit-node-congestion-control" name="congestion_control" class="modal-field-input" placeholder="例如 bbr / cubic" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="udp_relay_mode">
+                  <label class="modal-field-label" for="edit-node-udp-relay-mode">UDP Relay Mode</label>
+                  <input type="text" id="edit-node-udp-relay-mode" name="udp_relay_mode" class="modal-field-input" placeholder="例如 quic-rfc" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="heartbeat">
+                  <label class="modal-field-label" for="edit-node-heartbeat">Heartbeat</label>
+                  <input type="text" id="edit-node-heartbeat" name="heartbeat" class="modal-field-input" placeholder="例如 10s" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="ip">
+                  <label class="modal-field-label" for="edit-node-ip">指定 IP</label>
+                  <input type="text" id="edit-node-ip" name="ip" class="modal-field-input" placeholder="可选，留空使用域名解析" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap node-form-toggle-wrap" data-form-field="udp_over_stream">
+                  <label class="node-form-toggle">
+                    <input type="checkbox" id="edit-node-udp-over-stream" name="udp_over_stream">
+                    <span>启用 UDP over stream</span>
+                  </label>
+                </div>
+                <div class="node-form-field-wrap node-form-toggle-wrap" data-form-field="zero_rtt_handshake">
+                  <label class="node-form-toggle">
+                    <input type="checkbox" id="edit-node-zero-rtt-handshake" name="zero_rtt_handshake">
+                    <span>启用 0-RTT 握手</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="node-form-section node-form-advanced-section" data-form-section="advanced">
+              <div class="node-form-section-head">
+                <h3 class="node-form-section-title">高级参数</h3>
+                <p class="node-form-section-note">保留表单未覆盖的字段。默认不用改，只有你要塞特殊参数时再写。</p>
+              </div>
+              <details class="node-form-advanced">
+                <summary>查看 / 编辑高级 JSON</summary>
+                <textarea id="edit-node-advanced-input" class="json-editor node-advanced-editor" spellcheck="false">{}</textarea>
+              </details>
+            </section>
+          </form>
         </div>
         <div class="modal-footer">
           <button type="button" class="cancel-modal-btn">取消</button>
-          <button type="button" class="btn-primary" id="save-node-btn">保存设置</button>
+          <button type="button" class="btn-primary" id="save-node-btn">添加节点</button>
         </div>
       </div>
     </div>

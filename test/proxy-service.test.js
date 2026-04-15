@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { EventEmitter } from 'node:events';
 
 import { ProxyService } from '../app/proxy/ProxyService.js';
 import axios from 'axios';
@@ -718,6 +719,38 @@ test('toShareLink brackets ipv6 literal hosts', () => {
   assert.equal(link, 'hy2://secret@[2001:db8::1]:443?sni=edge.example#ipv6%20edge');
 });
 
+test('toShareLink serializes hysteria2 alpn and insecure aliases', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'hysteria2',
+    server: 'hy2.example',
+    port: 443,
+    password: 'secret',
+    sni: 'edge.example',
+    alpn: 'h3',
+    insecure: true,
+    name: 'hy2 edge'
+  });
+
+  assert.equal(link, 'hy2://secret@hy2.example:443?sni=edge.example&alpn=h3&insecure=1&allowInsecure=1#hy2%20edge');
+});
+
+test('toShareLink serializes tuic nodes with default h3 alpn', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'tuic',
+    server: 'tuic.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    password: 'secret',
+    sni: 'edge.example',
+    insecure: true,
+    name: 'tuic edge'
+  });
+
+  assert.equal(link, 'tuic://0478303c-d7d2-4156-afba-1ab7e14c47fd:secret@tuic.example:443?sni=edge.example&alpn=h3&allow_insecure=1#tuic%20edge');
+});
+
 test('parses hysteria2 bandwidth and obfs password fields', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=salamander&obfs-password=mask&upmbps=20&downmbps=80&sni=edge.example#hy2');
@@ -735,10 +768,13 @@ test('parses tuic extended parameters', () => {
   const node = service.parseProxyLink('tuic://user:pass@example.com:443?congestion_control=cubic&udp_relay_mode=native&heartbeat=10s&zero_rtt_handshake=1&sni=tuic.example#tuic');
 
   assert.equal(node.type, 'tuic');
+  assert.equal(node.security, 'tls');
+  assert.equal(node.tls, true);
   assert.equal(node.congestion_control, 'cubic');
   assert.equal(node.udp_relay_mode, 'native');
   assert.equal(node.heartbeat, '10s');
   assert.equal(node.zero_rtt_handshake, true);
+  assert.equal(node.alpn, 'h3');
 });
 
 test('parses ipv6 literal hosts without persisting square brackets', () => {
@@ -947,6 +983,7 @@ test('emits hysteria2 and tuic advanced outbound fields', () => {
   assert.equal(tuic.udp_relay_mode, 'native');
   assert.equal(tuic.heartbeat, '10s');
   assert.equal(tuic.zero_rtt_handshake, true);
+  assert.deepEqual(tuic.tls?.alpn, ['h3']);
 });
 
 test('emits tls block for plain trojan links after protocol defaults', () => {
@@ -1251,4 +1288,29 @@ test('parseProxyLinks accepts newline-separated encoded manual links', () => {
   assert.equal(nodes.length, 2);
   assert.deepEqual(nodes.map((node) => node.type), ['vless', 'trojan']);
   assert.equal(nodes[0].wsPath, '/ws');
+});
+
+test('stop waits for existing sing-box process to exit before resolving', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const fakeProcess = new EventEmitter();
+  fakeProcess.exitCode = null;
+  fakeProcess.killed = false;
+  fakeProcess.kill = () => {
+    fakeProcess.killed = true;
+    setTimeout(() => {
+      fakeProcess.exitCode = 0;
+      fakeProcess.emit('exit', 0, null);
+    }, 30);
+    return true;
+  };
+
+  service.proxyProcess = fakeProcess;
+
+  const startedAt = Date.now();
+  await service.stop();
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(service.proxyProcess, null);
+  assert.equal(fakeProcess.killed, true);
+  assert.ok(elapsed >= 20);
 });

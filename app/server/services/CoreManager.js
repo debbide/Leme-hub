@@ -1773,7 +1773,7 @@ export class CoreManager {
     }
 
     nodes[index] = {
-      ...currentNode,
+      ...(currentNode.local_port ? { local_port: currentNode.local_port } : {}),
       ...patch,
       id: nodeId,
       ...(currentNode.source === 'subscription'
@@ -2301,7 +2301,7 @@ export class CoreManager {
       return this.getStatus();
     } catch (error) {
       if (binary && this.proxyService?.proxyProcess) {
-        this.proxyService.stop();
+        await this.proxyService.stop();
       }
 
       const binaryState = binary
@@ -2333,7 +2333,7 @@ export class CoreManager {
 
   async stop() {
     this._restartAttempts = 0;
-    this.proxyService.stop();
+    await this.proxyService.stop();
     const systemProxy = this.getSettingsSnapshot().systemProxyCaptureEnabled
       ? await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
           ...this.state.systemProxy,

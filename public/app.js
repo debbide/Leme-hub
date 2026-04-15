@@ -3,7 +3,7 @@ import { createNodesPanelController } from './lib/nodes-panel.js';
 import { createRoutingController } from './lib/routing-controller.js';
 import { pollTraffic as pollTrafficView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
 import { createNodeGroupsController } from './lib/node-groups-controller.js';
-import { closeNodeEditModal as closeNodeEditModalView, openNodeEditModal as openNodeEditModalView, prepareManualNodeDraft, saveNodeEdit } from './lib/node-edit-modal.js';
+import { bindNodeFormRuntime, closeNodeEditModal as closeNodeEditModalView, openNodeEditModal as openNodeEditModalView, prepareManualNodeDraft, saveNodeEdit } from './lib/node-edit-modal.js';
 import { bindNodeEditEvents } from './lib/node-edit-bindings.js';
 import { showInlineMessage } from './lib/nodes-ui.js';
 import { bindRoutingEvents } from './lib/routing-bindings.js';
@@ -287,10 +287,12 @@ const updateCoreStatus = (core) => updateCoreStatusView({
 
 // Modal Elements
 const editModal = document.querySelector('#edit-modal');
-const editJsonInput = document.querySelector('#edit-json-input');
-const editCountryOverrideInput = document.querySelector('#edit-node-country-override');
+const editModalTitle = document.querySelector('#edit-modal-title');
+const editNodeForm = document.querySelector('#edit-node-form');
+const editAdvancedInput = document.querySelector('#edit-node-advanced-input');
+const editNodeGroupInput = document.querySelector('#edit-node-group');
 const saveNodeBtn = document.querySelector('#save-node-btn');
-const closeModalBtns = document.querySelectorAll('#close-modal-top, .cancel-modal-btn');
+const closeModalBtns = editModal?.querySelectorAll('#close-modal-top, .cancel-modal-btn') || [];
 let currentEditNodeId = null;
 
 const { showToast } = createToastController(toastContainer);
@@ -367,10 +369,12 @@ const nodesPanel = createNodesPanelController({
   prepareManualNodeDraft: (currentGroup) => prepareManualNodeDraft({
     currentGroup,
     setCurrentEditNodeId: (value) => { currentEditNodeId = value; },
-    editJsonInput,
+    nodeForm: editNodeForm,
+    editAdvancedInput,
     editNodeGroupInput,
-    editCountryOverrideInput,
     editModal,
+    editModalTitle,
+    saveNodeBtn,
   }),
   openEditModal: (id) => openEditModal(id),
   setGeoIpStatus: (value) => { geoIpStatus = value || null; },
@@ -481,21 +485,27 @@ nodesPanel.bindEvents();
 const closeModal = () => closeNodeEditModalView({
   editModal,
   setCurrentEditNodeId: (value) => { currentEditNodeId = value; },
-  editJsonInput,
+  nodeForm: editNodeForm,
+  editAdvancedInput,
   editNodeGroupInput,
-  editCountryOverrideInput,
+  editModalTitle,
+  saveNodeBtn,
 });
-
-const editNodeGroupInput = document.querySelector('#edit-node-group');
 
 const openEditModal = (id) => openNodeEditModalView({
   id,
   nodesData: nodesPanel.getNodesData(),
   setCurrentEditNodeId: (value) => { currentEditNodeId = value; },
+  nodeForm: editNodeForm,
   editNodeGroupInput,
-  editCountryOverrideInput,
-  editJsonInput,
+  editAdvancedInput,
   editModal,
+  editModalTitle,
+  saveNodeBtn,
+});
+
+bindNodeFormRuntime({
+  nodeForm: editNodeForm,
 });
 
 bindNodeEditEvents({
@@ -504,9 +514,8 @@ bindNodeEditEvents({
   saveNodeBtn,
   saveNodeEdit: () => saveNodeEdit({
     saveNodeBtn,
-    editJsonInput,
-    editNodeGroupInput,
-    editCountryOverrideInput,
+    nodeForm: editNodeForm,
+    editAdvancedInput,
     currentEditNodeId,
     requestJson,
     setNodesData: (value) => { nodesPanel.setNodesData(value || []); },
