@@ -29,6 +29,17 @@ test('falls back to argv[0] when additionalData is unavailable', () => {
   assert.equal(result, target);
 });
 
+test('resolves relative argv paths against a windows working directory', () => {
+  const target = 'E:\\apps\\Leme Hub\\Leme Hub.exe';
+  const result = resolveSecondInstanceExecutablePath({
+    argv: ['Leme Hub.exe'],
+    workingDirectory: 'E:\\apps\\Leme Hub',
+    fsImpl: { existsSync: (candidate) => candidate === target }
+  });
+
+  assert.equal(result, target);
+});
+
 test('detects different executables on windows case-insensitively', () => {
   assert.equal(
     shouldHandoffToNewExecutable('E:\\Old\\Leme Hub.exe', 'E:\\New\\Leme Hub.exe', 'win32'),

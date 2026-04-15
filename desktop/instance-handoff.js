@@ -1,17 +1,30 @@
 import fs from 'fs';
 import path from 'path';
 
+const stripWrappedQuotes = (value) => String(value || '').trim().replace(/^"(.*)"$/u, '$1');
+
+const isWindowsAbsolutePath = (value) => path.win32.isAbsolute(stripWrappedQuotes(value));
+
 const normalizeCandidatePath = (value, workingDirectory = '') => {
-  const trimmed = String(value || '').trim().replace(/^"(.*)"$/u, '$1');
+  const trimmed = stripWrappedQuotes(value);
   if (!trimmed) {
     return null;
+  }
+
+  if (isWindowsAbsolutePath(trimmed)) {
+    return path.win32.normalize(trimmed);
   }
 
   if (path.isAbsolute(trimmed)) {
     return path.resolve(trimmed);
   }
 
-  if (workingDirectory) {
+  const normalizedWorkingDirectory = stripWrappedQuotes(workingDirectory);
+  if (normalizedWorkingDirectory) {
+    if (isWindowsAbsolutePath(normalizedWorkingDirectory)) {
+      return path.win32.resolve(normalizedWorkingDirectory, trimmed);
+    }
+
     return path.resolve(workingDirectory, trimmed);
   }
 
