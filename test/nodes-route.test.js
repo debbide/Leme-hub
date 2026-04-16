@@ -99,13 +99,18 @@ test('subscription routes support sync by url or id and delete by id', async () 
 });
 
 test('system routes expose geo ip status and refresh endpoint', async () => {
+  let autoStartRefreshes = 0;
   const routes = createSystemRoutes({
     store: {},
     paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
     coreManager: {
       refreshSystemProxyState: async () => ({ enabled: false }),
+      refreshAutoStartState: async () => {
+        autoStartRefreshes += 1;
+        return { enabled: true, desiredEnabled: true };
+      },
       getSettingsSnapshot: () => ({ autoStart: false }),
-      getStatus: () => ({ status: 'running' }),
+      getStatus: () => ({ status: 'running', autoStart: { enabled: true, desiredEnabled: true } }),
       getGeoIpStatus: () => ({ ready: false, pending: true, lastError: null }),
       refreshGeoIp: async () => ({ ready: true, pending: false, lastError: null }),
       getRulesetDatabaseStatus: () => ({ ready: false, pending: false, lastError: null }),
@@ -118,16 +123,23 @@ test('system routes expose geo ip status and refresh endpoint', async () => {
 
   assert.equal(statusResponse.body.geoIp.pending, true);
   assert.equal(refreshResponse.body.geoIp.ready, true);
+  assert.equal(autoStartRefreshes, 1);
+  assert.equal(statusResponse.body.core.autoStart.enabled, true);
 });
 
 test('system routes expose ruleset database status and refresh endpoint', async () => {
+  let autoStartRefreshes = 0;
   const routes = createSystemRoutes({
     store: {},
     paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
     coreManager: {
       refreshSystemProxyState: async () => ({ enabled: false }),
+      refreshAutoStartState: async () => {
+        autoStartRefreshes += 1;
+        return { enabled: false, desiredEnabled: false };
+      },
       getSettingsSnapshot: () => ({ autoStart: false }),
-      getStatus: () => ({ status: 'running' }),
+      getStatus: () => ({ status: 'running', autoStart: { enabled: false, desiredEnabled: false } }),
       getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
       getRulesetDatabaseStatus: () => ({ ready: false, pending: true, lastError: null }),
       refreshRulesetDatabase: async () => ({ ready: true, pending: false, lastError: null, downloadedAt: '2026-04-02T00:00:00.000Z' })
@@ -139,6 +151,7 @@ test('system routes expose ruleset database status and refresh endpoint', async 
 
   assert.equal(statusResponse.body.rulesetDatabase.pending, true);
   assert.equal(refreshResponse.body.rulesetDatabase.ready, true);
+  assert.equal(autoStartRefreshes, 1);
 });
 
 test('system rules routes expose rules and save result payload', async () => {

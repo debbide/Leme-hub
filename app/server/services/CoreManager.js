@@ -1092,6 +1092,7 @@ export class CoreManager {
       provider: capabilities.provider,
       supported: capabilities.supported,
       command: null,
+      lastError: null,
       desiredEnabled: !!settings.autoStart,
       ...overrides
     };
@@ -1219,10 +1220,11 @@ export class CoreManager {
 
       this.state.autoStart = this.buildAutoStartState(status);
     } catch (error) {
+      this.store.appendLog(`[CoreManager] Failed to refresh auto-start state: ${error.message}`);
       this.state.autoStart = this.buildAutoStartState({
         enabled: false,
         command: null,
-        error: error.message
+        lastError: error.message
       });
     }
 

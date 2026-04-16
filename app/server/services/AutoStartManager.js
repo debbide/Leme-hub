@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 
 const execFileAsync = promisify(execFile);
 const WINDOWS_RUN_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+const WINDOWS_STARTUP_APPROVED_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run';
 const APP_NAME = 'Leme Hub';
 const AUTOSTART_BACKGROUND_ARG = '--background';
 
@@ -25,6 +26,34 @@ const parseWindowsRunCommand = (stdout) => {
   return trimValue(match?.[1] || '');
 };
 
+const parseWindowsStartupApprovedState = (stdout) => {
+  const lines = String(stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const record = [...lines].reverse().find((line) => line.includes('REG_BINARY'));
+  if (!record) {
+    return null;
+  }
+
+  const match = record.match(/\bREG_BINARY\b\s+(.*)$/i);
+  const firstByte = String(match?.[1] || '').trim().split(/\s+/u).find(Boolean);
+  if (!firstByte) {
+    return null;
+  }
+
+  const value = Number.parseInt(firstByte, 16);
+  if (!Number.isInteger(value)) {
+    return null;
+  }
+
+  if (value === 0x03) {
+    return 'disabled';
+  }
+  if (value === 0x02) {
+    return 'enabled';
+  }
+
+  return 'unknown';
+};
+
 export class AutoStartManager {
   constructor(options = {}) {
     this.platform = options.platform || process.platform;
@@ -33,6 +62,23 @@ export class AutoStartManager {
     this.homeDir = options.homeDir || os.homedir();
     this.fs = options.fs || fs;
     this.executablePath = options.executablePath || null;
+  }
+
+  resolveWindowsCommand(command) {
+    if (this.platform !== 'win32' || command !== 'reg') {
+      return command;
+    }
+
+    const systemRoot = trimValue(
+      this.env.SystemRoot
+      || this.env.SYSTEMROOT
+      || this.env.windir
+      || this.env.WINDIR
+    );
+
+    return systemRoot
+      ? path.join(systemRoot, 'System32', 'reg.exe')
+      : command;
   }
 
   getCapabilities() {
@@ -65,7 +111,7 @@ export class AutoStartManager {
   }
 
   async exec(command, args) {
-    return this.execFile(command, args, { windowsHide: true });
+    return this.execFile(this.resolveWindowsCommand(command), args, { windowsHide: true });
   }
 
   getLinuxAutostartDir() {
@@ -78,20 +124,29 @@ export class AutoStartManager {
 
   async getWindowsStatus() {
     try {
-      const { stdout } = await this.exec('reg', ['query', WINDOWS_RUN_REG_PATH, '/v', APP_NAME]);
+      const [{ stdout }, startupApprovedResult] = await Promise.all([
+        this.exec('reg', ['query', WINDOWS_RUN_REG_PATH, '/v', APP_NAME]),
+        this.exec('reg', ['query', WINDOWS_STARTUP_APPROVED_REG_PATH, '/v', APP_NAME]).catch(() => null)
+      ]);
       const command = parseWindowsRunCommand(stdout);
+      const startupApproved = parseWindowsStartupApprovedState(startupApprovedResult?.stdout || '');
+      const disabledBySystem = startupApproved === 'disabled';
       return {
-        enabled: stdout.includes(APP_NAME),
+        enabled: stdout.includes(APP_NAME) && !disabledBySystem,
         provider: 'windows-registry',
         supported: true,
-        command
+        command,
+        startupApproved,
+        disabledBySystem
       };
     } catch {
       return {
         enabled: false,
         provider: 'windows-registry',
         supported: true,
-        command: null
+        command: null,
+        startupApproved: null,
+        disabledBySystem: false
       };
     }
   }
@@ -99,6 +154,11 @@ export class AutoStartManager {
   async enableWindows() {
     const executable = this.resolveExecutablePath();
     await this.exec('reg', ['add', WINDOWS_RUN_REG_PATH, '/v', APP_NAME, '/t', 'REG_SZ', '/d', buildAutoStartCommand(executable), '/f']);
+    try {
+      await this.exec('reg', ['delete', WINDOWS_STARTUP_APPROVED_REG_PATH, '/v', APP_NAME, '/f']);
+    } catch {
+      // ignore missing or unsupported StartupApproved entries
+    }
     return this.getWindowsStatus();
   }
 

@@ -6,9 +6,24 @@ export function createSystemRoutes({ store, coreManager, paths }) {
     return coreManager.getSettingsSnapshot().nodeGroups || [];
   };
 
+  const refreshAutoStartState = async () => {
+    if (typeof coreManager.refreshAutoStartState !== 'function') {
+      return coreManager.getStatus?.().autoStart || null;
+    }
+
+    try {
+      return await coreManager.refreshAutoStartState();
+    } catch {
+      return coreManager.getStatus?.().autoStart || null;
+    }
+  };
+
   return {
     'GET /api/system/status': async () => {
-      const systemProxy = await coreManager.refreshSystemProxyState();
+      const [systemProxy] = await Promise.all([
+        coreManager.refreshSystemProxyState(),
+        refreshAutoStartState()
+      ]);
       return {
         status: 200,
         body: {
