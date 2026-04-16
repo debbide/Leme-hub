@@ -75,6 +75,45 @@ const toList = (value) => Array.isArray(value)
   ? value.filter(Boolean)
   : String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
 const defaultTlsAlpnForNode = (node) => (String(node?.type || '').toLowerCase() === 'tuic' ? ['h3'] : []);
+const VMESS_TLS_SECURITY_MODES = new Set(['tls', 'reality']);
+
+const normalizeVmessSecurity = (value, fallback = 'none') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return VMESS_TLS_SECURITY_MODES.has(normalized) ? fallback : normalized;
+};
+
+const nodeUsesReality = (node = {}) => {
+  const type = String(node?.type || '').trim().toLowerCase();
+  const security = String(node?.security || '').trim().toLowerCase();
+  return type === 'vless' && (
+    security === 'reality'
+    || !!node?.pbk
+    || !!node?.tls?.reality?.public_key
+    || !!node?.tls?.reality?.enabled
+  );
+};
+
+const nodeUsesTls = (node = {}) => {
+  if (nodeUsesReality(node)) {
+    return true;
+  }
+
+  if (node?.tls === true) {
+    return true;
+  }
+
+  const type = String(node?.type || '').trim().toLowerCase();
+  const security = String(node?.security || '').trim().toLowerCase();
+  if (type === 'vmess') {
+    return security === 'tls';
+  }
+
+  return security === 'tls' || security === 'reality';
+};
 
 const applyIfPresent = (target, key, value) => {
   if (value !== undefined && value !== null && value !== '') {
@@ -441,7 +480,7 @@ export class ProxyService {
       }
 
       if (node.type === 'vmess') {
-        outbound.security = node.security || 'none';
+        outbound.security = normalizeVmessSecurity(node.security, 'none');
         outbound.alter_id = parseInt(node.alterId || 0, 10);
         outbound.packet_encoding = node.packet_encoding || 'packetaddr';
       } else if (node.type === 'shadowsocks') {
@@ -455,7 +494,8 @@ export class ProxyService {
       applyIfPresent(outbound, 'network', node.network);
       applyIfPresent(outbound, 'ip', node.ip);
 
-      const isTls = node.security === 'tls' || node.security === 'reality' || node.tls === true;
+      const isTls = nodeUsesTls(node);
+      const isReality = nodeUsesReality(node);
 
       if (isTls || node.sni) {
         outbound.tls = {
@@ -488,7 +528,7 @@ export class ProxyService {
           outbound.tls.certificate_public_key_sha256 = toList(node.certificate_public_key_sha256);
         }
 
-        if (node.security === 'reality') {
+        if (isReality) {
           outbound.tls.reality = {
             enabled: true,
             public_key: node.pbk,
@@ -1349,6 +1389,9 @@ export class ProxyService {
       const nodeId = Math.random().toString(36).substring(2, 9);
       const name = decodeURIComponent(url.hash.slice(1)) || `${protocol}_${nodeId}`;
       const params = new URLSearchParams(url.search);
+      const securityParam = String(params.get('security') || '').trim().toLowerCase();
+      const vmessCipherParam = String(params.get('scy') || params.get('cipher') || params.get('encryption') || '').trim().toLowerCase();
+      const wantsTls = ['tls', '1', 'true'].includes(params.get('tls')) || VMESS_TLS_SECURITY_MODES.has(securityParam);
 
       const config = {
         id: nodeId,
@@ -1359,11 +1402,24 @@ export class ProxyService {
       };
 
       if (Number.isNaN(config.port)) {
-        config.port = (params.get('security') === 'tls' || params.get('tls') === '1') ? 443 : 80;
+        config.port = wantsTls ? 443 : 80;
       }
 
       if (params.get('sni')) config.sni = normalizeHost(params.get('sni'));
-      if (params.get('security')) config.security = params.get('security');
+      if (protocol === 'vmess') {
+        if (vmessCipherParam) {
+          config.security = normalizeVmessSecurity(vmessCipherParam, 'auto');
+        }
+        if (securityParam) {
+          if (VMESS_TLS_SECURITY_MODES.has(securityParam)) {
+            config.tls = true;
+          } else if (!config.security) {
+            config.security = normalizeVmessSecurity(securityParam, 'auto');
+          }
+        }
+      } else if (securityParam) {
+        config.security = securityParam;
+      }
       if (['tls', '1', 'true'].includes(params.get('tls'))) config.tls = true;
       if (params.get('alpn')) config.alpn = params.get('alpn');
       if (params.get('type') === 'grpc' && !params.get('serviceName') && params.get('path')) {
@@ -1454,6 +1510,8 @@ export class ProxyService {
         if (params.get('obfs-password') || params.get('obfs_password')) {
           config.obfs_password = params.get('obfs-password') || params.get('obfs_password');
         }
+      } else if (protocol === 'vmess') {
+        config.uuid = rawUser || rawPass || params.get('uuid') || params.get('id');
       } else if (protocol === 'vless') {
         config.uuid = rawUser || rawPass;
       } else if (protocol === 'trojan') {
@@ -1597,6 +1655,16 @@ export class ProxyService {
     normalized.sni = normalizeHost(normalized.sni);
     normalized.ip = normalizeHost(normalized.ip);
 
+    if (normalized.type === 'vless' && nodeUsesReality({ ...node, ...normalized })) {
+      normalized.tls = true;
+      normalized.security = 'reality';
+    }
+
+    if (normalized.type === 'vmess' && VMESS_TLS_SECURITY_MODES.has(String(normalized.security || '').trim().toLowerCase())) {
+      normalized.tls = true;
+      normalized.security = 'none';
+    }
+
     if (normalized.type === 'shadowsocks' && normalized.plugin && !normalized.plugin_opts && node.plugin_opts) {
       normalized.plugin_opts = node.plugin_opts;
     }
@@ -1681,6 +1749,8 @@ export class ProxyService {
     const port = node.port ? Number.parseInt(node.port, 10) : null;
 
     if (type === 'vmess') {
+      const vmessSecurity = normalizeVmessSecurity(node.security, 'none');
+      const vmessTls = nodeUsesTls(node);
       const payload = {
         v: '2',
         ps: node.name || serverHost || 'VMess',
@@ -1688,12 +1758,12 @@ export class ProxyService {
         port: port || 443,
         id: node.uuid || '',
         aid: node.alterId || 0,
-        scy: node.security || 'auto',
+        scy: vmessSecurity,
         net: node.transport || 'tcp',
         type: 'none',
         host: node.wsHost || '',
         path: node.transport === 'grpc' ? (node.serviceName || '') : (node.wsPath || ''),
-        tls: node.tls || node.security === 'tls' || node.security === 'reality' ? 'tls' : '',
+        tls: vmessTls ? 'tls' : '',
         sni: node.sni || '',
         alpn: node.alpn || '',
         fp: node.fp || ''
@@ -1736,9 +1806,14 @@ export class ProxyService {
       if (!node.uuid) {
         return null;
       }
+      const vlessSecurity = nodeUsesReality(node)
+        ? 'reality'
+        : nodeUsesTls(node)
+          ? 'tls'
+          : undefined;
       const query = buildQuery({
         encryption: 'none',
-        security: node.security || (node.tls ? 'tls' : undefined),
+        security: vlessSecurity,
         type: node.transport && node.transport !== 'tcp' ? node.transport : undefined,
         host: node.wsHost || undefined,
         path: node.wsPath || undefined,

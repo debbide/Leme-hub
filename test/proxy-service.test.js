@@ -48,6 +48,50 @@ test('generates vmess config with default packetaddr encoding', () => {
   assert.equal(config.outbounds[0].packet_encoding, 'packetaddr');
 });
 
+test('sanitizes invalid vmess tls security while keeping tls enabled', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vmess',
+    server: 'example.com',
+    port: 443,
+    uuid: '00000000-0000-0000-0000-000000000000',
+    security: 'tls',
+    tls: true,
+    sni: 'edge.example.com'
+  }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(outbound.security, 'none');
+  assert.equal(outbound.tls?.enabled, true);
+  assert.equal(outbound.tls?.server_name, 'edge.example.com');
+});
+
+test('infers vless reality from legacy stored data without explicit security flag', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vless',
+    server: 'reality.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    tls: true,
+    sni: 'reality.example',
+    pbk: 'pub-key',
+    sid: 'abcd'
+  }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(outbound.tls?.enabled, true);
+  assert.equal(outbound.tls?.reality?.enabled, true);
+  assert.equal(outbound.tls?.reality?.public_key, 'pub-key');
+  assert.equal(outbound.tls?.reality?.short_id, 'abcd');
+});
+
 test('generates unified system proxy inbounds for rule routing mode', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
@@ -831,6 +875,27 @@ test('parses ipv6 literal hosts without persisting square brackets', () => {
   assert.equal(node.sni, '2001:db8::2');
 });
 
+test('normalizes structured vmess nodes that misuse security as tls', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.normalizeConfigNode({
+    type: 'vmess',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '00000000-0000-0000-0000-000000000000',
+    security: 'tls',
+    tls: {
+      enabled: true,
+      server_name: 'edge.example.com'
+    }
+  });
+
+  assert.equal(node.type, 'vmess');
+  assert.equal(node.uuid, '00000000-0000-0000-0000-000000000000');
+  assert.equal(node.tls, true);
+  assert.equal(node.security, 'none');
+  assert.equal(node.sni, 'edge.example.com');
+});
+
 test('parses tuic allow_insecure alias from imported share links', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('tuic://74ceeeb0-c2bc-4eab-8626-bc8aa779c82d:R1buS6WPEryV@31.59.234.78:25011/?congestion_control=bbr&alpn=h3&allow_insecure=1&sni=31.59.234.78#Node-FR_ARYK');
@@ -1130,6 +1195,7 @@ test('syncSubscription imports sing-box style json outbounds', async () => {
   assert.equal(nodes[0].port, 443);
   assert.equal(nodes[0].serviceName, 'svc');
   assert.equal(nodes[0].pbk, 'pub-key');
+  assert.equal(nodes[0].security, 'reality');
 });
 
 test('syncSubscription sends user agent and basic auth headers', async () => {

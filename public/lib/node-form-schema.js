@@ -145,7 +145,10 @@ const normalizeSecurity = (type, value) => {
     return 'tls';
   }
   const security = cleanString(value).toLowerCase();
-  if (type === 'vmess' || type === 'vless') {
+  if (type === 'vmess') {
+    return ['tls', 'none'].includes(security) ? security : 'none';
+  }
+  if (type === 'vless') {
     return ['tls', 'reality', 'none'].includes(security) ? security : 'none';
   }
   return 'none';
@@ -165,7 +168,7 @@ const deriveSecurity = (type, node) => {
   if (type === 'trojan' || type === 'hysteria2' || type === 'tuic') {
     return 'tls';
   }
-  if (node?.security === 'reality') {
+  if (type === 'vless' && (node?.security === 'reality' || node?.pbk || node?.tls?.reality?.public_key)) {
     return 'reality';
   }
   if (node?.security === 'tls' || node?.tls === true) {
@@ -461,7 +464,7 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
   pruneTypeSpecificFields(node, type, security, transport);
 
   if (TYPES_WITH_SECURITY.has(type)) {
-    node.security = security;
+    node.security = type === 'vmess' ? 'none' : security;
   } else {
     delete node.security;
   }
@@ -620,7 +623,7 @@ export const getNodeFormVisibility = (formState) => {
     insecure: tlsEnabled,
     alpn: tlsEnabled,
     fp: tlsEnabled && TYPES_WITH_FP.has(type),
-    reality: type !== 'trojan' && security === 'reality',
+    reality: type === 'vless' && security === 'reality',
     tlsAdvanced: tlsEnabled,
     shadowsocks: type === 'shadowsocks',
     hysteria2: type === 'hysteria2',

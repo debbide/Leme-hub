@@ -38,6 +38,62 @@ test('normalizes existing tuic node into form state', () => {
   assert.equal(formState.congestion_control, 'bbr');
 });
 
+test('keeps vmess tls nodes editable without persisting invalid vmess security', () => {
+  const formState = normalizeNodeForForm({
+    type: 'vmess',
+    name: 'VMess TLS',
+    server: 'example.com',
+    port: 443,
+    uuid: '00000000-0000-0000-0000-000000000000',
+    security: 'none',
+    tls: true,
+    transport: 'ws',
+    wsPath: '/ws',
+    wsHost: 'cdn.example.com',
+    sni: 'edge.example.com'
+  });
+
+  assert.equal(formState.security, 'tls');
+
+  const payload = buildNodePayloadFromForm({
+    ...formState,
+    name: 'VMess TLS Renamed'
+  });
+
+  assert.equal(payload.type, 'vmess');
+  assert.equal(payload.name, 'VMess TLS Renamed');
+  assert.equal(payload.security, 'none');
+  assert.equal(payload.tls, true);
+  assert.equal(payload.sni, 'edge.example.com');
+});
+
+test('keeps vless reality nodes editable even when legacy data omitted security flag', () => {
+  const formState = normalizeNodeForForm({
+    type: 'vless',
+    name: 'VLESS Reality',
+    server: 'reality.example',
+    port: 443,
+    uuid: '00000000-0000-0000-0000-000000000000',
+    tls: true,
+    pbk: 'pub-key',
+    sid: 'abcd',
+    sni: 'reality.example'
+  });
+
+  assert.equal(formState.security, 'reality');
+
+  const payload = buildNodePayloadFromForm({
+    ...formState,
+    name: 'VLESS Reality Renamed'
+  });
+
+  assert.equal(payload.type, 'vless');
+  assert.equal(payload.security, 'reality');
+  assert.equal(payload.tls, true);
+  assert.equal(payload.pbk, 'pub-key');
+  assert.equal(payload.sid, 'abcd');
+});
+
 test('builds tuic payload with default h3 alpn when left blank', () => {
   const payload = buildNodePayloadFromForm({
     type: 'tuic',

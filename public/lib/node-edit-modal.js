@@ -102,7 +102,11 @@ export const syncNodeFormRuntime = ({ nodeForm }) => {
     return;
   }
 
-  const state = readFormValues(nodeForm);
+  let state = readFormValues(nodeForm);
+  if (state.type === 'vmess' && state.security === 'reality' && nodeForm.elements.security) {
+    nodeForm.elements.security.value = 'none';
+    state = readFormValues(nodeForm);
+  }
   const visibility = getNodeFormVisibility(state);
 
   if (!visibility.security && nodeForm.elements.security) {
