@@ -77,7 +77,7 @@ export class AutoStartManager {
     );
 
     return systemRoot
-      ? path.join(systemRoot, 'System32', 'reg.exe')
+      ? path.win32.join(systemRoot, 'System32', 'reg.exe')
       : command;
   }
 
