@@ -6,6 +6,7 @@ export const bindNodesPanelEvents = ({
   testAllBtn,
   testAllNodes,
   selectedNodeIds,
+  copySelectedNodeShareLinks,
   showConfirmModal,
   requestJson,
   loadNodes,
@@ -31,6 +32,11 @@ export const bindNodesPanelEvents = ({
   });
 
   testAllBtn?.addEventListener('click', testAllNodes);
+
+  document.getElementById('bulk-copy-btn')?.addEventListener('click', () => {
+    if (!selectedNodeIds.size) return;
+    copySelectedNodeShareLinks?.();
+  });
 
   document.getElementById('bulk-move-btn')?.addEventListener('click', (event) => {
     event.stopPropagation();

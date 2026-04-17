@@ -105,6 +105,29 @@ export const copyNodeShareLink = async ({ id, nodesData, showToast }) => {
   }
 };
 
+export const copySelectedNodeShareLinks = async ({ selectedNodeIds, nodesData, showToast }) => {
+  const selectedNodes = nodesData.filter((item) => selectedNodeIds.has(item.id));
+  const shareLinks = selectedNodes.map((item) => item.shareLink).filter(Boolean);
+  if (!shareLinks.length) {
+    showToast('所选节点暂无可复制的代理链接', 'error');
+    return;
+  }
+
+  const skippedCount = selectedNodes.length - shareLinks.length;
+
+  try {
+    await copyTextToClipboard(shareLinks.join('\n'));
+    showToast(
+      skippedCount
+        ? `已复制 ${shareLinks.length} 条代理链接，跳过 ${skippedCount} 条无分享链接节点`
+        : `已复制 ${shareLinks.length} 条代理链接`,
+      'success'
+    );
+  } catch (error) {
+    showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
+  }
+};
+
 export const applyLatencyResult = (result) => {
   const resultEl = document.querySelector(`#test-result-${result.id}`);
   if (!resultEl) return;

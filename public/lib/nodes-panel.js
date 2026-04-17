@@ -1,7 +1,7 @@
 import { bindNodesPanelEvents } from './nodes-bindings.js';
 import { renderGroupTabs as renderGroupTabsView, testAllNodes as testAllNodesView, updateBulkBar as updateBulkBarView } from './nodes-controller.js';
 import { deleteNodeRecord, deleteSubscriptionRecord, importNodeLink, loadNodesData, refreshSubscriptionNodes, syncSubscriptionNodes, testSingleNode } from './nodes-data.js';
-import { applyLatencyResult, copyNodeShareLink, renderNodeRow, resetLatencyPlaceholders, showInlineMessage } from './nodes-ui.js';
+import { applyLatencyResult, copyNodeShareLink, copySelectedNodeShareLinks, renderNodeRow, resetLatencyPlaceholders, showInlineMessage } from './nodes-ui.js';
 
 const formatDateTime = (value) => {
   if (!value) {
@@ -547,6 +547,12 @@ export const createNodesPanelController = ({
     showToast,
   });
 
+  const copySelectedLinks = () => copySelectedNodeShareLinks({
+    selectedNodeIds,
+    nodesData,
+    showToast,
+  });
+
   const bindEvents = () => {
     addGroupBtn?.addEventListener('click', async () => {
       const name = await showInputModal('新建分组名称');
@@ -571,6 +577,7 @@ export const createNodesPanelController = ({
       testAllBtn,
       testAllNodes,
       selectedNodeIds,
+      copySelectedNodeShareLinks: copySelectedLinks,
       showConfirmModal,
       requestJson,
       loadNodes,
