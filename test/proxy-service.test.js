@@ -1494,12 +1494,28 @@ test('measureSpeedtestLatency samples twice and returns the faster result', asyn
     assert.equal(calls.length, 2);
     assert.equal(calls[0].url, 'https://example.com/generate_204');
     assert.equal(calls[0].options.proxy, false);
-    assert.equal(calls[0].options.httpAgent.shouldLookup, true);
+    assert.equal(calls[0].options.httpAgent.shouldLookup, false);
     assert.equal(calls[0].options.httpAgent.keepAlive, true);
     assert.equal(calls[0].options.validateStatus(403), true);
   } finally {
     Date.now = originalDateNow;
   }
+});
+
+test('measureSpeedtestLatency translates tls handshake failures into a clearer error', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  axios.get = async () => {
+    throw new Error('Client network socket disconnected before secure TLS connection was established');
+  };
+
+  await assert.rejects(
+    () => service.measureSpeedtestLatency(24001, {
+      proxyListen: '127.0.0.1',
+      url: 'https://example.com/generate_204',
+      requestCount: 1
+    }),
+    /测速目标 TLS 握手失败/
+  );
 });
 
 test('stop waits for existing sing-box process to exit before resolving', async () => {

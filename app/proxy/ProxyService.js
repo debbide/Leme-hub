@@ -84,6 +84,38 @@ const toBool = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || ''
 const toList = (value) => Array.isArray(value)
   ? value.filter(Boolean)
   : String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+
+const normalizeSpeedtestError = (error, targetUrl = '') => {
+  const status = Number.parseInt(error?.response?.status, 10);
+  if (Number.isInteger(status) && status > 0) {
+    return `测速目标返回 HTTP ${status}`;
+  }
+
+  const code = String(error?.code || '').trim().toUpperCase();
+  const rawMessage = String(error?.message || '').trim();
+  const message = rawMessage.toLowerCase();
+  if (message.includes('client network socket disconnected before secure tls connection was established')) {
+    return `测速目标 TLS 握手失败，节点或测速地址可能不兼容${targetUrl ? `: ${targetUrl}` : ''}`;
+  }
+  if (message.includes('certificate') || code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
+    return `测速目标证书校验失败${targetUrl ? `: ${targetUrl}` : ''}`;
+  }
+  if (code === 'ECONNABORTED' || message.includes('timeout')) {
+    return '测速请求超时';
+  }
+  if (code === 'ECONNRESET' || message.includes('socket hang up')) {
+    return '测速连接被重置';
+  }
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return `测速目标解析失败${targetUrl ? `: ${targetUrl}` : ''}`;
+  }
+  if (code === 'ECONNREFUSED') {
+    return '测速代理入口不可用';
+  }
+
+  return rawMessage || code || '测速失败';
+};
+
 const defaultTlsAlpnForNode = (node) => (String(node?.type || '').toLowerCase() === 'tuic' ? ['h3'] : []);
 const VMESS_TLS_SECURITY_MODES = new Set(['tls', 'reality']);
 
@@ -1526,7 +1558,7 @@ export class ProxyService {
     const requestGapMs = Math.max(0, toInt(options.requestGapMs, SPEEDTEST_REQUEST_GAP_MS));
     const timeoutMs = Math.max(1000, toInt(options.timeoutMs, SPEEDTEST_TIMEOUT_MS));
     const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(this.proxyListen));
-    const agent = new SocksProxyAgent(`socks5://${formatHostForUrl(listenHost)}:${localPort}`, {
+    const agent = new SocksProxyAgent(`socks5h://${formatHostForUrl(listenHost)}:${localPort}`, {
       keepAlive: true,
       timeout: timeoutMs
     });
@@ -1545,13 +1577,13 @@ export class ProxyService {
         });
         const latencyMs = Date.now() - startedAt;
         samples.push(latencyMs);
-        this.log.log?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5 keepalive=on dns=local status=${response.status || 0} latency=${latencyMs}ms`);
+        this.log.log?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5h keepalive=on dns=proxy status=${response.status || 0} latency=${latencyMs}ms`);
       } catch (error) {
         const detail = error?.response?.status
           ? `HTTP ${error.response.status}`
           : error?.code || error?.message || 'unknown error';
-        this.log.error?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5 keepalive=on dns=local failed=${detail}`);
-        throw error;
+        this.log.error?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5h keepalive=on dns=proxy failed=${detail}`);
+        throw new Error(normalizeSpeedtestError(error, targetUrl));
       }
       if (index + 1 < requestCount) {
         await sleep(requestGapMs);
