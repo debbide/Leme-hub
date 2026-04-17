@@ -1056,6 +1056,55 @@ test('getSettingsSnapshot recovers invalid routingItems from legacy routing fiel
   assert.equal(settings.nodeGroups[0].name, 'JP Pool');
 });
 
+test('updateSettings keeps node group routing items when the group is temporarily empty', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: [], selectedNodeId: null }],
+    routingItems: [
+      { id: 'rule-group', kind: 'rule', type: 'domain_suffix', value: 'youtube.com', action: 'node_group', nodeGroupId: 'g1', note: '' },
+      { id: 'rs-group', kind: 'builtin_ruleset', presetId: 'youtube', name: 'YouTube', target: 'node_group', groupId: 'g1', enabled: true, note: '' }
+    ]
+  });
+
+  assert.equal(result.settings.nodeGroups[0].selectedNodeId, null);
+  assert.equal(result.settings.customRules[0].nodeGroupId, 'g1');
+  assert.equal(result.settings.rulesets[0].groupId, 'g1');
+  assert.equal(result.settings.routingItems.some((item) => item.kind === 'rule' && item.nodeGroupId === 'g1'), true);
+  assert.equal(result.settings.routingItems.some((item) => item.kind === 'builtin_ruleset' && item.groupId === 'g1'), true);
+});
+
+test('updateSettings still rejects routing items that reference a missing node group', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await assert.rejects(() => manager.updateSettings({
+    routingItems: [
+      { id: 'rule-group', kind: 'rule', type: 'domain_suffix', value: 'youtube.com', action: 'node_group', nodeGroupId: 'missing', note: '' }
+    ]
+  }), /existing node group/);
+});
+
+test('updateNodeGroupNodes allows clearing a referenced node group without breaking routing settings', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1'], selectedNodeId: 'n1' }],
+    routingItems: [
+      { id: 'rule-group', kind: 'rule', type: 'domain_suffix', value: 'youtube.com', action: 'node_group', nodeGroupId: 'g1', note: '' },
+      { id: 'rs-group', kind: 'builtin_ruleset', presetId: 'youtube', name: 'YouTube', target: 'node_group', groupId: 'g1', enabled: true, note: '' }
+    ]
+  });
+
+  const result = await manager.updateNodeGroupNodes('g1', []);
+
+  assert.deepEqual(result.settings.nodeGroups[0].nodeIds, []);
+  assert.equal(result.settings.nodeGroups[0].selectedNodeId, null);
+  assert.equal(result.settings.customRules[0].nodeGroupId, 'g1');
+  assert.equal(result.settings.rulesets[0].groupId, 'g1');
+});
+
 test('updateSettings preserves custom ruleset grouping from routingItems', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 

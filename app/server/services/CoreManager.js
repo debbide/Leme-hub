@@ -102,6 +102,8 @@ const getNodeGroupSelectedNodeId = (group) => {
   return Array.isArray(group?.nodeIds) && group.nodeIds.includes(selectedNodeId) ? selectedNodeId : null;
 };
 
+const hasExistingNodeGroup = (nodeGroups = [], groupId = null) => Boolean(getNodeGroupById(nodeGroups, groupId));
+
 const normalizeSystemProxyAutoSwitchSettings = (settings = {}, nodeGroups = [], options = {}) => {
   const { strict = false } = options;
   const requestedEnabled = !!settings.systemProxyAutoSwitchEnabled;
@@ -332,8 +334,8 @@ const normalizeRoutingItem = (item, index, nodeGroups = []) => {
   if (target === 'node_group' && !groupId) {
     throw createHttpError(`routingItems[${index}] target=node_group requires groupId`, 400);
   }
-  if (target === 'node_group' && groupId && !nodeGroups.some((group) => group.id === groupId && group.selectedNodeId)) {
-    throw createHttpError(`routingItems[${index}] target=node_group requires a valid selected group node`, 400);
+  if (target === 'node_group' && groupId && !hasExistingNodeGroup(nodeGroups, groupId)) {
+    throw createHttpError(`routingItems[${index}] target=node_group requires an existing node group`, 400);
   }
 
   return {
@@ -466,8 +468,8 @@ const normalizeCustomRule = (rule, index, nodeGroups = []) => {
   if (action === 'node_group' && !nodeGroupId) {
     throw createHttpError(`customRules[${index}] target=node_group requires nodeGroupId`, 400);
   }
-  if (action === 'node_group' && nodeGroupId && !nodeGroups.some((group) => group.id === nodeGroupId && group.selectedNodeId)) {
-    throw createHttpError(`customRules[${index}] target=node_group requires a valid selected group node`, 400);
+  if (action === 'node_group' && nodeGroupId && !hasExistingNodeGroup(nodeGroups, nodeGroupId)) {
+    throw createHttpError(`customRules[${index}] target=node_group requires an existing node group`, 400);
   }
 
   if (!value) {
@@ -611,8 +613,8 @@ const normalizeRuleset = (ruleset, index, nodeGroups = []) => {
   if (target === 'node_group' && !groupId) {
     throw createHttpError(`rulesets[${index}] target=node_group requires groupId`, 400);
   }
-  if (target === 'node_group' && groupId && !nodeGroups.some((group) => group.id === groupId && group.selectedNodeId)) {
-    throw createHttpError(`rulesets[${index}] target=node_group requires a valid selected group node`, 400);
+  if (target === 'node_group' && groupId && !hasExistingNodeGroup(nodeGroups, groupId)) {
+    throw createHttpError(`rulesets[${index}] target=node_group requires an existing node group`, 400);
   }
 
   if (kind === 'builtin') {
