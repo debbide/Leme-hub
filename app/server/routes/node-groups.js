@@ -8,6 +8,9 @@ export function createNodeGroupRoutes({ coreManager }) {
     return coreManager.getNodeGroups();
   };
   const getNodeGroupTesting = () => {
+    if (typeof coreManager.getNodeGroupTestingSnapshot === 'function') {
+      return coreManager.getNodeGroupTestingSnapshot();
+    }
     const settings = coreManager.getSettingsSnapshot();
     return {
       intervalSec: settings.nodeGroupAutoTestIntervalSec || 300,
@@ -48,6 +51,18 @@ export function createNodeGroupRoutes({ coreManager }) {
     'PUT /api/node-groups/selection': async ({ body }) => {
       try {
         return json({ ok: true, ...await coreManager.selectNodeGroupNode(body?.id, body?.selectedNodeId), nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
+      } catch (error) {
+        return json({ ok: false, error: error.message, nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() }, error.status || 500);
+      }
+    },
+    'POST /api/node-groups/test': async ({ body }) => {
+      try {
+        const ids = Array.isArray(body?.ids)
+          ? body.ids
+          : body?.id
+            ? [body.id]
+            : [];
+        return json({ ok: true, ...await coreManager.testNodeGroups(ids, { autoStartCore: false }), nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
       } catch (error) {
         return json({ ok: false, error: error.message, nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() }, error.status || 500);
       }

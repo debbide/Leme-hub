@@ -20,6 +20,7 @@ export const bindSystemEvents = ({
   dnsRemoteServerInput,
   dnsDirectServerInput,
   dnsBootstrapServerInput,
+  speedtestUrlInput,
   dnsFinalSelect,
   dnsStrategySelect,
   renderRoutingModeBanner,
@@ -224,7 +225,7 @@ export const bindSystemEvents = ({
     });
   }
 
-  const bindDnsInput = (input, buildPatch) => {
+  const bindSettingsInput = (input, buildPatch, label) => {
     if (!input) return;
     input.addEventListener('change', async () => {
       const value = input.value;
@@ -235,16 +236,17 @@ export const bindSystemEvents = ({
         });
         if (payload.core) updateCoreStatus(payload.core);
         renderRoutingModeBanner();
-        showToast(payload.autoRestarted ? 'DNS 设置已更新并自动应用' : 'DNS 设置已更新', 'success');
+        showToast(payload.autoRestarted ? `${label}已更新并自动应用` : `${label}已更新`, 'success');
       } catch (error) {
-        showToast(`DNS 设置失败: ${error.message}`, 'error');
+        showToast(`${label}失败: ${error.message}`, 'error');
       }
     });
   };
 
-  bindDnsInput(dnsRemoteServerInput, (value) => ({ dnsRemoteServer: String(value || '').trim() }));
-  bindDnsInput(dnsDirectServerInput, (value) => ({ dnsDirectServer: String(value || '').trim() }));
-  bindDnsInput(dnsBootstrapServerInput, (value) => ({ dnsBootstrapServer: String(value || '').trim() }));
-  bindDnsInput(dnsFinalSelect, (value) => ({ dnsFinal: value }));
-  bindDnsInput(dnsStrategySelect, (value) => ({ dnsStrategy: value }));
+  bindSettingsInput(dnsRemoteServerInput, (value) => ({ dnsRemoteServer: String(value || '').trim() }), 'DNS 设置');
+  bindSettingsInput(dnsDirectServerInput, (value) => ({ dnsDirectServer: String(value || '').trim() }), 'DNS 设置');
+  bindSettingsInput(dnsBootstrapServerInput, (value) => ({ dnsBootstrapServer: String(value || '').trim() }), 'DNS 设置');
+  bindSettingsInput(speedtestUrlInput, (value) => ({ speedtestUrl: String(value || '').trim() }), '测速设置');
+  bindSettingsInput(dnsFinalSelect, (value) => ({ dnsFinal: value }), 'DNS 设置');
+  bindSettingsInput(dnsStrategySelect, (value) => ({ dnsStrategy: value }), 'DNS 设置');
 };

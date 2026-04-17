@@ -1,11 +1,7 @@
 import { loadNodeGroupsData, renderNodeGroupTestMeta as renderNodeGroupTestMetaView, persistNodeGroupTestingState as persistNodeGroupTestingStateView, getEffectiveGroupNodeIds as getEffectiveGroupNodeIdsView, formatNodeGroupLatencyBadge as formatNodeGroupLatencyBadgeView, showNodeGroupConfigModal as showNodeGroupConfigModalView } from './node-groups.js';
-import { applyLatencyPrioritySwitch as applyLatencyPrioritySwitchView, testNodeGroupNodes as testNodeGroupNodesView, testSingleNodeInGroup as testSingleNodeInGroupView, startNodeGroupAutoTest as startNodeGroupAutoTestView, stopNodeGroupAutoTest as stopNodeGroupAutoTestView, runNodeGroupAutoBackfillIfNeeded as runNodeGroupAutoBackfillIfNeededView } from './node-groups-auto.js';
+import { testNodeGroupNodes as testNodeGroupNodesView, testSingleNodeInGroup as testSingleNodeInGroupView, startNodeGroupAutoTest as startNodeGroupAutoTestView, stopNodeGroupAutoTest as stopNodeGroupAutoTestView, runNodeGroupAutoBackfillIfNeeded as runNodeGroupAutoBackfillIfNeededView } from './node-groups-auto.js';
 import { renderNodeGroups as renderNodeGroupsView } from './node-groups-render.js';
 import { flagFromCountryCode } from './utils.js';
-
-const NODE_GROUP_SWITCH_DELTA_MS = 120;
-const NODE_GROUP_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
-const NODE_GROUP_SWITCH_FAIL_THRESHOLD = 3;
 
 const nodeGroupDisplayNames = (() => {
   try {
@@ -58,7 +54,6 @@ export const createNodeGroupsController = ({
   let nodeGroupLastTestAt = null;
   let nodeGroupAutoTestIntervalMs = 5 * 60 * 1000;
   let nodeGroupSavingTestingState = false;
-  let nodeGroupAutoSwitchState = new Map();
   let nodeGroupSearchQuery = '';
   let nodeGroupSortByLatency = true;
 
@@ -100,21 +95,6 @@ export const createNodeGroupsController = ({
   const getEffectiveGroupNodeIds = (group) => getEffectiveGroupNodeIdsView({
     group,
     routingNodeOptions: getRoutingNodeOptions(),
-  });
-
-  const applyLatencyPrioritySwitch = (group, testResults = [], options = {}) => applyLatencyPrioritySwitchView({
-    group,
-    testResults,
-    options,
-    requestJson,
-    nodeGroups,
-    setNodeGroups: (value) => { nodeGroups = value || []; },
-    nodeGroupAutoSwitchState,
-    routingNodeOptions: getRoutingNodeOptions(),
-    NODE_GROUP_SWITCH_FAIL_THRESHOLD,
-    NODE_GROUP_SWITCH_COOLDOWN_MS,
-    NODE_GROUP_SWITCH_DELTA_MS,
-    showToast,
   });
 
   const formatNodeGroupLatencyBadge = (nodeId) => formatNodeGroupLatencyBadgeView({
@@ -211,8 +191,8 @@ export const createNodeGroupsController = ({
     nodeGroupExpandedIds,
     setNodeGroups: (value) => { nodeGroups = value || []; },
     setNodeGroupExpandedIds: (value) => { nodeGroupExpandedIds = value; },
-    nodeGroupAutoSwitchState,
-    setNodeGroupAutoSwitchState: (value) => { nodeGroupAutoSwitchState = value; },
+    nodeGroupAutoSwitchState: new Map(),
+    setNodeGroupAutoSwitchState: () => {},
     routingNodeOptions: getRoutingNodeOptions(),
     setRoutingNodeOptions,
     nodeGroupAutoIntervalSelect,
@@ -233,11 +213,9 @@ export const createNodeGroupsController = ({
     renderNodeGroups,
     requestJson,
     nodeGroupLatencyMap,
-    nodeGroupLastTestAt,
+    setNodeGroups: (value) => { nodeGroups = value || []; },
     setNodeGroupLastTestAt: (value) => { nodeGroupLastTestAt = value; },
     renderNodeGroupTestMeta,
-    persistNodeGroupTestingState,
-    applyLatencyPrioritySwitch,
     updateCoreStatus,
     showToast,
   });
@@ -267,8 +245,6 @@ export const createNodeGroupsController = ({
     nodeGroupAutoTestTimer,
     setNodeGroupAutoTestTimer: (value) => { nodeGroupAutoTestTimer = value; },
     setNodeGroupAutoTestStatusTimer: (value) => { nodeGroupAutoTestStatusTimer = value; },
-    nodeGroups,
-    getEffectiveGroupNodeIds,
     testNodeGroupNodes,
     nodeGroupAutoTestIntervalMs,
     renderNodeGroupTestMeta,

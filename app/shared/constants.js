@@ -10,6 +10,7 @@ export const DEFAULT_DNS_DIRECT_SERVER = 'https://dns.alidns.com/dns-query';
 export const DEFAULT_DNS_BOOTSTRAP_SERVER = '223.5.5.5';
 export const DEFAULT_DNS_FINAL = 'dns-remote';
 export const DEFAULT_DNS_STRATEGY = 'prefer_ipv4';
+export const DEFAULT_SPEEDTEST_URL = 'https://www.google.com/generate_204';
 export const DEFAULT_CONFIG_FILE = 'singbox_config.json';
 export const DEFAULT_LOG_FILE = 'singbox.log';
 export const DEFAULT_NODES_FILE = 'proxy_nodes.json';

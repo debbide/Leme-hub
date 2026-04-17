@@ -6,6 +6,7 @@ import {
   DEFAULT_DNS_FINAL,
   DEFAULT_DNS_REMOTE_SERVER,
   DEFAULT_DNS_STRATEGY,
+  DEFAULT_SPEEDTEST_URL,
   DEFAULT_PROXY_BASE_PORT,
   DEFAULT_PROXY_LISTEN_HOST,
   DEFAULT_SERVER_PROXY_LISTEN_HOST,
@@ -47,6 +48,7 @@ const defaultSettings = (paths, options = {}) => {
     dnsBootstrapServer: DEFAULT_DNS_BOOTSTRAP_SERVER,
     dnsFinal: DEFAULT_DNS_FINAL,
     dnsStrategy: DEFAULT_DNS_STRATEGY,
+    speedtestUrl: DEFAULT_SPEEDTEST_URL,
     activeNodeId: null,
     routingItems: [],
     customRules: [],
@@ -106,6 +108,8 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
     normalized.systemProxySocksPort = DEFAULT_SYSTEM_PROXY_SOCKS_PORT;
     normalized.systemProxyHttpPort = DEFAULT_SYSTEM_PROXY_HTTP_PORT;
   }
+
+  normalized.speedtestUrl = String(normalized.speedtestUrl || defaults.speedtestUrl).trim() || defaults.speedtestUrl;
 
   return normalized;
 };

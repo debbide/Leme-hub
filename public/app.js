@@ -55,6 +55,7 @@ const autoStartToggle = document.querySelector('#auto-start-toggle');
 const dnsRemoteServerInput = document.querySelector('#dns-remote-server');
 const dnsDirectServerInput = document.querySelector('#dns-direct-server');
 const dnsBootstrapServerInput = document.querySelector('#dns-bootstrap-server');
+const speedtestUrlInput = document.querySelector('#speedtest-url');
 const dnsFinalSelect = document.querySelector('#dns-final-select');
 const dnsStrategySelect = document.querySelector('#dns-strategy-select');
 const routingModeBanner = document.querySelector('#routing-mode-banner');
@@ -455,6 +456,7 @@ const loadSystemStatus = () => loadSystemRuntimeStatus({
     dnsRemoteServerInput,
     dnsDirectServerInput,
     dnsBootstrapServerInput,
+    speedtestUrlInput,
     dnsFinalSelect,
     dnsStrategySelect,
   }),
@@ -588,6 +590,12 @@ bindSystemEvents({
   updateRestartWarning,
   getCurrentCoreState: () => currentCoreState,
   autoStartToggle,
+  dnsRemoteServerInput,
+  dnsDirectServerInput,
+  dnsBootstrapServerInput,
+  speedtestUrlInput,
+  dnsFinalSelect,
+  dnsStrategySelect,
   renderRoutingModeBanner: () => routingController.renderRoutingModeBanner(),
 });
 

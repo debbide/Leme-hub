@@ -472,7 +472,26 @@ test('uses selected node from node group for manual system proxy rule', () => {
     ]
   });
 
-  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-group' && rule.outbound === 'out-n2'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-rule-group' && rule.outbound === 'grp-g1'), true);
+});
+
+test('generates selector outbounds for node groups', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }]
+  });
+
+  const selector = config.outbounds.find((outbound) => outbound.tag === 'grp-g1');
+  assert.ok(selector);
+  assert.equal(selector.type, 'selector');
+  assert.deepEqual(selector.outbounds, ['out-n1', 'out-n2']);
+  assert.equal(selector.interrupt_exist_connections, false);
 });
 
 test('uses system default node for unmatched system proxy traffic and dns when it differs from active node', () => {
@@ -498,6 +517,29 @@ test('uses system default node for unmatched system proxy traffic and dns when i
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n2'), true);
   assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.server === 'dns-system-remote'), true);
   assert.equal(config.dns.servers.some((server) => server.tag === 'dns-system-remote' && server.detour === 'out-n2'), true);
+});
+
+test('uses selector outbound for system auto-switch group traffic and dns detour', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    systemDefaultNodeId: 'n2',
+    systemProxyAutoSwitchEnabled: true,
+    systemProxyAutoSwitchGroupId: 'g1',
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }],
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'grp-g1'), true);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-system-remote' && server.detour === 'grp-g1'), true);
 });
 
 test('uses system default node in global mode when it differs from active node', () => {
@@ -1400,6 +1442,64 @@ test('parseProxyLinks accepts newline-separated encoded manual links', () => {
   assert.equal(nodes.length, 2);
   assert.deepEqual(nodes.map((node) => node.type), ['vless', 'trojan']);
   assert.equal(nodes[0].wsPath, '/ws');
+});
+
+test('createSpeedtestService uses direct dns final for dedicated latency checks', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.runtimeOptions = {
+    dnsDirectServer: 'https://dns.example/dns-query',
+    dnsBootstrapServer: '9.9.9.9',
+    dnsStrategy: 'ipv6_only'
+  };
+
+  const { service: speedtestService, config, listenHost, runtime } = service.createSpeedtestService([{
+    id: 'n1',
+    type: 'socks',
+    server: 'edge.example',
+    port: 1080,
+    local_port: 24001
+  }]);
+
+  assert.equal(listenHost, '127.0.0.1');
+  assert.equal(speedtestService.getLocalPort('n1'), 24001);
+  assert.equal(config.dns.final, 'dns-local');
+  assert.equal(config.dns.strategy, 'ipv6_only');
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-local' && server.server === 'dns.example'), true);
+  assert.equal(config.route.final, 'direct');
+  assert.equal(config.experimental, undefined);
+  assert.equal(runtime.speedtestUrl, 'https://www.google.com/generate_204');
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('in-n1') && rule.outbound === 'out-n1'), true);
+});
+
+test('measureSpeedtestLatency samples twice and returns the faster result', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const calls = [];
+  axios.get = async (url, options) => {
+    calls.push({ url, options });
+    return { status: 204 };
+  };
+
+  const originalDateNow = Date.now;
+  const ticks = [1000, 1600, 2000, 2120];
+  Date.now = () => ticks.shift() ?? originalDateNow();
+
+  try {
+    const latency = await service.measureSpeedtestLatency(24001, {
+      proxyListen: '127.0.0.1',
+      url: 'https://example.com/generate_204',
+      requestGapMs: 0
+    });
+
+    assert.equal(latency, 120);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'https://example.com/generate_204');
+    assert.equal(calls[0].options.proxy, false);
+    assert.equal(calls[0].options.httpAgent.shouldLookup, true);
+    assert.equal(calls[0].options.httpAgent.keepAlive, true);
+    assert.equal(calls[0].options.validateStatus(403), true);
+  } finally {
+    Date.now = originalDateNow;
+  }
 });
 
 test('stop waits for existing sing-box process to exit before resolving', async () => {

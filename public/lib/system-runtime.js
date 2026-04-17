@@ -20,11 +20,12 @@ export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, 
   }
 };
 
-export const applySystemSettingsSnapshot = ({ settings, autoStartToggle, dnsRemoteServerInput, dnsDirectServerInput, dnsBootstrapServerInput, dnsFinalSelect, dnsStrategySelect }) => {
+export const applySystemSettingsSnapshot = ({ settings, autoStartToggle, dnsRemoteServerInput, dnsDirectServerInput, dnsBootstrapServerInput, speedtestUrlInput, dnsFinalSelect, dnsStrategySelect }) => {
   if (!settings || typeof settings !== 'object') return;
   if (dnsRemoteServerInput) dnsRemoteServerInput.value = settings.dnsRemoteServer || '';
   if (dnsDirectServerInput) dnsDirectServerInput.value = settings.dnsDirectServer || '';
   if (dnsBootstrapServerInput) dnsBootstrapServerInput.value = settings.dnsBootstrapServer || '';
+  if (speedtestUrlInput) speedtestUrlInput.value = settings.speedtestUrl || '';
   if (dnsFinalSelect) dnsFinalSelect.value = settings.dnsFinal || 'dns-remote';
   if (dnsStrategySelect) dnsStrategySelect.value = settings.dnsStrategy || 'prefer_ipv4';
 };

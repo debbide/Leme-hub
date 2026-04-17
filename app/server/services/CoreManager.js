@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
-import { ProxyService } from '../../proxy/ProxyService.js';
-import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
+import { ProxyService, getNodeGroupOutboundTag } from '../../proxy/ProxyService.js';
+import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, DEFAULT_SPEEDTEST_URL, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
 import { formatHostPort, formatUrlWithHost, normalizeHost } from '../../shared/network.js';
 import { AutoStartManager } from './AutoStartManager.js';
+import { ClashApiService } from './ClashApiService.js';
 import { ConnectionsService } from './ConnectionsService.js';
 import { GeoIpService, geoFlagFromCountryCode } from './GeoIpService.js';
 import { RulesetDatabaseService } from './RulesetDatabaseService.js';
@@ -45,6 +46,10 @@ const NODE_GROUP_ICON_MODES = ['auto', 'emoji', 'none'];
 const NODE_GROUP_AUTO_TEST_MIN_SEC = 60;
 const NODE_GROUP_AUTO_TEST_MAX_SEC = 3600;
 const NODE_GROUP_AUTO_TEST_DEFAULT_SEC = 300;
+const NODE_GROUP_AUTO_TEST_TICK_MS = 15000;
+const NODE_GROUP_SWITCH_DELTA_MS = 120;
+const NODE_GROUP_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
+const NODE_GROUP_SWITCH_FAIL_THRESHOLD = 3;
 const SYSTEM_PROXY_AUTO_SWITCH_MIN_SEC = 60;
 const SYSTEM_PROXY_AUTO_SWITCH_MAX_SEC = 86400;
 const SYSTEM_PROXY_AUTO_SWITCH_DEFAULT_SEC = 600;
@@ -847,6 +852,7 @@ export class CoreManager {
       log: this.createLogger()
     });
     this.connectionsService = new ConnectionsService({ listenHost: this.store.getSettings().proxyListenHost });
+    this.clashApiService = new ClashApiService({ listenHost: this.store.getSettings().proxyListenHost });
     const routingHitHistoryDir = this.paths.logsDir || this.paths.dataDir || this.paths.root;
     this.routingHitHistoryPath = path.join(routingHitHistoryDir, 'routing-hits.jsonl');
     if (!fs.existsSync(this.routingHitHistoryPath)) {
@@ -862,6 +868,13 @@ export class CoreManager {
       log: this.createLogger(),
       onRoutingHit: (hit) => this.appendRoutingHitHistory(hit)
     });
+
+    this._nodeGroupAutoTestBusy = false;
+    this._nodeGroupLatencySwitchState = new Map();
+    this._nodeGroupAutoTestTimer = setInterval(() => {
+      void this.runNodeGroupAutoTestTick();
+    }, NODE_GROUP_AUTO_TEST_TICK_MS);
+    this._nodeGroupAutoTestTimer.unref?.();
 
     this._systemProxyAutoSwitchBusy = false;
     this._systemProxyAutoSwitchTimer = setInterval(() => {
@@ -956,6 +969,7 @@ export class CoreManager {
       : [];
     const normalizedNodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec);
     const normalizedNodeGroupLatencyCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
+    const normalizedSpeedtestUrl = String(settings.speedtestUrl || DEFAULT_SPEEDTEST_URL).trim() || DEFAULT_SPEEDTEST_URL;
     const nodes = this.store.getNodes();
 
     let normalizedNodeGroups;
@@ -1008,6 +1022,7 @@ export class CoreManager {
       || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
       || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
       || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)
+      || (settings.speedtestUrl || '') !== normalizedSpeedtestUrl
       || !!settings.systemProxyAutoSwitchEnabled !== normalizedSystemProxyAutoSwitch.enabled
       || (settings.systemProxyAutoSwitchGroupId ?? null) !== normalizedSystemProxyAutoSwitch.groupId
       || settings.systemProxyAutoSwitchIntervalSec !== normalizedSystemProxyAutoSwitch.intervalSec
@@ -1021,6 +1036,7 @@ export class CoreManager {
         subscriptions: normalizedSubscriptions,
         nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
         nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
+        speedtestUrl: normalizedSpeedtestUrl,
         systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
         systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
         systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
@@ -1037,6 +1053,7 @@ export class CoreManager {
       subscriptions: normalizedSubscriptions,
       nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
       nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
+      speedtestUrl: normalizedSpeedtestUrl,
       systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
       systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
       systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
@@ -1081,6 +1098,9 @@ export class CoreManager {
     if (typeof this.connectionsService?.setListenHost === 'function') {
       this.connectionsService.setListenHost(settings?.proxyListenHost);
     }
+    if (typeof this.clashApiService?.setListenHost === 'function') {
+      this.clashApiService.setListenHost(settings?.proxyListenHost);
+    }
   }
 
   buildAutoStartState(overrides = {}) {
@@ -1116,6 +1136,195 @@ export class CoreManager {
     }
 
     return this.resolveActiveNodeId(settings, nodes);
+  }
+
+  getNodeGroupSelectorTarget(group, nodes = this.store.getNodes()) {
+    if (!group || typeof group !== 'object' || !group.id) {
+      return null;
+    }
+
+    const selectedNodeId = getNodeGroupSelectedNodeId(group);
+    if (!selectedNodeId || !nodes.some((node) => node.id === selectedNodeId)) {
+      return null;
+    }
+
+    return {
+      groupTag: getNodeGroupOutboundTag(group.id),
+      outboundTag: `out-${selectedNodeId}`,
+      selectedNodeId
+    };
+  }
+
+  getEffectiveNodeGroupNodeIds(group, nodes = this.store.getNodes()) {
+    const validNodeIds = new Set((nodes || []).map((node) => node.id));
+    return Array.isArray(group?.nodeIds)
+      ? group.nodeIds
+        .map((nodeId) => String(nodeId || '').trim())
+        .filter((nodeId, index, array) => nodeId && validNodeIds.has(nodeId) && array.indexOf(nodeId) === index)
+      : [];
+  }
+
+  async applyRunningNodeGroupSelector(group, nodes = this.store.getNodes()) {
+    const target = this.getNodeGroupSelectorTarget(group, nodes);
+    if (!target) {
+      return false;
+    }
+
+    await this.clashApiService.setSelector(target.groupTag, target.outboundTag);
+    this.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
+    return true;
+  }
+
+  async syncRunningNodeGroupSelectors(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    if (this.state.status !== 'running') {
+      return 0;
+    }
+
+    const nodeGroups = Array.isArray(settings?.nodeGroups) ? settings.nodeGroups : [];
+    const selectableGroups = nodeGroups.filter((group) => this.getNodeGroupSelectorTarget(group, nodes));
+    if (!selectableGroups.length) {
+      return 0;
+    }
+
+    await this.clashApiService.waitUntilReady();
+    let appliedCount = 0;
+    for (const group of selectableGroups) {
+      if (await this.applyRunningNodeGroupSelector(group, nodes)) {
+        appliedCount += 1;
+      }
+    }
+    return appliedCount;
+  }
+
+  getNodeGroupLatencySwitchState(groupId) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) {
+      return null;
+    }
+
+    if (!this._nodeGroupLatencySwitchState.has(normalizedGroupId)) {
+      this._nodeGroupLatencySwitchState.set(normalizedGroupId, {
+        lastSwitchAt: 0,
+        consecutiveCurrentFailures: 0
+      });
+    }
+
+    return this._nodeGroupLatencySwitchState.get(normalizedGroupId);
+  }
+
+  getNodeGroupTestingSnapshot(settings = this.getSettingsSnapshot()) {
+    return {
+      intervalSec: normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec),
+      latencyCache: normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache)
+    };
+  }
+
+  persistNodeGroupLatencyResults(results = [], options = {}) {
+    const settings = options.settings || this.getSettingsSnapshot();
+    const testedAt = normalizeIsoTimestamp(options.testedAt) || new Date().toISOString();
+    const existingCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
+    const mergedResults = {
+      ...(existingCache.results || {})
+    };
+
+    for (const result of Array.isArray(results) ? results : []) {
+      const nodeId = String(result?.id || '').trim();
+      if (!nodeId) {
+        continue;
+      }
+
+      const ok = !!result.ok;
+      const normalizedEntry = {
+        ok,
+        latencyMs: null,
+        error: null,
+        updatedAt: testedAt
+      };
+
+      if (ok) {
+        const latencyMs = Number.parseInt(result.latencyMs, 10);
+        if (!Number.isInteger(latencyMs) || latencyMs < 0) {
+          continue;
+        }
+        normalizedEntry.latencyMs = latencyMs;
+      } else {
+        const error = String(result.error || '').trim();
+        normalizedEntry.error = error ? error.slice(0, 160) : 'failed';
+      }
+
+      mergedResults[nodeId] = normalizedEntry;
+    }
+
+    const latencyCache = {
+      updatedAt: testedAt,
+      results: mergedResults
+    };
+    const savedSettings = this.store.saveSettings({
+      ...settings,
+      nodeGroupLatencyCache: latencyCache
+    });
+
+    return {
+      settings: savedSettings,
+      latencyCache
+    };
+  }
+
+  resolveLatencyPreferredNode(group, testResults = [], options = {}) {
+    const effectiveNodeIds = this.getEffectiveNodeGroupNodeIds(group, options.nodes || this.store.getNodes());
+    if (!effectiveNodeIds.length) {
+      return null;
+    }
+
+    const resultById = new Map(
+      (Array.isArray(testResults) ? testResults : [])
+        .map((item) => [String(item?.id || '').trim(), item])
+        .filter(([nodeId]) => Boolean(nodeId))
+    );
+    const candidateResults = effectiveNodeIds
+      .map((nodeId) => resultById.get(nodeId))
+      .filter((item) => item && item.ok && Number.isFinite(Number(item.latencyMs)))
+      .sort((a, b) => Number(a.latencyMs) - Number(b.latencyMs));
+
+    if (!candidateResults.length) {
+      return null;
+    }
+
+    const switchState = this.getNodeGroupLatencySwitchState(group?.id);
+    const currentId = String(group?.selectedNodeId || '').trim();
+    const currentResult = currentId ? resultById.get(currentId) : null;
+    const best = candidateResults[0];
+    let shouldSwitch = false;
+
+    if (!currentId || !effectiveNodeIds.includes(currentId)) {
+      shouldSwitch = true;
+    } else if (!currentResult || !currentResult.ok) {
+      if (switchState) {
+        switchState.consecutiveCurrentFailures += 1;
+        if (switchState.consecutiveCurrentFailures >= NODE_GROUP_SWITCH_FAIL_THRESHOLD && best.id !== currentId) {
+          shouldSwitch = true;
+        }
+      }
+    } else {
+      if (switchState) {
+        switchState.consecutiveCurrentFailures = 0;
+        const cooldownPassed = (Date.now() - switchState.lastSwitchAt) >= NODE_GROUP_SWITCH_COOLDOWN_MS;
+        const gain = Number(currentResult.latencyMs) - Number(best.latencyMs);
+        if (best.id !== currentId && cooldownPassed && gain >= NODE_GROUP_SWITCH_DELTA_MS) {
+          shouldSwitch = true;
+        }
+      }
+    }
+
+    if (!shouldSwitch || best.id === currentId) {
+      return null;
+    }
+
+    return {
+      selectedNodeId: best.id,
+      previousNodeId: currentId || null,
+      latencyMs: Number(best.latencyMs)
+    };
   }
 
   getSystemProxyAutoSwitchProfile(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
@@ -1394,6 +1603,8 @@ export class CoreManager {
     return {
       activeNodeId: this.resolveActiveNodeId(snapshot, nodes),
       systemDefaultNodeId: this.resolveSystemProxyDefaultNodeId(snapshot, nodes),
+      systemProxyAutoSwitchEnabled: !!snapshot.systemProxyAutoSwitchEnabled,
+      systemProxyAutoSwitchGroupId: snapshot.systemProxyAutoSwitchGroupId,
       customRules: snapshot.customRules,
       rulesets: snapshot.rulesets || [],
       routingItems: snapshot.routingItems || [],
@@ -1403,6 +1614,7 @@ export class CoreManager {
       dnsBootstrapServer: snapshot.dnsBootstrapServer,
       dnsFinal: snapshot.dnsFinal,
       dnsStrategy: snapshot.dnsStrategy,
+      speedtestUrl: snapshot.speedtestUrl,
       tlsFragmentEnabled: !!snapshot.tlsFragmentEnabled,
       proxyMode: snapshot.routingMode,
       systemProxyEnabled: !!snapshot.systemProxyEnabled,
@@ -1471,6 +1683,10 @@ export class CoreManager {
 
     if (Object.prototype.hasOwnProperty.call(patch, 'dnsBootstrapServer')) {
       next.dnsBootstrapServer = String(next.dnsBootstrapServer || '').trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'speedtestUrl')) {
+      next.speedtestUrl = String(next.speedtestUrl || '').trim() || DEFAULT_SPEEDTEST_URL;
     }
 
     const proxyBasePort = validatePort(next.proxyBasePort, 'proxyBasePort');
@@ -1619,6 +1835,7 @@ export class CoreManager {
     });
     this.state.autoStart = this.buildAutoStartState(autoStart);
     this.refreshConnectionsServiceBaseUrl(saved);
+    this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);
 
     const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
     const shouldAutoRestart = this.state.status === 'running'
@@ -1714,12 +1931,8 @@ export class CoreManager {
       }
 
       this.store.appendLog(`[CoreManager] System proxy auto-switch selected ${nextSelectedNodeId} from group ${group.id}`);
+      await this.selectNodeGroupNode(group.id, nextSelectedNodeId);
       await this.updateSettings({
-        nodeGroups: (settings.nodeGroups || []).map((item) => (
-          item.id === group.id
-            ? { ...item, selectedNodeId: nextSelectedNodeId }
-            : item
-        )),
         systemProxyAutoSwitchLastAt: nextLastAt
       });
       return true;
@@ -1728,6 +1941,43 @@ export class CoreManager {
       return false;
     } finally {
       this._systemProxyAutoSwitchBusy = false;
+    }
+  }
+
+  async runNodeGroupAutoTestTick() {
+    if (this._nodeGroupAutoTestBusy) {
+      return false;
+    }
+
+    if (this.state.status !== 'running') {
+      return false;
+    }
+
+    const settings = this.getSettingsSnapshot();
+    if (!Array.isArray(settings.nodeGroups) || !settings.nodeGroups.length) {
+      return false;
+    }
+
+    const intervalMs = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec) * 1000;
+    const lastAtMs = settings.nodeGroupLatencyCache?.updatedAt
+      ? Date.parse(settings.nodeGroupLatencyCache.updatedAt)
+      : Number.NaN;
+    if (Number.isFinite(lastAtMs) && (Date.now() - lastAtMs) < intervalMs) {
+      return false;
+    }
+
+    this._nodeGroupAutoTestBusy = true;
+    try {
+      const payload = await this.testNodeGroups([], {
+        autoStartCore: false,
+        silent: true
+      });
+      return Array.isArray(payload.results) && payload.results.length > 0;
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] Node group auto-test failed: ${error.message}`);
+      return false;
+    } finally {
+      this._nodeGroupAutoTestBusy = false;
     }
   }
 
@@ -2336,8 +2586,44 @@ export class CoreManager {
 
   async selectNodeGroupNode(groupId, selectedNodeId) {
     const settings = this.getSettingsSnapshot();
-    const nextGroups = (settings.nodeGroups || []).map((group) => group.id === groupId ? { ...group, selectedNodeId } : group);
-    return this.updateSettings({ nodeGroups: nextGroups });
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) {
+      throw createHttpError('Node group id is required', 400);
+    }
+
+    const nodes = this.store.getNodes();
+    const existingGroup = (settings.nodeGroups || []).find((group) => group.id === normalizedGroupId);
+    if (!existingGroup) {
+      throw createHttpError('Node group not found', 404);
+    }
+
+    const normalizedSelectedNodeId = selectedNodeId == null ? null : String(selectedNodeId).trim();
+    const nextGroups = normalizeNodeGroups(
+      (settings.nodeGroups || []).map((group) => group.id === normalizedGroupId
+        ? { ...group, selectedNodeId: normalizedSelectedNodeId }
+        : group),
+      nodes
+    );
+    const nextGroup = nextGroups.find((group) => group.id === normalizedGroupId) || null;
+
+    if (this.state.status === 'running') {
+      await this.clashApiService.waitUntilReady();
+      await this.applyRunningNodeGroupSelector(nextGroup, nodes);
+    }
+
+    const saved = this.store.saveSettings({
+      ...settings,
+      nodeGroups: nextGroups
+    });
+    this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);
+
+    return {
+      settings: { ...saved },
+      proxy: this.getProxyProfile(),
+      restartRequired: false,
+      autoRestarted: false,
+      core: this.getStatus()
+    };
   }
 
   async deleteSubscription(id) {
@@ -2526,6 +2812,12 @@ export class CoreManager {
         systemProxy: this.buildSystemProxyState(systemProxy)
       };
       this.bindProcessState();
+      try {
+        await this.syncRunningNodeGroupSelectors(settings, nodes);
+      } catch (syncError) {
+        this.store.appendLog(`[CoreManager] Failed to sync node group selectors: ${syncError.message}`);
+      }
+      void this.runNodeGroupAutoTestTick();
       return this.getStatus();
     } catch (error) {
       if (binary && this.proxyService?.proxyProcess) {
@@ -2597,13 +2889,15 @@ export class CoreManager {
       throw createHttpError('Node not found', 404);
     }
 
-    let autoStarted = false;
-    if (this.state.status !== 'running') {
-      await this.start();
-      autoStarted = true;
+    const { results, autoStarted } = await this.measureNodeLatencies([nodeId], {
+      autoStartCore: true
+    });
+    const [result] = results;
+    if (!result?.ok) {
+      throw createHttpError(result?.error || 'Speed test failed', 502);
     }
 
-    const latencyMs = await this.proxyService.testNode(nodeId);
+    const latencyMs = result.latencyMs;
     return {
       node: this.getNodeById(nodeId),
       latencyMs,
@@ -2612,7 +2906,7 @@ export class CoreManager {
     };
   }
 
-  async testNodes(nodeIds = []) {
+  async measureNodeLatencies(nodeIds = [], options = {}) {
     const requestedIds = Array.isArray(nodeIds) && nodeIds.length
       ? [...new Set(nodeIds)]
       : this.store.getNodes().map((node) => node.id);
@@ -2628,8 +2922,40 @@ export class CoreManager {
 
     let autoStarted = false;
     if (this.state.status !== 'running') {
-      await this.start();
-      autoStarted = true;
+      if (options.autoStartCore === false) {
+        const settings = this.getSettingsSnapshot();
+        const binary = await this.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
+        this.proxyService.setNodes(this.store.getNodes());
+
+        if (typeof this.proxyService.testNodes === 'function') {
+          const results = await this.proxyService.testNodes(requestedIds, {
+            binPath: binary.executablePath
+          });
+          return {
+            results: results.map((item) => ({
+              ...item,
+              node: item.node || this.getNodeById(item.id)
+            })),
+            core: this.getStatus(),
+            autoStarted
+          };
+        }
+      } else {
+        await this.start();
+        autoStarted = true;
+      }
+    }
+
+    if (typeof this.proxyService.testNodes === 'function') {
+      const results = await this.proxyService.testNodes(requestedIds);
+      return {
+        results: results.map((item) => ({
+          ...item,
+          node: item.node || this.getNodeById(item.id)
+        })),
+        core: this.getStatus(),
+        autoStarted
+      };
     }
 
     const CONCURRENCY = 5;
@@ -2652,6 +2978,99 @@ export class CoreManager {
       results,
       core: this.getStatus(),
       autoStarted
+    };
+  }
+
+  async testNodes(nodeIds = []) {
+    return this.measureNodeLatencies(nodeIds, {
+      autoStartCore: true
+    });
+  }
+
+  async testNodeGroups(groupIds = [], options = {}) {
+    const settings = this.getSettingsSnapshot();
+    const nodes = this.store.getNodes();
+    const requestedGroupIds = Array.isArray(groupIds)
+      ? [...new Set(groupIds.map((groupId) => String(groupId || '').trim()).filter(Boolean))]
+      : (groupIds ? [String(groupIds).trim()] : []);
+    const eligibleGroups = (settings.nodeGroups || []).filter((group) => {
+      if (!group?.id) {
+        return false;
+      }
+      if (requestedGroupIds.length && !requestedGroupIds.includes(group.id)) {
+        return false;
+      }
+      return this.getEffectiveNodeGroupNodeIds(group, nodes).length > 0;
+    });
+
+    if (!eligibleGroups.length) {
+      if (requestedGroupIds.length) {
+        throw createHttpError('Node group not found or has no testable nodes', 404);
+      }
+
+      return {
+        results: [],
+        switchedGroups: [],
+        nodeGroups: settings.nodeGroups || [],
+        nodeGroupTesting: this.getNodeGroupTestingSnapshot(settings),
+        core: this.getStatus(),
+        autoStarted: false
+      };
+    }
+
+    const requestedNodeIds = [...new Set(
+      eligibleGroups.flatMap((group) => this.getEffectiveNodeGroupNodeIds(group, nodes))
+    )];
+    const measurement = await this.measureNodeLatencies(requestedNodeIds, {
+      autoStartCore: options.autoStartCore !== false
+    });
+    const testedAt = new Date().toISOString();
+    let latestSettings = this.persistNodeGroupLatencyResults(measurement.results || [], {
+      settings: this.getSettingsSnapshot(),
+      testedAt
+    }).settings;
+    const switchedGroups = [];
+
+    if (options.applySelection !== false) {
+      for (const group of eligibleGroups) {
+        const latestGroup = getNodeGroupById(latestSettings.nodeGroups || [], group.id);
+        if (!latestGroup) {
+          continue;
+        }
+
+        const preferred = this.resolveLatencyPreferredNode(latestGroup, measurement.results || [], { nodes });
+        if (!preferred || preferred.selectedNodeId === latestGroup.selectedNodeId) {
+          continue;
+        }
+
+        const payload = await this.selectNodeGroupNode(latestGroup.id, preferred.selectedNodeId);
+        latestSettings = payload.settings;
+        const switchState = this.getNodeGroupLatencySwitchState(latestGroup.id);
+        if (switchState) {
+          switchState.lastSwitchAt = Date.now();
+          switchState.consecutiveCurrentFailures = 0;
+        }
+
+        switchedGroups.push({
+          groupId: latestGroup.id,
+          previousNodeId: preferred.previousNodeId,
+          selectedNodeId: preferred.selectedNodeId,
+          latencyMs: preferred.latencyMs
+        });
+
+        if (!options.silent) {
+          this.store.appendLog(`[CoreManager] Latency priority switched ${latestGroup.id} -> ${preferred.selectedNodeId} (${preferred.latencyMs} ms)`);
+        }
+      }
+    }
+
+    return {
+      results: measurement.results || [],
+      switchedGroups,
+      nodeGroups: latestSettings.nodeGroups || [],
+      nodeGroupTesting: this.getNodeGroupTestingSnapshot(latestSettings),
+      core: this.getStatus(),
+      autoStarted: measurement.autoStarted
     };
   }
 }

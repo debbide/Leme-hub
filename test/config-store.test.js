@@ -100,4 +100,5 @@ test('initializes system proxy auto switch settings with sane defaults', () => {
   assert.equal(settings.systemProxyAutoSwitchGroupId, null);
   assert.equal(settings.systemProxyAutoSwitchIntervalSec, 600);
   assert.equal(settings.systemProxyAutoSwitchLastAt, null);
+  assert.equal(settings.speedtestUrl, 'https://www.google.com/generate_204');
 });

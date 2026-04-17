@@ -24,6 +24,7 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
     dnsBootstrapServer: '223.5.5.5',
     dnsFinal: 'dns-remote',
     dnsStrategy: 'prefer_ipv4',
+    speedtestUrl: 'https://www.google.com/generate_204',
     activeNodeId: null,
     routingMode: 'rule',
     subscriptions: [],
@@ -116,6 +117,68 @@ test('start bootstraps binary before starting proxy', async () => {
   assert.deepEqual(calls.slice(0, 3).map(([name]) => name), ['ensureAvailable', 'setNodes', 'start']);
   assert.equal(status.binary.source, 'managed');
   assert.equal(status.binary.version, '1.13.4');
+});
+
+test('start syncs running node group selectors after core startup', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  const calls = [];
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }]
+  });
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes: () => calls.push('setNodes'),
+    start: async ({ binPath }) => {
+      calls.push(['start', binPath]);
+      return { configPath: createPaths().configPath, executablePath: binPath };
+    },
+    stop() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.systemProxyManager = {
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+  manager.clashApiService = {
+    waitUntilReady: async () => calls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => calls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
+  };
+
+  await manager.start();
+
+  assert.equal(calls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
 });
 
 test('start surfaces binary bootstrap failures in core state', async () => {
@@ -858,6 +921,78 @@ test('updateSettings persists normalized node groups', async () => {
   assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n1');
 });
 
+test('selectNodeGroupNode switches a running selector group without restarting', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  const calls = [];
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n1' }]
+  });
+
+  manager.state.status = 'running';
+  manager.proxyService = { runtimeOptions: null };
+  manager.clashApiService = {
+    waitUntilReady: async () => calls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => calls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
+  };
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.selectNodeGroupNode('g1', 'n2');
+
+  assert.equal(restarted, false);
+  assert.equal(calls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n2');
+  assert.equal(manager.getSettingsSnapshot().nodeGroups[0].selectedNodeId, 'n2');
+});
+
+test('selectNodeGroupNode keeps auto-switch system proxy group changes restart-free', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  const selectorCalls = [];
+
+  await manager.updateSettings({
+    systemProxyEnabled: true,
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n1' }],
+    systemProxyAutoSwitchEnabled: true,
+    systemProxyAutoSwitchGroupId: 'g1'
+  });
+
+  manager.state.status = 'running';
+  manager.proxyService = { runtimeOptions: null };
+  manager.clashApiService = {
+    waitUntilReady: async () => selectorCalls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => selectorCalls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
+  };
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+
+  const result = await manager.selectNodeGroupNode('g1', 'n2');
+
+  assert.equal(restarted, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(selectorCalls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
+  assert.equal(manager.getSettingsSnapshot().nodeGroups[0].selectedNodeId, 'n2');
+});
+
 test('updateSettings persists dns settings', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
@@ -874,6 +1009,16 @@ test('updateSettings persists dns settings', async () => {
   assert.equal(result.settings.dnsBootstrapServer, '119.29.29.29');
   assert.equal(result.settings.dnsFinal, 'dns-local');
   assert.equal(result.settings.dnsStrategy, 'ipv4_only');
+});
+
+test('updateSettings persists speedtest url', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    speedtestUrl: 'https://www.gstatic.com/generate_204'
+  });
+
+  assert.equal(result.settings.speedtestUrl, 'https://www.gstatic.com/generate_204');
 });
 
 test('getSettingsSnapshot repairs malformed persisted custom rules', () => {
@@ -1047,10 +1192,11 @@ test('runSystemProxyAutoSwitchTick rotates the selected group node and persists 
   });
 
   manager.state.status = 'running';
-  let restarted = false;
-  manager.restart = async () => {
-    restarted = true;
-    return manager.getStatus();
+  const selectorCalls = [];
+  manager.clashApiService = {
+    waitUntilReady: async () => selectorCalls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => selectorCalls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
   };
 
   const originalRandom = Math.random;
@@ -1060,12 +1206,51 @@ test('runSystemProxyAutoSwitchTick rotates the selected group node and persists 
     const settings = manager.getSettingsSnapshot();
 
     assert.equal(switched, true);
-    assert.equal(restarted, true);
+    assert.equal(selectorCalls.some((entry) => entry === 'waitUntilReady'), true);
+    assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
     assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
     assert.equal(settings.systemProxyAutoSwitchLastAt !== null, true);
   } finally {
     Math.random = originalRandom;
   }
+});
+
+test('runNodeGroupAutoTestTick tests groups and switches selector to the faster node', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  const selectorCalls = [];
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n1' }],
+    nodeGroupAutoTestIntervalSec: 60,
+    nodeGroupLatencyCache: { updatedAt: '2000-01-01T00:00:00.000Z', results: {} }
+  });
+
+  manager.state.status = 'running';
+  manager.proxyService = {
+    testNodes: async () => ([
+      { id: 'n1', ok: true, latencyMs: 320 },
+      { id: 'n2', ok: true, latencyMs: 110 }
+    ]),
+    runtimeOptions: null,
+    setNodes() {}
+  };
+  manager.clashApiService = {
+    waitUntilReady: async () => selectorCalls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => selectorCalls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
+  };
+
+  const tested = await manager.runNodeGroupAutoTestTick();
+  const settings = manager.getSettingsSnapshot();
+
+  assert.equal(tested, true);
+  assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
+  assert.equal(settings.nodeGroupLatencyCache.updatedAt !== null, true);
+  assert.equal(settings.nodeGroupLatencyCache.results.n2.latencyMs, 110);
+  assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
 });
 
 test('applySystemProxy uses current unified proxy ports', async () => {
@@ -1337,6 +1522,38 @@ test('testNodes auto starts core and returns per-node results', async () => {
   assert.equal(result.results[0].latencyMs, 88);
   assert.equal(result.results[1].ok, false);
   assert.equal(result.results[1].error, 'connect failed');
+});
+
+test('testNodes uses proxyService batch speedtest when available', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  manager.state.status = 'running';
+
+  let requestedIds = null;
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
+    testNodes: async (ids) => {
+      requestedIds = ids;
+      return [
+        { id: 'n1', ok: true, latencyMs: 96 },
+        { id: 'n2', ok: false, error: 'timeout' }
+      ];
+    },
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const result = await manager.testNodes();
+
+  assert.deepEqual(requestedIds, ['n1', 'n2']);
+  assert.equal(result.results.length, 2);
+  assert.equal(result.results[0].node.id, 'n1');
+  assert.equal(result.results[0].latencyMs, 96);
+  assert.equal(result.results[1].node.id, 'n2');
+  assert.equal(result.results[1].error, 'timeout');
 });
 
 test('setNodeCountryOverride normalizes country code and overrides geo result', async () => {

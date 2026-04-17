@@ -10,8 +10,12 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import {
   BUILTIN_RULESETS,
   DEFAULT_CONFIG_FILE,
+  DEFAULT_DNS_BOOTSTRAP_SERVER,
+  DEFAULT_DNS_DIRECT_SERVER,
+  DEFAULT_DNS_STRATEGY,
   DEFAULT_PROXY_BASE_PORT,
   DEFAULT_PROXY_LISTEN_HOST,
+  DEFAULT_SPEEDTEST_URL,
   REMOTE_RULESET_CATALOG
 } from '../shared/constants.js';
 import { formatHostForUrl, formatHostPort, isIpLiteralHost, normalizeHost, resolveLoopbackHost } from '../shared/network.js';
@@ -35,6 +39,12 @@ const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
 const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
 const SYSTEM_REMOTE_DNS_SERVER_TAG = 'dns-system-remote';
 const FRAGMENTABLE_TLS_OUTBOUND_TYPES = new Set(['vmess', 'vless', 'trojan']);
+const NODE_GROUP_OUTBOUND_PREFIX = 'grp-';
+const SPEEDTEST_CONFIG_PREFIX = 'singbox_speedtest_';
+const SPEEDTEST_REQUEST_COUNT = 2;
+const SPEEDTEST_REQUEST_GAP_MS = 100;
+const SPEEDTEST_WARMUP_DELAY_MS = 1000;
+const SPEEDTEST_TIMEOUT_MS = 10000;
 
 const resolveExistingFilePath = (candidatePath) => {
   const resolved = path.resolve(candidatePath);
@@ -181,6 +191,8 @@ const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('b
 
 const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
 const normalizeSubscriptionResponseSnippet = (value) => String(value || '').replace(/\s+/gu, ' ').trim().slice(0, 160);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const getNodeGroupOutboundTag = (groupId) => `${NODE_GROUP_OUTBOUND_PREFIX}${String(groupId || '').trim()}`;
 
 const detectSubscriptionResponseHint = (value) => {
   const normalized = normalizeSubscriptionResponseSnippet(value).toLowerCase();
@@ -234,6 +246,9 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
   const {
     activeNodeId = null,
     systemDefaultNodeId = null,
+    systemProxyAutoSwitchEnabled = false,
+    systemProxyAutoSwitchGroupId = null,
+    nodeGroups = [],
     proxyMode = 'rule',
     customRules = [],
     rulesets = [],
@@ -248,7 +263,14 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     && rule.inbound.includes('system-http'));
   const systemFallback = rules[rules.length - 1];
   const activeOutbound = activeNodeId ? `out-${activeNodeId}` : 'direct';
-  const systemDefaultOutbound = systemDefaultNodeId ? `out-${systemDefaultNodeId}` : activeOutbound;
+  const autoSwitchGroup = systemProxyAutoSwitchEnabled
+    ? (Array.isArray(nodeGroups) ? nodeGroups.find((group) => group?.id === systemProxyAutoSwitchGroupId && Array.isArray(group?.nodeIds) && group.nodeIds.length) : null)
+    : null;
+  const systemDefaultOutbound = autoSwitchGroup
+    ? getNodeGroupOutboundTag(autoSwitchGroup.id)
+    : systemDefaultNodeId
+      ? `out-${systemDefaultNodeId}`
+      : activeOutbound;
   const lines = [];
 
   if (!systemProxyEnabled) {
@@ -308,6 +330,10 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
 };
 
 export class ProxyService {
+  static getNodeGroupOutboundTag(groupId) {
+    return getNodeGroupOutboundTag(groupId);
+  }
+
   constructor(options = {}) {
     const {
       configDir,
@@ -327,6 +353,8 @@ export class ProxyService {
     this.log = log;
     this.onRoutingHit = typeof onRoutingHit === 'function' ? onRoutingHit : null;
     this.binName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
+    this.executablePath = null;
+    this.runtimeOptions = {};
     this.nodePortMap = new Map();
     this.routingHitMap = new Map();
     this.connectionTraceMap = new Map();
@@ -394,10 +422,16 @@ export class ProxyService {
     return this.nodePortMap.get(nodeId);
   }
 
+  getNodeGroupOutboundTag(groupId) {
+    return getNodeGroupOutboundTag(groupId);
+  }
+
   generateConfig(options = {}) {
     const {
       activeNodeId = null,
       systemDefaultNodeId = null,
+      systemProxyAutoSwitchEnabled = false,
+      systemProxyAutoSwitchGroupId = null,
       proxyMode = 'rule',
       customRules = [],
       rulesets = [],
@@ -654,6 +688,31 @@ export class ProxyService {
 
       return outbound;
     });
+    const validNodeIdSet = new Set(validNodes.map((node) => node.id));
+    const normalizedNodeGroups = (nodeGroups || [])
+      .filter((group) => group && typeof group === 'object' && group.id)
+      .map((group) => {
+        const nodeIds = [...new Set(
+          (Array.isArray(group.nodeIds) ? group.nodeIds : [])
+            .map((nodeId) => String(nodeId || '').trim())
+            .filter((nodeId) => validNodeIdSet.has(nodeId))
+        )];
+        const selectedNodeId = nodeIds.includes(String(group.selectedNodeId || '').trim())
+          ? String(group.selectedNodeId || '').trim()
+          : (nodeIds[0] || null);
+        return {
+          ...group,
+          nodeIds,
+          selectedNodeId
+        };
+      })
+      .filter((group) => group.nodeIds.length > 0);
+    const nodeGroupOutbounds = normalizedNodeGroups.map((group) => ({
+      type: 'selector',
+      tag: getNodeGroupOutboundTag(group.id),
+      outbounds: group.nodeIds.map((nodeId) => `out-${nodeId}`),
+      interrupt_exist_connections: false
+    }));
 
     if (systemProxyEnabled && systemProxySocksPort) {
       inbounds.push({
@@ -674,8 +733,15 @@ export class ProxyService {
     }
 
     const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
-    const systemDefaultOutbound = effectiveSystemNodeId ? `out-${effectiveSystemNodeId}` : activeOutbound;
-    const nodeGroupMap = new Map((nodeGroups || []).map((group) => [group.id, group]));
+    const nodeGroupMap = new Map(normalizedNodeGroups.map((group) => [group.id, group]));
+    const autoSwitchGroup = systemProxyAutoSwitchEnabled
+      ? nodeGroupMap.get(String(systemProxyAutoSwitchGroupId || '').trim())
+      : null;
+    const systemDefaultOutbound = autoSwitchGroup?.nodeIds?.length
+      ? getNodeGroupOutboundTag(autoSwitchGroup.id)
+      : effectiveSystemNodeId
+        ? `out-${effectiveSystemNodeId}`
+        : activeOutbound;
     this.routingHitMap = new Map();
     const registerRoutingHit = (tag, meta) => {
       this.routingHitMap.set(tag, meta);
@@ -692,8 +758,8 @@ export class ProxyService {
       }
       if (rule.action === 'node_group' && rule.nodeGroupId) {
         const group = nodeGroupMap.get(rule.nodeGroupId);
-        if (group?.selectedNodeId && validNodes.some((node) => node.id === group.selectedNodeId)) {
-          return `out-${group.selectedNodeId}`;
+        if (group?.nodeIds?.length) {
+          return getNodeGroupOutboundTag(group.id);
         }
       }
       return systemDefaultOutbound;
@@ -706,8 +772,8 @@ export class ProxyService {
       }
       if (ruleset.target === 'node_group' && ruleset.groupId) {
         const group = nodeGroupMap.get(ruleset.groupId);
-        if (group?.selectedNodeId && validNodes.some((node) => node.id === group.selectedNodeId)) {
-          return `out-${group.selectedNodeId}`;
+        if (group?.nodeIds?.length) {
+          return getNodeGroupOutboundTag(group.id);
         }
       }
       return systemDefaultOutbound;
@@ -1013,7 +1079,7 @@ export class ProxyService {
     return {
       log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
       inbounds,
-      outbounds: [...outbounds, { type: 'direct', tag: 'direct' }],
+      outbounds: [...outbounds, ...nodeGroupOutbounds, { type: 'direct', tag: 'direct' }],
       dns: {
         servers: [
           {
@@ -1156,40 +1222,75 @@ export class ProxyService {
     return candidate;
   }
 
-  writeConfig(config) {
-    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+  writeConfig(config, targetPath = this.configPath) {
+    fs.writeFileSync(targetPath, JSON.stringify(config, null, 2));
   }
 
-  waitForPortReady(port, timeoutMs = 15000) {
+  waitForPortReady(port, timeoutMs = 15000, host = this.proxyListen, processRef = null) {
+    const targetHost = normalizeHost(host, this.proxyListen);
     const startedAt = Date.now();
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (processRef) {
+          processRef.off('error', onProcessError);
+          processRef.off('exit', onProcessExit);
+        }
+        callback(value);
+      };
+
+      const onProcessError = (error) => {
+        finish(reject, error);
+      };
+
+      const onProcessExit = (code, signal) => {
+        const detail = code !== null
+          ? `exit code ${code}`
+          : signal
+            ? `signal ${signal}`
+            : 'unknown status';
+        finish(reject, new Error(`sing-box exited before listening on ${targetHost}:${port} (${detail})`));
+      };
+
+      if (processRef) {
+        processRef.once('error', onProcessError);
+        processRef.once('exit', onProcessExit);
+      }
+
       const attempt = () => {
+        if (settled) {
+          return;
+        }
         const socket = new net.Socket();
 
         socket.once('connect', () => {
           socket.destroy();
-          resolve();
+          finish(resolve);
         });
 
         socket.once('error', () => {
           socket.destroy();
           if (Date.now() - startedAt >= timeoutMs) {
-            reject(new Error(`Timed out waiting for sing-box to listen on ${this.proxyListen}:${port}`));
+            finish(reject, new Error(`Timed out waiting for sing-box to listen on ${targetHost}:${port}`));
             return;
           }
 
           setTimeout(attempt, 200);
         });
 
-        socket.connect(port, this.proxyListen);
+        socket.connect(port, targetHost);
       };
 
       attempt();
     });
   }
 
-  async waitForRuntimeReady(runtime = {}) {
+  async waitForRuntimeReady(runtime = {}, host = this.proxyListen, processRef = this.proxyProcess) {
     const ports = new Set((this.nodes || []).map((node) => this.getLocalPort(node.id)).filter(Boolean));
 
     if (runtime.systemProxyEnabled && runtime.systemProxySocksPort) {
@@ -1204,7 +1305,260 @@ export class ProxyService {
       return;
     }
 
-    await Promise.all([...ports].map((port) => this.waitForPortReady(port)));
+    await Promise.all([...ports].map((port) => this.waitForPortReady(port, 15000, host, processRef)));
+  }
+
+  async reserveEphemeralPort(host = resolveLoopbackHost(this.proxyListen)) {
+    const targetHost = normalizeHost(host, resolveLoopbackHost(this.proxyListen));
+    return new Promise((resolve, reject) => {
+      const server = net.createServer();
+      const cleanup = () => {
+        server.removeAllListeners('error');
+      };
+
+      server.once('error', (error) => {
+        cleanup();
+        reject(error);
+      });
+
+      server.listen(0, targetHost, () => {
+        const address = server.address();
+        const port = typeof address === 'object' && address ? address.port : null;
+        server.close((error) => {
+          cleanup();
+          if (error) {
+            reject(error);
+            return;
+          }
+          if (!Number.isInteger(port) || port <= 0) {
+            reject(new Error(`Failed to reserve a speedtest port on ${targetHost}`));
+            return;
+          }
+          resolve(port);
+        });
+      });
+    });
+  }
+
+  buildSpeedtestRuntimeOptions(options = {}) {
+    const runtime = {
+      ...this.runtimeOptions,
+      ...(options.runtime || {})
+    };
+    const rawStrategy = String(options.dnsStrategy || runtime.dnsStrategy || DEFAULT_DNS_STRATEGY).trim();
+    const dnsStrategy = ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(rawStrategy)
+      ? rawStrategy
+      : DEFAULT_DNS_STRATEGY;
+    const dnsDirectServer = String(options.dnsDirectServer || runtime.dnsDirectServer || DEFAULT_DNS_DIRECT_SERVER).trim() || DEFAULT_DNS_DIRECT_SERVER;
+
+    return {
+      activeNodeId: options.activeNodeId || null,
+      dnsRemoteServer: String(options.dnsRemoteServer || dnsDirectServer).trim() || dnsDirectServer,
+      dnsDirectServer,
+      dnsBootstrapServer: String(options.dnsBootstrapServer || runtime.dnsBootstrapServer || DEFAULT_DNS_BOOTSTRAP_SERVER).trim() || DEFAULT_DNS_BOOTSTRAP_SERVER,
+      dnsFinal: 'dns-local',
+      dnsStrategy,
+      speedtestUrl: String(options.speedtestUrl || runtime.speedtestUrl || DEFAULT_SPEEDTEST_URL).trim() || DEFAULT_SPEEDTEST_URL,
+      tlsFragmentEnabled: options.tlsFragmentEnabled ?? runtime.tlsFragmentEnabled ?? false
+    };
+  }
+
+  createSpeedtestService(nodes, options = {}) {
+    const speedtestNodes = (Array.isArray(nodes) ? nodes : [nodes])
+      .filter(Boolean)
+      .map((node) => ({ ...node }));
+    if (!speedtestNodes.length) {
+      throw new Error('No nodes selected for speed test');
+    }
+
+    const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(this.proxyListen));
+    const basePort = toInt(options.basePort, DEFAULT_PROXY_BASE_PORT);
+    const service = new ProxyService({
+      configDir: this.configDir,
+      projectRoot: this.projectRoot,
+      proxyListen: listenHost,
+      basePort,
+      log: this.log
+    });
+    service.setNodes(speedtestNodes);
+
+    const runtime = this.buildSpeedtestRuntimeOptions({
+      ...options,
+      activeNodeId: speedtestNodes[0]?.id || null
+    });
+    const config = service.generateConfig(runtime);
+    delete config.experimental;
+
+    return {
+      service,
+      config,
+      listenHost,
+      runtime
+    };
+  }
+
+  async stopProcess(processRef) {
+    if (!processRef) {
+      return;
+    }
+
+    if (processRef.exitCode !== null || processRef.killed) {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      let settled = false;
+      let forceTimer = null;
+      let resolveTimer = null;
+
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (forceTimer) clearTimeout(forceTimer);
+        if (resolveTimer) clearTimeout(resolveTimer);
+        resolve();
+      };
+
+      processRef.once('exit', finish);
+      processRef.once('close', finish);
+
+      try {
+        processRef.kill();
+      } catch {
+        finish();
+        return;
+      }
+
+      forceTimer = setTimeout(() => {
+        try {
+          processRef.kill('SIGKILL');
+        } catch {
+          finish();
+        }
+      }, 1500);
+
+      resolveTimer = setTimeout(finish, 4000);
+    });
+  }
+
+  async withSpeedtestRuntime(nodes, options = {}, callback) {
+    const selectedNodes = (Array.isArray(nodes) ? nodes : [nodes]).filter(Boolean);
+    if (!selectedNodes.length) {
+      throw new Error('No nodes selected for speed test');
+    }
+
+    const execPath = this.resolveExecutablePath(options.binPath || this.executablePath);
+    const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(this.proxyListen));
+    const allocatedNodes = [];
+    for (const node of selectedNodes) {
+      const localPort = await this.reserveEphemeralPort(listenHost);
+      allocatedNodes.push({ ...node, local_port: localPort });
+    }
+
+    const { service, config, runtime } = this.createSpeedtestService(allocatedNodes, {
+      ...options,
+      proxyListen: listenHost,
+      basePort: allocatedNodes[0]?.local_port || options.basePort
+    });
+    const configPath = path.join(
+      this.configDir,
+      `${SPEEDTEST_CONFIG_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
+    );
+
+    let processRef = null;
+    const stderrLines = [];
+    try {
+      this.writeConfig(config, configPath);
+      this.log.log?.(`[Speedtest] Starting dedicated runtime nodes=${allocatedNodes.map((node) => node.id).join(',')} url=${runtime.speedtestUrl} dns=${runtime.dnsDirectServer} bootstrap=${runtime.dnsBootstrapServer} listen=${listenHost}`);
+      processRef = spawn(execPath, ['run', '-c', configPath]);
+
+      processRef.stdout.on('data', (data) => {
+        data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
+          this.log.log?.(`[Speedtest Log] ${line}`);
+        });
+      });
+
+      processRef.stderr.on('data', (data) => {
+        data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
+          stderrLines.push(line);
+          this.log.error?.(`[Speedtest STDERR] ${line}`);
+        });
+      });
+
+      processRef.on('error', (error) => {
+        this.log.error?.(`[ProxyService] Failed to start speedtest sing-box process: ${error.message}`);
+      });
+
+      try {
+        await service.waitForRuntimeReady({}, listenHost, processRef);
+      } catch (error) {
+        const stderrDetail = stderrLines.slice(-3).join(' | ');
+        if (stderrDetail) {
+          throw new Error(`${error.message}: ${stderrDetail}`);
+        }
+        throw error;
+      }
+      await sleep(toInt(options.warmupDelayMs, SPEEDTEST_WARMUP_DELAY_MS));
+
+      return await callback({
+        service,
+        listenHost,
+        configPath,
+        processRef,
+        nodes: allocatedNodes,
+        runtime
+      });
+    } finally {
+      await this.stopProcess(processRef);
+      try {
+        fs.unlinkSync(configPath);
+      } catch {
+        // ignore temp speedtest cleanup failures
+      }
+    }
+  }
+
+  async measureSpeedtestLatency(localPort, options = {}) {
+    const targetUrl = String(options.url || DEFAULT_SPEEDTEST_URL).trim() || DEFAULT_SPEEDTEST_URL;
+    const requestCount = Math.max(1, toInt(options.requestCount, SPEEDTEST_REQUEST_COUNT));
+    const requestGapMs = Math.max(0, toInt(options.requestGapMs, SPEEDTEST_REQUEST_GAP_MS));
+    const timeoutMs = Math.max(1000, toInt(options.timeoutMs, SPEEDTEST_TIMEOUT_MS));
+    const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(this.proxyListen));
+    const agent = new SocksProxyAgent(`socks5://${formatHostForUrl(listenHost)}:${localPort}`, {
+      keepAlive: true,
+      timeout: timeoutMs
+    });
+    const samples = [];
+    const nodeId = String(options.nodeId || '').trim() || 'unknown';
+
+    for (let index = 0; index < requestCount; index += 1) {
+      const startedAt = Date.now();
+      try {
+        const response = await axios.get(targetUrl, {
+          httpAgent: agent,
+          httpsAgent: agent,
+          timeout: timeoutMs,
+          proxy: false,
+          validateStatus: () => true
+        });
+        const latencyMs = Date.now() - startedAt;
+        samples.push(latencyMs);
+        this.log.log?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5 keepalive=on dns=local status=${response.status || 0} latency=${latencyMs}ms`);
+      } catch (error) {
+        const detail = error?.response?.status
+          ? `HTTP ${error.response.status}`
+          : error?.code || error?.message || 'unknown error';
+        this.log.error?.(`[Speedtest] node=${nodeId} sample=${index + 1}/${requestCount} url=${targetUrl} via=${listenHost}:${localPort} proxy=socks5 keepalive=on dns=local failed=${detail}`);
+        throw error;
+      }
+      if (index + 1 < requestCount) {
+        await sleep(requestGapMs);
+      }
+    }
+
+    return Math.min(...samples);
   }
 
   async start(options = {}) {
@@ -1212,13 +1566,16 @@ export class ProxyService {
       throw new Error('No proxy nodes configured');
     }
 
-    const config = this.generateConfig(options.runtime || {});
+    const runtimeOptions = { ...(options.runtime || {}) };
+    this.runtimeOptions = runtimeOptions;
+    const config = this.generateConfig(runtimeOptions);
     this.writeConfig(config);
-    buildRoutingObservabilityLines(options.runtime || {}, config)
+    buildRoutingObservabilityLines(runtimeOptions, config)
       .forEach((line) => this.log.log(line));
     await this.stop();
 
     const execPath = this.resolveExecutablePath(options.binPath);
+    this.executablePath = execPath;
     this.proxyProcess = spawn(execPath, ['run', '-c', this.configPath]);
 
     this.proxyProcess.stdout.on('data', (data) => {
@@ -1291,7 +1648,7 @@ export class ProxyService {
       this.log.error(`[ProxyService] Failed to start sing-box process: ${error.message}`);
     });
 
-    await this.waitForRuntimeReady(options.runtime || {});
+    await this.waitForRuntimeReady(runtimeOptions, this.proxyListen, this.proxyProcess);
 
     return {
       started: true,
@@ -1307,45 +1664,7 @@ export class ProxyService {
 
     const processRef = this.proxyProcess;
     this.proxyProcess = null;
-
-    if (processRef.exitCode !== null || processRef.killed) {
-      return;
-    }
-
-    await new Promise((resolve) => {
-      let settled = false;
-      let forceTimer = null;
-      let resolveTimer = null;
-
-      const finish = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (forceTimer) clearTimeout(forceTimer);
-        if (resolveTimer) clearTimeout(resolveTimer);
-        resolve();
-      };
-
-      processRef.once('exit', finish);
-
-      try {
-        processRef.kill();
-      } catch {
-        finish();
-        return;
-      }
-
-      forceTimer = setTimeout(() => {
-        try {
-          processRef.kill('SIGKILL');
-        } catch {
-          finish();
-        }
-      }, 1500);
-
-      resolveTimer = setTimeout(finish, 4000);
-    });
+    await this.stopProcess(processRef);
   }
 
   async restart(nodes, options = {}) {
@@ -2044,21 +2363,46 @@ export class ProxyService {
     };
   }
 
-  async testNode(nodeId) {
-    const localPort = this.getLocalPort(nodeId);
-    if (!localPort) {
-      throw new Error('Node not active in bridge');
+  async testNode(nodeId, options = {}) {
+    const [result] = await this.testNodes([nodeId], options);
+    if (!result?.ok) {
+      throw new Error(result?.error || 'Speed test failed');
+    }
+    return result.latencyMs;
+  }
+
+  async testNodes(nodeIds = [], options = {}) {
+    const requestedIds = Array.isArray(nodeIds) && nodeIds.length
+      ? [...new Set(nodeIds)]
+      : this.nodes.map((node) => node.id);
+    const selectedNodes = requestedIds
+      .map((nodeId) => this.nodes.find((node) => node?.id === nodeId))
+      .filter(Boolean);
+
+    if (!selectedNodes.length) {
+      throw new Error('No nodes selected for speed test');
     }
 
-    const startTime = Date.now();
-    const agent = new SocksProxyAgent(`socks5h://${this.proxyListen}:${localPort}`);
-    await axios.get('http://cp.cloudflare.com/generate_204', {
-      httpAgent: agent,
-      httpsAgent: agent,
-      timeout: 15000,
-      proxy: false
+    const CONCURRENCY = 5;
+    return this.withSpeedtestRuntime(selectedNodes, options, async ({ service, listenHost, nodes, runtime }) => {
+      const results = [];
+      for (let index = 0; index < nodes.length; index += CONCURRENCY) {
+        const batch = nodes.slice(index, index + CONCURRENCY);
+        const batchResults = await Promise.all(batch.map(async (node) => {
+          try {
+            const latencyMs = await this.measureSpeedtestLatency(service.getLocalPort(node.id), {
+              proxyListen: listenHost,
+              url: runtime.speedtestUrl,
+              nodeId: node.id
+            });
+            return { id: node.id, ok: true, latencyMs };
+          } catch (error) {
+            return { id: node.id, ok: false, error: error.message };
+          }
+        }));
+        results.push(...batchResults);
+      }
+      return results;
     });
-
-    return Date.now() - startTime;
   }
 }

@@ -80,7 +80,7 @@ export const formatNodeGroupLatencyBadge = ({ nodeId, nodeGroupTestingNodeIds, n
     return { text: '失败', cls: 'is-error', title: result.error || '测速失败' };
   }
   const latency = Number(result.latencyMs);
-  const cls = latency < 200 ? 'is-good' : (latency <= 500 ? 'is-warn' : 'is-bad');
+  const cls = latency > 0 && latency <= 500 ? 'is-good' : 'is-bad';
   return { text: `${latency} ms`, cls, title: '' };
 };
 

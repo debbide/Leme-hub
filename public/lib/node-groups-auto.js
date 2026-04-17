@@ -18,6 +18,37 @@ export const applyNodeGroupLatencyResults = ({ results = [], nodeGroupLatencyMap
   });
 };
 
+export const applyNodeGroupTestingPayload = ({
+  payload,
+  nodeGroupLatencyMap,
+  setNodeGroupLastTestAt,
+  setNodeGroups = null
+}) => {
+  if (typeof setNodeGroups === 'function' && Array.isArray(payload?.nodeGroups)) {
+    setNodeGroups(payload.nodeGroups);
+  }
+
+  const testing = payload?.nodeGroupTesting || {};
+  const latencyCache = testing.latencyCache || {};
+  const cacheResults = latencyCache.results && typeof latencyCache.results === 'object'
+    ? latencyCache.results
+    : null;
+
+  if (cacheResults) {
+    nodeGroupLatencyMap.clear();
+    Object.entries(cacheResults).forEach(([nodeId, result]) => {
+      if (!nodeId || !result || typeof result !== 'object') {
+        return;
+      }
+      nodeGroupLatencyMap.set(nodeId, result);
+    });
+  } else if (Array.isArray(payload?.results)) {
+    applyNodeGroupLatencyResults({ results: payload.results, nodeGroupLatencyMap });
+  }
+
+  setNodeGroupLastTestAt(latencyCache.updatedAt ? new Date(latencyCache.updatedAt) : new Date());
+};
+
 export const applyLatencyPrioritySwitch = async ({
   group,
   testResults = [],
@@ -96,14 +127,41 @@ export const testNodeGroupNodes = async ({
   renderNodeGroups,
   requestJson,
   nodeGroupLatencyMap,
-  nodeGroupLastTestAt,
+  setNodeGroups,
   setNodeGroupLastTestAt,
   renderNodeGroupTestMeta,
-  persistNodeGroupTestingState,
-  applyLatencyPrioritySwitch,
   updateCoreStatus,
   showToast,
 }) => {
+  if (options.refreshOnly) {
+    const payload = await requestJson('/api/node-groups');
+    applyNodeGroupTestingPayload({
+      payload,
+      nodeGroupLatencyMap,
+      setNodeGroupLastTestAt,
+      setNodeGroups
+    });
+    renderNodeGroupTestMeta();
+    if (payload.core) updateCoreStatus(payload.core);
+    return;
+  }
+
+  if (options.all) {
+    const payload = await requestJson('/api/node-groups/test', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    applyNodeGroupTestingPayload({
+      payload,
+      nodeGroupLatencyMap,
+      setNodeGroupLastTestAt,
+      setNodeGroups
+    });
+    renderNodeGroupTestMeta();
+    if (payload.core) updateCoreStatus(payload.core);
+    return;
+  }
+
   const group = nodeGroups.find((item) => item.id === groupId);
   if (!group) return;
   const nodeIds = getEffectiveGroupNodeIds(group);
@@ -118,15 +176,17 @@ export const testNodeGroupNodes = async ({
   renderNodeGroups();
 
   try {
-    const payload = await requestJson('/api/nodes/test-batch', {
+    const payload = await requestJson('/api/node-groups/test', {
       method: 'POST',
-      body: JSON.stringify({ ids: nodeIds }),
+      body: JSON.stringify({ id: groupId })
     });
-    applyNodeGroupLatencyResults({ results: payload.results || [], nodeGroupLatencyMap });
-    await applyLatencyPrioritySwitch(group, payload.results || [], options);
-    setNodeGroupLastTestAt(new Date());
+    applyNodeGroupTestingPayload({
+      payload,
+      nodeGroupLatencyMap,
+      setNodeGroupLastTestAt,
+      setNodeGroups
+    });
     renderNodeGroupTestMeta();
-    persistNodeGroupTestingState();
     if (payload.core) updateCoreStatus(payload.core);
     if (!options.silent) {
       const successCount = (payload.results || []).filter((item) => item.ok).length;
@@ -193,15 +253,20 @@ export const stopNodeGroupAutoTest = ({ nodeGroupAutoTestTimer, setNodeGroupAuto
   }
 };
 
-export const startNodeGroupAutoTest = ({ nodeGroupAutoTestTimer, setNodeGroupAutoTestTimer, setNodeGroupAutoTestStatusTimer, nodeGroups, getEffectiveGroupNodeIds, testNodeGroupNodes, nodeGroupAutoTestIntervalMs, renderNodeGroupTestMeta }) => {
+export const startNodeGroupAutoTest = ({
+  nodeGroupAutoTestTimer,
+  setNodeGroupAutoTestTimer,
+  setNodeGroupAutoTestStatusTimer,
+  testNodeGroupNodes,
+  nodeGroupAutoTestIntervalMs,
+  renderNodeGroupTestMeta
+}) => {
   if (nodeGroupAutoTestTimer) return;
   setNodeGroupAutoTestTimer(setInterval(() => {
-    nodeGroups.forEach((group) => {
-      if (getEffectiveGroupNodeIds(group).length) {
-        testNodeGroupNodes(group.id, { silent: true });
-      }
-    });
-  }, nodeGroupAutoTestIntervalMs));
+    if (typeof testNodeGroupNodes === 'function') {
+      void testNodeGroupNodes(null, { silent: true, refreshOnly: true });
+    }
+  }, Math.min(nodeGroupAutoTestIntervalMs, 15000)));
 
   setNodeGroupAutoTestStatusTimer(setInterval(() => {
     renderNodeGroupTestMeta();
@@ -217,7 +282,11 @@ export const runNodeGroupAutoBackfillIfNeeded = async ({ nodeGroups, getEffectiv
     return !hasMeasuredNode;
   });
 
-  for (const group of pendingGroups) {
-    await testNodeGroupNodes(group.id, { silent: true });
+  if (!pendingGroups.length) {
+    return;
+  }
+
+  if (typeof testNodeGroupNodes === 'function') {
+    await testNodeGroupNodes(null, { silent: true, all: true });
   }
 };
