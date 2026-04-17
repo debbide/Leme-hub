@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 
 import { assignStableLocalPorts, CoreManager } from '../app/server/services/CoreManager.js';
+import { ACTIVE_NODE_SELECTOR_TAG } from '../app/proxy/ProxyService.js';
 
 const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]) => {
   let nodes = [...initialNodes];
@@ -178,6 +179,7 @@ test('start syncs running node group selectors after core startup', async () => 
   await manager.start();
 
   assert.equal(calls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === ACTIVE_NODE_SELECTOR_TAG && entry[2] === 'out-n1'), true);
   assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
 });
 
@@ -433,6 +435,37 @@ test('importProxyLink reports duplicateCount for manual imports without blocking
   assert.equal(result.importedCount, 1);
   assert.equal(result.duplicateCount, 1);
   assert.equal(result.nodes.length, 2);
+});
+
+test('importProxyLink skips invalid nodes that fail local validation', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  manager.proxyService = {
+    parseProxyLinks: () => ([
+      { id: 'ok-node', type: 'socks', server: 'ok.example', port: 1081 },
+      { id: 'bad-node', type: 'hysteria2', server: 'bad.example', port: 443, password: 'secret', obfs: 'salamander' }
+    ]),
+    setNodes() {},
+    getLocalPort: (nodeId) => nodeId === 'n1' ? 20000 : 20001,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+  manager.filterValidNodes = async (nodes) => ({
+    validNodes: [nodes[0]],
+    invalidNodes: [{ node: nodes[1], error: 'missing obfs password' }]
+  });
+
+  const result = await manager.importProxyLink('mixed');
+
+  assert.equal(result.importedCount, 1);
+  assert.equal(result.invalidCount, 1);
+  assert.equal(result.nodes.some((node) => node.server === 'ok.example'), true);
+  assert.equal(result.nodes.some((node) => node.server === 'bad.example'), false);
+  assert.match(result.warning, /missing obfs password/);
 });
 
 test('importProxyLink splits multi-line links and persists all parsed nodes through CoreManager', async () => {
@@ -1217,6 +1250,78 @@ test('getStatus exposes system proxy auto switch profile and effective node', as
   assert.equal(status.proxy.systemProxyAutoSwitch.nextAt, '2026-04-15T10:15:00.000Z');
 });
 
+test('getRoutingHits expands node group selectors to the current node name', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', name: 'SG 01', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', name: 'SG 02', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    systemProxyEnabled: true,
+    nodeGroups: [{ id: 'country-auto-sg', name: 'Country/SG', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }]
+  });
+
+  manager.state.status = 'running';
+  manager.connectionsService = {
+    getConnections: async () => [{
+      id: 'conn-1',
+      metadata: { host: 'www.youtube.com', destinationPort: 443 },
+      chains: ['system-http', 'grp-country-auto-sg'],
+      rule: 'usr-rs-rs-youtube'
+    }]
+  };
+  manager.proxyService = {
+    resolveRoutingHit: () => ({
+      kind: 'ruleset',
+      name: 'YouTube Video',
+      target: 'grp-country-auto-sg',
+      descriptor: 'YouTube Video'
+    })
+  };
+
+  const hits = await manager.getRoutingHits();
+  const groupName = manager.resolveCountryName('SG') || 'SG';
+
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].outbound, 'grp-country-auto-sg');
+  assert.equal(hits[0].outboundName, `${groupName} -> SG 02`);
+  assert.equal(hits[0].nodeGroupId, 'country-auto-sg');
+  assert.equal(hits[0].nodeGroupName, groupName);
+  assert.equal(hits[0].effectiveNodeId, 'n2');
+  assert.equal(hits[0].effectiveNodeName, 'SG 02');
+});
+
+test('routing hit history keeps the actual node display for node group targets', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', name: 'SG 01', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', name: 'SG 02', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'country-auto-sg', name: 'Country/SG', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }]
+  });
+
+  manager.appendRoutingHitHistory({
+    timestamp: '2026-04-17T10:00:00.000Z',
+    host: 'www.youtube.com',
+    port: 443,
+    outbound: 'out-n2',
+    kind: 'ruleset',
+    name: 'YouTube Video',
+    target: 'grp-country-auto-sg',
+    descriptor: 'YouTube Video'
+  });
+
+  const hits = await manager.getRoutingHits();
+  const groupName = manager.resolveCountryName('SG') || 'SG';
+
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].outboundName, `${groupName} -> SG 02`);
+  assert.equal(hits[0].nodeGroupName, groupName);
+  assert.equal(hits[0].effectiveNodeId, 'n2');
+  assert.equal(hits[0].effectiveNodeName, 'SG 02');
+});
+
 test('updateSettings rejects enabling system proxy auto switch without a valid node group', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
@@ -1425,12 +1530,18 @@ test('unexpected process exit disables system proxy when desired', async () => {
   assert.equal(manager.getStatus().systemProxy.enabled, false);
 });
 
-test('updateSettings auto restarts when active node changes while core is running', async () => {
+test('updateSettings hot switches the active node without restarting when core is running', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
     { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
   ]));
   manager.state.status = 'running';
+  const calls = [];
+  manager.clashApiService = {
+    waitUntilReady: async () => calls.push('waitUntilReady'),
+    setSelector: async (groupTag, outboundTag) => calls.push(['setSelector', groupTag, outboundTag]),
+    setListenHost() {}
+  };
   let restarted = false;
   manager.restart = async () => {
     restarted = true;
@@ -1440,8 +1551,11 @@ test('updateSettings auto restarts when active node changes while core is runnin
 
   const result = await manager.updateSettings({ activeNodeId: 'n2' });
 
-  assert.equal(restarted, true);
-  assert.equal(result.autoRestarted, true);
+  assert.equal(restarted, false);
+  assert.equal(calls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === ACTIVE_NODE_SELECTOR_TAG && entry[2] === 'out-n2'), true);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
   assert.equal(result.proxy.activeNodeId, 'n2');
 });
 
@@ -1513,6 +1627,45 @@ test('importRawNode auto restarts when core is already running', async () => {
   assert.equal(restarted, true);
   assert.equal(result.autoRestarted, true);
   assert.equal(result.restartRequired, false);
+});
+
+test('importRawNode rejects invalid node configs before saving', async () => {
+  const store = createStore();
+  const manager = new CoreManager(createPaths(), store);
+
+  manager.filterValidNodes = async () => ({
+    validNodes: [],
+    invalidNodes: [{ node: { name: 'bad-node' }, error: 'missing obfs password' }]
+  });
+
+  await assert.rejects(
+    () => manager.importRawNode({ type: 'hysteria2', server: 'bad.example', port: 443, password: 'secret' }),
+    /missing obfs password/
+  );
+  assert.equal(store.getNodes().length, 1);
+});
+
+test('applyNodeChanges keeps the running core alive when validation fails', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  manager.state.status = 'running';
+  let restarted = false;
+
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+  manager.validateRuntimeConfig = async () => {
+    throw new Error('missing obfs password');
+  };
+  attachPassiveNodeServices(manager);
+
+  const result = await manager.applyNodeChanges(manager.store.getNodes());
+
+  assert.equal(restarted, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.match(result.warning, /missing obfs password/);
+  assert.equal(manager.getStatus().status, 'running');
 });
 
 test('testNode auto starts core when stopped', async () => {

@@ -261,12 +261,18 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
   if (payload.autoRestarted) {
     updateRestartWarning(false);
     showToast('节点变更已自动应用到核心', 'success');
+    if (payload.warning) {
+      showToast(payload.warning, 'info');
+    }
     return;
   }
 
   updateRestartWarning(payload.restartRequired);
   if (successMessage) {
     showToast(successMessage, 'success');
+  }
+  if (payload.warning) {
+    showToast(payload.warning, 'info');
   }
 };
 

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
-import { ProxyService, getNodeGroupOutboundTag } from '../../proxy/ProxyService.js';
+import { ACTIVE_NODE_SELECTOR_TAG, ProxyService, getNodeGroupOutboundTag } from '../../proxy/ProxyService.js';
 import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, DEFAULT_SPEEDTEST_URL, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
 import { formatHostPort, formatUrlWithHost, normalizeHost } from '../../shared/network.js';
 import { AutoStartManager } from './AutoStartManager.js';
@@ -103,6 +103,40 @@ const getNodeGroupSelectedNodeId = (group) => {
 };
 
 const hasExistingNodeGroup = (nodeGroups = [], groupId = null) => Boolean(getNodeGroupById(nodeGroups, groupId));
+
+const getNodeDisplayName = (node, fallback = '') => (
+  node?.name
+  || node?.displayName
+  || node?.label
+  || node?.server
+  || fallback
+);
+
+const truncateText = (value, max = 120) => {
+  const text = String(value || '').trim();
+  if (!text || text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, max - 3))}...`;
+};
+
+const buildInvalidNodeWarning = (invalidNodes = []) => {
+  if (!Array.isArray(invalidNodes) || !invalidNodes.length) {
+    return null;
+  }
+
+  const samples = invalidNodes
+    .slice(0, 2)
+    .map(({ node, error }) => `${truncateText(getNodeDisplayName(node, node?.id || node?.type || 'node'), 40)}: ${truncateText(error, 96)}`)
+    .filter(Boolean)
+    .join('; ');
+
+  return invalidNodes.length === 1
+    ? `已跳过 1 个无效节点：${samples}`
+    : `已跳过 ${invalidNodes.length} 个无效节点，例如：${samples}`;
+};
+
+const buildDeferredApplyWarning = (errorMessage) => `节点已保存，但未自动应用到当前核心：${truncateText(errorMessage, 180)}`;
 
 const normalizeSystemProxyAutoSwitchSettings = (settings = {}, nodeGroups = [], options = {}) => {
   const { strict = false } = options;
@@ -893,6 +927,88 @@ export class CoreManager {
     };
   }
 
+  createRoutingHitDisplayContext(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    return {
+      settings,
+      nodes,
+      nodeMap: new Map(nodes.map((node) => [`out-${node.id}`, node])),
+      groupMap: new Map((settings.nodeGroups || []).map((group) => [getNodeGroupOutboundTag(group.id), group]))
+    };
+  }
+
+  getRoutingHitGroupDisplayName(group) {
+    if (!group || typeof group !== 'object') {
+      return '';
+    }
+
+    const explicitCountryCode = normalizeCountryCode(group.countryCode);
+    if (explicitCountryCode) {
+      return this.resolveCountryName(explicitCountryCode) || explicitCountryCode;
+    }
+
+    const normalizedName = String(group.name || '').trim();
+    const nameCountryCode = normalizedName.match(/^国家\/([A-Za-z]{2})$/u)?.[1];
+    if (nameCountryCode) {
+      const normalized = normalizeCountryCode(nameCountryCode);
+      if (normalized) {
+        return this.resolveCountryName(normalized) || normalized;
+      }
+    }
+
+    const idCountryCode = String(group.id || '').trim().match(/^country-auto-([a-z]{2})$/u)?.[1];
+    if (idCountryCode) {
+      const normalized = normalizeCountryCode(idCountryCode);
+      if (normalized) {
+        return this.resolveCountryName(normalized) || normalized;
+      }
+    }
+
+    return normalizedName || String(group.id || '').trim();
+  }
+
+  decorateRoutingHitEntry(entry, context = this.createRoutingHitDisplayContext()) {
+    if (!entry || typeof entry !== 'object') {
+      return entry;
+    }
+
+    const outbound = String(entry.outbound || '').trim();
+    const target = String(entry.target || '').trim();
+    const outboundNode = context.nodeMap.get(outbound) || null;
+    const targetGroup = context.groupMap.get(target) || null;
+    const outboundGroup = context.groupMap.get(outbound) || null;
+    const activeGroup = targetGroup || outboundGroup || null;
+    const selectedNodeId = activeGroup ? getNodeGroupSelectedNodeId(activeGroup) : null;
+    const selectedNode = selectedNodeId
+      ? context.nodes.find((node) => node.id === selectedNodeId) || null
+      : null;
+    const effectiveNode = outboundNode || selectedNode;
+    const groupName = activeGroup ? this.getRoutingHitGroupDisplayName(activeGroup) : null;
+    const nodeName = effectiveNode ? getNodeDisplayName(effectiveNode, outbound || target) : null;
+    const outboundName = activeGroup && nodeName
+      ? `${groupName} -> ${nodeName}`
+      : activeGroup
+        ? groupName
+        : outboundNode
+          ? nodeName
+          : String(entry.outboundName || '').trim() || outbound || target;
+    const targetName = activeGroup
+      ? groupName
+      : target === 'direct'
+        ? 'direct'
+        : getNodeDisplayName(context.nodeMap.get(target), target) || target;
+
+    return {
+      ...entry,
+      outboundName,
+      targetName,
+      effectiveOutbound: effectiveNode ? `out-${effectiveNode.id}` : outbound || null,
+      effectiveNodeId: effectiveNode?.id || null,
+      effectiveNodeName: nodeName,
+      nodeGroupId: activeGroup?.id || null,
+      nodeGroupName: groupName
+    };
+  }
+
   normalizeRoutingHitHistoryEntry(entry) {
     if (!entry || typeof entry !== 'object') {
       return null;
@@ -916,26 +1032,35 @@ export class CoreManager {
       host,
       port: Number.isInteger(portParsed) && portParsed > 0 ? portParsed : null,
       outbound,
+      outboundName: entry.outboundName ? String(entry.outboundName).trim() : null,
       kind,
       name,
       target,
+      targetName: entry.targetName ? String(entry.targetName).trim() : null,
       descriptor,
       matchedTag: entry.matchedTag ? String(entry.matchedTag).trim() : null,
       matchedBy: entry.matchedBy ? String(entry.matchedBy).trim() : null,
       matchType: entry.matchType ? String(entry.matchType).trim() : null,
       matchValue: entry.matchValue ? String(entry.matchValue).trim() : null,
+      effectiveOutbound: entry.effectiveOutbound ? String(entry.effectiveOutbound).trim() : null,
+      effectiveNodeId: entry.effectiveNodeId ? String(entry.effectiveNodeId).trim() : null,
+      effectiveNodeName: entry.effectiveNodeName ? String(entry.effectiveNodeName).trim() : null,
+      nodeGroupId: entry.nodeGroupId ? String(entry.nodeGroupId).trim() : null,
+      nodeGroupName: entry.nodeGroupName ? String(entry.nodeGroupName).trim() : null,
       persisted: true
     };
   }
 
   readRoutingHitHistory(limit = ROUTING_HIT_READ_LIMIT) {
+    const context = this.createRoutingHitDisplayContext();
     try {
       const lines = fs.readFileSync(this.routingHitHistoryPath, 'utf8').split(/\r?\n/).filter(Boolean);
       const normalized = lines
         .slice(-Math.max(1, limit))
         .map((line) => {
           try {
-            return this.normalizeRoutingHitHistoryEntry(JSON.parse(line));
+            const parsed = this.normalizeRoutingHitHistoryEntry(JSON.parse(line));
+            return parsed ? this.decorateRoutingHitEntry(parsed, context) : null;
           } catch {
             return null;
           }
@@ -948,7 +1073,7 @@ export class CoreManager {
   }
 
   appendRoutingHitHistory(entry) {
-    const normalized = this.normalizeRoutingHitHistoryEntry(entry);
+    const normalized = this.normalizeRoutingHitHistoryEntry(this.decorateRoutingHitEntry(entry));
     if (!normalized) {
       return;
     }
@@ -1140,6 +1265,19 @@ export class CoreManager {
     return this.resolveActiveNodeId(settings, nodes);
   }
 
+  getActiveNodeSelectorTarget(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    const activeNodeId = this.resolveActiveNodeId(settings, nodes);
+    if (!activeNodeId || !nodes.some((node) => node.id === activeNodeId)) {
+      return null;
+    }
+
+    return {
+      groupTag: ACTIVE_NODE_SELECTOR_TAG,
+      outboundTag: `out-${activeNodeId}`,
+      selectedNodeId: activeNodeId
+    };
+  }
+
   getNodeGroupSelectorTarget(group, nodes = this.store.getNodes()) {
     if (!group || typeof group !== 'object' || !group.id) {
       return null;
@@ -1155,6 +1293,17 @@ export class CoreManager {
       outboundTag: `out-${selectedNodeId}`,
       selectedNodeId
     };
+  }
+
+  async applyRunningActiveNodeSelector(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+    const target = this.getActiveNodeSelectorTarget(settings, nodes);
+    if (!target) {
+      return false;
+    }
+
+    await this.clashApiService.setSelector(target.groupTag, target.outboundTag);
+    this.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
+    return true;
   }
 
   getEffectiveNodeGroupNodeIds(group, nodes = this.store.getNodes()) {
@@ -1177,19 +1326,23 @@ export class CoreManager {
     return true;
   }
 
-  async syncRunningNodeGroupSelectors(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
+  async syncRunningSelectors(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
     if (this.state.status !== 'running') {
       return 0;
     }
 
     const nodeGroups = Array.isArray(settings?.nodeGroups) ? settings.nodeGroups : [];
     const selectableGroups = nodeGroups.filter((group) => this.getNodeGroupSelectorTarget(group, nodes));
-    if (!selectableGroups.length) {
+    const activeSelectorTarget = this.getActiveNodeSelectorTarget(settings, nodes);
+    if (!activeSelectorTarget && !selectableGroups.length) {
       return 0;
     }
 
     await this.clashApiService.waitUntilReady();
     let appliedCount = 0;
+    if (activeSelectorTarget && await this.applyRunningActiveNodeSelector(settings, nodes)) {
+      appliedCount += 1;
+    }
     for (const group of selectableGroups) {
       if (await this.applyRunningNodeGroupSelector(group, nodes)) {
         appliedCount += 1;
@@ -1840,10 +1993,25 @@ export class CoreManager {
     this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);
 
     const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
-    const shouldAutoRestart = this.state.status === 'running'
-      && runtimeSensitiveKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+    const changedRuntimeKeys = runtimeSensitiveKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
+    const shouldHotSwitchActiveNode = this.state.status === 'running'
+      && changedRuntimeKeys.length === 1
+      && changedRuntimeKeys[0] === 'activeNodeId';
+    let shouldAutoRestart = this.state.status === 'running'
+      && changedRuntimeKeys.some((key) => key !== 'activeNodeId');
+    let hotSwitchedActiveNode = false;
 
     let core = this.getStatus();
+    if (shouldHotSwitchActiveNode) {
+      try {
+        await this.clashApiService.waitUntilReady();
+        await this.applyRunningActiveNodeSelector(saved, nodes);
+        hotSwitchedActiveNode = true;
+      } catch (error) {
+        this.store.appendLog(`[CoreManager] Active selector hot-switch failed, falling back to restart: ${error.message}`);
+        shouldAutoRestart = true;
+      }
+    }
     if (shouldAutoRestart) {
       core = await this.restart();
     }
@@ -1851,7 +2019,7 @@ export class CoreManager {
     return {
       settings: { ...saved },
       proxy: this.getProxyProfile(),
-      restartRequired: shouldAutoRestart ? false : this.getRestartRequired(),
+      restartRequired: (shouldAutoRestart || hotSwitchedActiveNode) ? false : this.getRestartRequired(),
       autoRestarted: shouldAutoRestart,
       core
     };
@@ -2016,7 +2184,8 @@ export class CoreManager {
     if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return history;
 
     this.refreshConnectionsServiceBaseUrl(settings);
-    const nodeMap = new Map(this.store.getNodes().map((node) => [`out-${node.id}`, node]));
+    const nodes = this.store.getNodes();
+    const context = this.createRoutingHitDisplayContext(this.getSettingsSnapshot(), nodes);
     const connections = await this.connectionsService.getConnections();
     const liveHits = connections
       .map((connection) => {
@@ -2026,13 +2195,12 @@ export class CoreManager {
         const outboundTag = chains[chains.length - 1] || '';
         const hit = this.proxyService.resolveRoutingHit(connection.rule || connection.rulePayload || null, host, outboundTag, { allowHeuristic: false });
         if (!hit) return null;
-        return {
+        return this.decorateRoutingHitEntry({
           id: connection.id || `${host}-${outboundTag}`,
           timestamp: pickConnectionTimestamp(connection),
           host,
           port: metadata.destinationPort || metadata.dstPort || null,
           outbound: outboundTag,
-          outboundName: nodeMap.get(outboundTag)?.name || nodeMap.get(outboundTag)?.displayName || nodeMap.get(outboundTag)?.label || nodeMap.get(outboundTag)?.server || outboundTag,
           kind: hit.kind,
           name: hit.name,
           target: hit.target,
@@ -2045,7 +2213,7 @@ export class CoreManager {
           chains,
           rule: connection.rule || null,
           rulePayload: connection.rulePayload || null
-        };
+        }, context);
       })
       .filter(Boolean);
 
@@ -2155,6 +2323,20 @@ export class CoreManager {
       };
     }
 
+    try {
+      await this.validateRuntimeConfig(savedNodes);
+    } catch (error) {
+      const warning = buildDeferredApplyWarning(error.message);
+      this.store.appendLog(`[CoreManager] Auto-apply skipped: ${error.message}`);
+      return {
+        nodes: await this.getNodeRecords(),
+        restartRequired: false,
+        autoRestarted: false,
+        warning,
+        core: this.getStatus()
+      };
+    }
+
     const core = await this.restart();
     return {
       nodes: await this.getNodeRecords(),
@@ -2195,6 +2377,105 @@ export class CoreManager {
     return savedNodes;
   }
 
+  createValidationProxyService(settings = this.getSettingsSnapshot()) {
+    return new ProxyService({
+      configDir: this.paths.dataDir,
+      projectRoot: this.paths.root,
+      proxyListen: settings.proxyListenHost,
+      basePort: settings.proxyBasePort,
+      configFileName: this.paths.configPath.split(/[/\\]/).pop(),
+      log: this.createLogger()
+    });
+  }
+
+  resolveValidationBinaryPath(settings = this.getSettingsSnapshot()) {
+    const status = this.binaryManager.getStatus(settings.singBoxBinaryPath);
+    const candidates = [
+      this.state.binary?.resolvedPath,
+      this.state.executablePath,
+      status.configuredExists ? status.configuredPath : null,
+      status.managedExists ? status.managedPath : null
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate && fs.existsSync(candidate)) {
+        return path.resolve(candidate);
+      }
+    }
+
+    return null;
+  }
+
+  async validateSingleNodeConfig(node, options = {}) {
+    if (!node) {
+      return { validated: false };
+    }
+
+    const settings = options.settings || this.getSettingsSnapshot();
+    const binPath = options.binPath || this.resolveValidationBinaryPath(settings);
+    if (!binPath) {
+      return { validated: false };
+    }
+
+    const candidate = { ...node };
+    const service = this.createValidationProxyService(settings);
+    service.setNodes([candidate]);
+    const config = service.generateConfig({
+      activeNodeId: candidate.id || null,
+      systemDefaultNodeId: candidate.id || null,
+      proxyMode: 'global'
+    });
+    const expectedTag = candidate.id ? `out-${candidate.id}` : null;
+    if (expectedTag && !config.outbounds?.some((outbound) => outbound.tag === expectedTag)) {
+      throw new Error('节点缺少必要字段或格式不受支持');
+    }
+
+    await service.validateConfig(config, { binPath });
+    return { validated: true, binPath };
+  }
+
+  async filterValidNodes(nodes, options = {}) {
+    const candidates = Array.isArray(nodes) ? nodes.filter(Boolean) : [];
+    if (!candidates.length) {
+      return { validNodes: [], invalidNodes: [] };
+    }
+
+    const settings = options.settings || this.getSettingsSnapshot();
+    const binPath = options.binPath || this.resolveValidationBinaryPath(settings);
+    if (!binPath) {
+      return { validNodes: candidates, invalidNodes: [] };
+    }
+
+    const validNodes = [];
+    const invalidNodes = [];
+
+    for (const node of candidates) {
+      try {
+        await this.validateSingleNodeConfig(node, { settings, binPath });
+        validNodes.push(node);
+      } catch (error) {
+        const message = String(error?.message || error || '节点配置无效').trim() || '节点配置无效';
+        invalidNodes.push({ node, error: message });
+        this.store.appendLog(`[CoreManager] Node validation skipped ${getNodeDisplayName(node, node?.id || 'node')}: ${message}`);
+      }
+    }
+
+    return { validNodes, invalidNodes };
+  }
+
+  async validateRuntimeConfig(nodes, settings = this.getSettingsSnapshot()) {
+    const binPath = this.resolveValidationBinaryPath(settings);
+    if (!binPath || !Array.isArray(nodes) || !nodes.length) {
+      return { validated: false };
+    }
+
+    const service = this.createValidationProxyService(settings);
+    service.setNodes(nodes);
+    const config = service.generateConfig(this.getRuntimeOptions(settings, nodes));
+    await service.validateConfig(config, { binPath });
+    return { validated: true, binPath };
+  }
+
   mergeAndSaveNodes(incomingNodes) {
     return this.saveNodes(mergeUniqueNodes(this.store.getNodes(), incomingNodes));
   }
@@ -2216,20 +2497,38 @@ export class CoreManager {
       ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
       ...(group ? { group } : {})
     }));
+    const { validNodes, invalidNodes } = await this.filterValidNodes(nodes);
+    if (!validNodes.length) {
+      throw createHttpError(buildInvalidNodeWarning(invalidNodes) || 'Invalid proxy link', 400);
+    }
+
     const existingNodes = this.store.getNodes();
-    const duplicateCount = countPotentialDuplicateNodes(existingNodes, nodes);
-    const savedNodes = this.saveNodes(appendNodes(existingNodes, nodes));
+    const duplicateCount = countPotentialDuplicateNodes(existingNodes, validNodes);
+    const savedNodes = this.saveNodes(appendNodes(existingNodes, validNodes));
     const applied = await this.applyNodeChanges(savedNodes);
+    const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
     return {
-      node: applied.nodes.find((item) => item.id === nodes[0].id),
-      importedCount: nodes.length,
+      node: applied.nodes.find((item) => item.id === validNodes[0].id),
+      importedCount: validNodes.length,
+      invalidCount: invalidNodes.length,
       duplicateCount,
-      ...applied
+      ...applied,
+      warning
     };
   }
 
   async importRawNode(rawNode) {
-    const savedNodes = this.mergeAndSaveNodes([rawNode]);
+    const existingNodes = this.store.getNodes();
+    const nextNodes = mergeUniqueNodes(existingNodes, [rawNode]);
+    const addedNodes = nextNodes.filter((node) => !existingNodes.some((existing) => existing.id === node.id));
+    if (addedNodes.length) {
+      const { invalidNodes } = await this.filterValidNodes(addedNodes);
+      if (invalidNodes.length) {
+        throw createHttpError(`节点配置校验失败：${invalidNodes[0].error}`, 400);
+      }
+    }
+
+    const savedNodes = this.saveNodes(nextNodes);
     return this.applyNodeChanges(savedNodes);
   }
 
@@ -2264,6 +2563,12 @@ export class CoreManager {
           }
         : {})
     };
+
+    try {
+      await this.validateSingleNodeConfig(nodes[index]);
+    } catch (error) {
+      throw createHttpError(`节点配置校验失败：${error.message}`, 400);
+    }
 
     const savedNodes = this.saveNodes(nodes);
     const applied = await this.applyNodeChanges(savedNodes);
@@ -2702,11 +3007,18 @@ export class CoreManager {
       throw createHttpError('Subscription returned no usable nodes', 400);
     }
 
+    const { validNodes, invalidNodes } = await this.filterValidNodes(importedNodes);
+    if (!validNodes.length) {
+      const errorMessage = buildInvalidNodeWarning(invalidNodes) || 'Subscription returned no usable nodes';
+      this.updateSubscriptionRecordError(existingRecord, errorMessage);
+      throw createHttpError(errorMessage, 400);
+    }
+
     settings = this.ensureStoredGroup(settings, groupName);
     this.store.saveSettings(settings);
 
     const existingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== url);
-    const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, importedNodes.map((node) => ({
+    const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, validNodes.map((node) => ({
       ...node,
       source: 'subscription',
       subscriptionUrl: url,
@@ -2714,12 +3026,13 @@ export class CoreManager {
     }))));
 
     const applied = await this.applyNodeChanges(savedNodes);
+    const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
     const subscription = this.updateSubscriptionRecord({
       id: existingRecord?.id,
       url,
       name: displayName,
       groupName,
-      importedCount: importedNodes.length,
+      importedCount: validNodes.length,
       lastSyncedAt: new Date().toISOString(),
       lastNodeCount: applied.nodes.filter((node) => node.subscriptionUrl === url).length,
       lastStatus: 'success',
@@ -2727,11 +3040,13 @@ export class CoreManager {
     }, { settings: this.getSettingsSnapshot() });
 
     return {
-      importedCount: importedNodes.length,
+      importedCount: validNodes.length,
+      invalidCount: invalidNodes.length,
       subscription,
       subscriptions: this.getSubscriptions(),
       groups: this.getGroups(),
-      ...applied
+      ...applied,
+      warning
     };
   }
 
@@ -2815,9 +3130,9 @@ export class CoreManager {
       };
       this.bindProcessState();
       try {
-        await this.syncRunningNodeGroupSelectors(settings, nodes);
+        await this.syncRunningSelectors(settings, nodes);
       } catch (syncError) {
-        this.store.appendLog(`[CoreManager] Failed to sync node group selectors: ${syncError.message}`);
+        this.store.appendLog(`[CoreManager] Failed to sync running selectors: ${syncError.message}`);
       }
       void this.runNodeGroupAutoTestTick();
       return this.getStatus();

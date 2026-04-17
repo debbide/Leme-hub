@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { EventEmitter } from 'node:events';
 
-import { ProxyService } from '../app/proxy/ProxyService.js';
+import { ACTIVE_NODE_SELECTOR_TAG, ProxyService } from '../app/proxy/ProxyService.js';
 import axios from 'axios';
 
 const createTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-'));
@@ -108,7 +108,7 @@ test('generates unified system proxy inbounds for rule routing mode', () => {
   assert.equal(config.inbounds.some((inbound) => inbound.tag === 'system-http' && inbound.listen_port === 20101), true);
   assert.equal(config.route.final, 'direct');
   assert.equal(config.experimental.clash_api.external_controller, '127.0.0.1:9095');
-  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === ACTIVE_NODE_SELECTOR_TAG), true);
 });
 
 test('skips reserved system proxy ports when assigning node local ports', () => {
@@ -262,7 +262,7 @@ test('keeps private traffic direct in rule mode', () => {
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.ip_cidr) && rule.ip_cidr.includes('127.0.0.0/8') && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'builtin-local-bypass' && rule.outbound === 'direct'), true);
   assert.equal(config.route.final, 'direct');
-  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n1'), true);
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === ACTIVE_NODE_SELECTOR_TAG), true);
 });
 
 test('keeps local traffic direct in global mode', () => {
@@ -280,7 +280,7 @@ test('keeps local traffic direct in global mode', () => {
   assert.equal(config.route.rules.some((rule) => rule.ip_is_private === true && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'builtin-local-bypass' && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn')), false);
-  assert.equal(config.route.final, 'out-n1');
+  assert.equal(config.route.final, ACTIVE_NODE_SELECTOR_TAG);
   assert.equal(
     config.dns.rules.some((rule) => Array.isArray(rule.inbound)
       && rule.inbound.includes('system-socks')
@@ -376,7 +376,7 @@ test('uses manual rules for system proxy routing in rule mode', () => {
   });
 
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-1' && rule.outbound === 'direct'), true);
-  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-2' && rule.outbound === 'out-n1'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-2' && rule.outbound === ACTIVE_NODE_SELECTOR_TAG), true);
   assert.equal(config.route.final, 'direct');
   assert.equal(config.log.level, 'debug');
   assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag.startsWith('usr-rule-')), true);
@@ -494,6 +494,30 @@ test('generates selector outbounds for node groups', () => {
   assert.equal(selector.interrupt_exist_connections, false);
 });
 
+test('uses a dedicated selector outbound for the active node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n2',
+    proxyMode: 'global',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100
+  });
+
+  const selector = config.outbounds.find((outbound) => outbound.tag === ACTIVE_NODE_SELECTOR_TAG);
+
+  assert.ok(selector);
+  assert.equal(selector.type, 'selector');
+  assert.deepEqual(selector.outbounds, ['out-n2', 'out-n1']);
+  assert.equal(config.route.final, ACTIVE_NODE_SELECTOR_TAG);
+  assert.equal(config.dns.servers.some((server) => server.tag === 'dns-remote' && server.detour === ACTIVE_NODE_SELECTOR_TAG), true);
+});
+
 test('uses system default node for unmatched system proxy traffic and dns when it differs from active node', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([
@@ -558,7 +582,7 @@ test('uses system default node in global mode when it differs from active node',
     systemProxySocksPort: 20100
   });
 
-  assert.equal(config.route.final, 'out-n1');
+  assert.equal(config.route.final, ACTIVE_NODE_SELECTOR_TAG);
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === 'out-n2'), true);
   assert.equal(config.dns.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.server === 'dns-system-remote'), true);
 });
@@ -896,6 +920,16 @@ test('parses hysteria2 bandwidth and obfs password fields', () => {
   assert.equal(node.alpn, 'h3');
 });
 
+test('treats hysteria2 obfs=none as no obfs', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=none&obfs-password=mask&sni=edge.example#hy2');
+
+  assert.equal(node.type, 'hysteria2');
+  assert.equal(node.obfs, undefined);
+  assert.equal(node.obfs_password, undefined);
+  assert.equal(node.sni, 'edge.example');
+});
+
 test('parses hysteria2 auth string without truncating colon-delimited credentials', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://user:pass@example.com:443?sni=edge.example#hy2');
@@ -1149,6 +1183,18 @@ test('emits hysteria2 and tuic advanced outbound fields', () => {
   assert.equal(tuic.heartbeat, '10s');
   assert.equal(tuic.zero_rtt_handshake, true);
   assert.deepEqual(tuic.tls?.alpn, ['h3']);
+});
+
+test('does not emit hysteria2 obfs block when obfs is none', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=none&obfs-password=mask&sni=edge.example#hy2');
+  service.setNodes([{ ...node, id: 'hy2-none' }]);
+
+  const config = service.generateConfig();
+  const hy2 = config.outbounds.find((outbound) => outbound.tag === 'out-hy2-none');
+
+  assert.equal(hy2.type, 'hysteria2');
+  assert.equal('obfs' in hy2, false);
 });
 
 test('emits tls block for plain trojan links after protocol defaults', () => {

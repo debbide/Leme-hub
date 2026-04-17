@@ -85,6 +85,20 @@ const toList = (value) => Array.isArray(value)
   ? value.filter(Boolean)
   : String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
 
+const stripAnsi = (value = '') => String(value).replace(/\u001b\[[0-9;]*m/gu, '');
+
+const summarizeProcessOutput = (...chunks) => stripAnsi(chunks.join('\n'))
+  .split(/\r?\n/u)
+  .map((line) => line.trim())
+  .filter(Boolean)
+  .slice(-3)
+  .join(' | ');
+
+const normalizeHysteria2Obfs = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized && normalized !== 'none' ? normalized : null;
+};
+
 const normalizeSpeedtestError = (error, targetUrl = '') => {
   const status = Number.parseInt(error?.response?.status, 10);
   if (Number.isInteger(status) && status > 0) {
@@ -228,6 +242,7 @@ const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('b
 const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
 const normalizeSubscriptionResponseSnippet = (value) => String(value || '').replace(/\s+/gu, ' ').trim().slice(0, 160);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const ACTIVE_NODE_SELECTOR_TAG = 'selector-active';
 export const getNodeGroupOutboundTag = (groupId) => `${NODE_GROUP_OUTBOUND_PREFIX}${String(groupId || '').trim()}`;
 
 const detectSubscriptionResponseHint = (value) => {
@@ -299,14 +314,16 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     && rule.inbound.includes('system-http'));
   const systemFallback = rules[rules.length - 1];
   const activeOutbound = activeNodeId ? `out-${activeNodeId}` : 'direct';
+  const normalizeDisplayOutbound = (outbound) => outbound === ACTIVE_NODE_SELECTOR_TAG ? activeOutbound : outbound;
   const autoSwitchGroup = systemProxyAutoSwitchEnabled
     ? (Array.isArray(nodeGroups) ? nodeGroups.find((group) => group?.id === systemProxyAutoSwitchGroupId && Array.isArray(group?.nodeIds) && group.nodeIds.length) : null)
     : null;
   const systemDefaultOutbound = autoSwitchGroup
     ? getNodeGroupOutboundTag(autoSwitchGroup.id)
-    : systemDefaultNodeId
+      : systemDefaultNodeId
       ? `out-${systemDefaultNodeId}`
       : activeOutbound;
+  const displaySystemDefaultOutbound = normalizeDisplayOutbound(systemDefaultOutbound);
   const lines = [];
 
   if (!systemProxyEnabled) {
@@ -319,15 +336,15 @@ const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
       ? routingItems.length
       : customRules.length + rulesets.length;
     const label = hasRoutingItems ? 'routing item(s)' : 'manual rule(s)';
-    const outboundLabel = systemDefaultOutbound === activeOutbound
+    const outboundLabel = displaySystemDefaultOutbound === activeOutbound
       ? `active outbound ${activeOutbound}`
-      : `system outbound ${systemDefaultOutbound} (active ${activeOutbound})`;
+      : `system outbound ${displaySystemDefaultOutbound} (active ${activeOutbound})`;
     lines.push(`[Routing] rule routing active: ${routingItemCount} ${label}, ${outboundLabel}`);
   }
 
   if (systemProxyEnabled) {
-    const defaultOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;
-    const fallbackOutbound = systemFallback?.outbound || systemRule?.outbound || route.final || defaultOutbound;
+    const defaultOutbound = proxyMode === 'direct' ? 'direct' : displaySystemDefaultOutbound;
+    const fallbackOutbound = normalizeDisplayOutbound(systemFallback?.outbound || systemRule?.outbound || route.final || defaultOutbound);
     lines.push(`[Routing] unmatched system traffic -> ${fallbackOutbound}`);
   }
 
@@ -679,9 +696,10 @@ export class ProxyService {
 
       if (node.type === 'hysteria2') {
         outbound.password = node.password;
-        if (node.obfs) {
+        const hysteria2Obfs = normalizeHysteria2Obfs(node.obfs);
+        if (hysteria2Obfs) {
           outbound.obfs = {
-            type: node.obfs,
+            type: hysteria2Obfs,
             password: node.obfs_password || ''
           };
         }
@@ -746,6 +764,17 @@ export class ProxyService {
         };
       })
       .filter((group) => group.nodeIds.length > 0);
+    const activeSelectorOutbound = validNodes.length
+      ? {
+          type: 'selector',
+          tag: ACTIVE_NODE_SELECTOR_TAG,
+          outbounds: [...new Set([
+            ...(effectiveNodeId ? [`out-${effectiveNodeId}`] : []),
+            ...validNodes.map((node) => `out-${node.id}`)
+          ].filter(Boolean))],
+          interrupt_exist_connections: false
+        }
+      : null;
     const nodeGroupOutbounds = normalizedNodeGroups.map((group) => ({
       type: 'selector',
       tag: getNodeGroupOutboundTag(group.id),
@@ -772,6 +801,7 @@ export class ProxyService {
     }
 
     const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
+    const activeSelectorOutboundTag = activeSelectorOutbound?.tag || activeOutbound;
     const nodeGroupMap = new Map(normalizedNodeGroups.map((group) => [group.id, group]));
     const autoSwitchGroup = systemProxyAutoSwitchEnabled
       ? nodeGroupMap.get(String(systemProxyAutoSwitchGroupId || '').trim())
@@ -779,8 +809,8 @@ export class ProxyService {
     const systemDefaultOutbound = autoSwitchGroup?.nodeIds?.length
       ? getNodeGroupOutboundTag(autoSwitchGroup.id)
       : effectiveSystemNodeId
-        ? `out-${effectiveSystemNodeId}`
-        : activeOutbound;
+        ? (effectiveSystemNodeId === effectiveNodeId ? activeSelectorOutboundTag : `out-${effectiveSystemNodeId}`)
+        : activeSelectorOutboundTag;
     this.routingHitMap = new Map();
     const registerRoutingHit = (tag, meta) => {
       this.routingHitMap.set(tag, meta);
@@ -967,7 +997,7 @@ export class ProxyService {
       ? 'direct'
       : proxyMode === 'direct'
         ? 'direct'
-        : activeOutbound;
+        : activeSelectorOutboundTag;
 
     const routeRules = [
       ...validNodes.map((node) => ({
@@ -1118,7 +1148,12 @@ export class ProxyService {
     return {
       log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
       inbounds,
-      outbounds: [...outbounds, ...nodeGroupOutbounds, { type: 'direct', tag: 'direct' }],
+      outbounds: [
+        ...outbounds,
+        ...(activeSelectorOutbound ? [activeSelectorOutbound] : []),
+        ...nodeGroupOutbounds,
+        { type: 'direct', tag: 'direct' }
+      ],
       dns: {
         servers: [
           {
@@ -1133,7 +1168,7 @@ export class ProxyService {
             tag: PLATFORM_LOCAL_DNS_SERVER_TAG
           },
           buildDnsServer('dns-bootstrap', dnsBootstrapServer),
-          buildDnsServer('dns-remote', dnsRemoteServer, String(activeOutbound || '').trim(), 'dns-bootstrap'),
+          buildDnsServer('dns-remote', dnsRemoteServer, String(activeSelectorOutboundTag || '').trim(), 'dns-bootstrap'),
           buildDnsServer(SYSTEM_REMOTE_DNS_SERVER_TAG, dnsRemoteServer, String(systemDefaultOutbound || '').trim(), 'dns-bootstrap'),
           buildDnsServer('dns-local', dnsDirectServer, '', 'dns-bootstrap')
         ],
@@ -1263,6 +1298,69 @@ export class ProxyService {
 
   writeConfig(config, targetPath = this.configPath) {
     fs.writeFileSync(targetPath, JSON.stringify(config, null, 2));
+  }
+
+  async validateConfig(config, options = {}) {
+    const execPath = this.resolveExecutablePath(options.binPath || this.executablePath);
+    const explicitConfigPath = options.configPath ? path.resolve(options.configPath) : null;
+    const configPath = explicitConfigPath || path.join(
+      this.configDir,
+      `singbox_validate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
+    );
+    const shouldCleanup = !explicitConfigPath;
+
+    this.writeConfig(config, configPath);
+
+    try {
+      await new Promise((resolve, reject) => {
+        const stdoutChunks = [];
+        const stderrChunks = [];
+        let settled = false;
+
+        const finish = (error = null) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        };
+
+        const processRef = spawn(execPath, ['check', '-c', configPath]);
+        processRef.stdout.on('data', (data) => stdoutChunks.push(data.toString()));
+        processRef.stderr.on('data', (data) => stderrChunks.push(data.toString()));
+        processRef.once('error', (error) => finish(error));
+        processRef.once('close', (code, signal) => {
+          if (code === 0) {
+            finish();
+            return;
+          }
+
+          const detail = summarizeProcessOutput(stderrChunks.join('\n'), stdoutChunks.join('\n'));
+          const fallback = signal
+            ? `sing-box check terminated by signal ${signal}`
+            : `sing-box check exited with code ${code}`;
+          finish(new Error(detail || fallback));
+        });
+      });
+
+      return {
+        valid: true,
+        configPath,
+        executablePath: execPath
+      };
+    } finally {
+      if (shouldCleanup) {
+        try {
+          fs.rmSync(configPath, { force: true });
+        } catch {
+          // best effort cleanup for transient validation files
+        }
+      }
+    }
   }
 
   waitForPortReady(port, timeoutMs = 15000, host = this.proxyListen, processRef = null) {
@@ -1608,13 +1706,14 @@ export class ProxyService {
     const runtimeOptions = { ...(options.runtime || {}) };
     this.runtimeOptions = runtimeOptions;
     const config = this.generateConfig(runtimeOptions);
+    const execPath = this.resolveExecutablePath(options.binPath);
+    this.executablePath = execPath;
+    await this.validateConfig(config, { binPath: execPath });
     this.writeConfig(config);
     buildRoutingObservabilityLines(runtimeOptions, config)
       .forEach((line) => this.log.log(line));
     await this.stop();
 
-    const execPath = this.resolveExecutablePath(options.binPath);
-    this.executablePath = execPath;
     this.proxyProcess = spawn(execPath, ['run', '-c', this.configPath]);
 
     this.proxyProcess.stdout.on('data', (data) => {
@@ -1805,8 +1904,6 @@ export class ProxyService {
       if (params.get('plugin-opts') && !config.plugin_opts) config.plugin_opts = params.get('plugin-opts');
       if (params.get('plugin_opts') && !config.plugin_opts) config.plugin_opts = params.get('plugin_opts');
       if (params.get('ip')) config.ip = normalizeHost(params.get('ip'));
-      if (params.get('obfs-password')) config.obfs_password = params.get('obfs-password');
-      if (params.get('obfs_password')) config.obfs_password = params.get('obfs_password');
       if (params.get('upmbps')) config.up_mbps = toInt(params.get('upmbps'));
       if (params.get('up')) config.up_mbps = toInt(params.get('up'), config.up_mbps);
       if (params.get('downmbps')) config.down_mbps = toInt(params.get('downmbps'));
@@ -1858,7 +1955,10 @@ export class ProxyService {
         config.password = rawUser && rawPass
           ? `${rawUser}:${rawPass}`
           : (rawUser || rawPass);
-        config.obfs = params.get('obfs');
+        const hysteria2Obfs = normalizeHysteria2Obfs(params.get('obfs'));
+        if (hysteria2Obfs) {
+          config.obfs = hysteria2Obfs;
+        }
         config.tls = true;
         config.security = config.security || 'tls';
         if (!config.sni) {
@@ -1870,7 +1970,7 @@ export class ProxyService {
         if (!url.port) {
           config.port = 443;
         }
-        if (params.get('obfs-password') || params.get('obfs_password')) {
+        if (hysteria2Obfs && (params.get('obfs-password') || params.get('obfs_password'))) {
           config.obfs_password = params.get('obfs-password') || params.get('obfs_password');
         }
       } else if (protocol === 'vmess') {
@@ -2037,6 +2137,11 @@ export class ProxyService {
     }
 
     if (normalized.type === 'hysteria2') {
+      normalized.obfs = normalizeHysteria2Obfs(normalized.obfs);
+      if (!normalized.obfs) {
+        delete normalized.obfs;
+        delete normalized.obfs_password;
+      }
       normalized.tls = true;
       normalized.security = normalized.security || 'tls';
       normalized.sni = normalized.sni || normalized.server;
@@ -2198,9 +2303,10 @@ export class ProxyService {
       if (!node.password) {
         return null;
       }
+      const hysteria2Obfs = normalizeHysteria2Obfs(node.obfs);
       const query = buildQuery({
-        obfs: node.obfs || undefined,
-        'obfs-password': node.obfs_password || undefined,
+        obfs: hysteria2Obfs || undefined,
+        'obfs-password': hysteria2Obfs ? (node.obfs_password || undefined) : undefined,
         upmbps: node.up_mbps || undefined,
         downmbps: node.down_mbps || undefined,
         sni: node.sni || undefined,
