@@ -116,7 +116,11 @@ const normalizeSpeedtestError = (error, targetUrl = '') => {
   return rawMessage || code || '测速失败';
 };
 
-const defaultTlsAlpnForNode = (node) => (String(node?.type || '').toLowerCase() === 'tuic' ? ['h3'] : []);
+const defaultTlsAlpnForNode = (node) => (
+  ['tuic', 'hysteria2'].includes(String(node?.type || '').toLowerCase())
+    ? ['h3']
+    : []
+);
 const VMESS_TLS_SECURITY_MODES = new Set(['tls', 'reality']);
 
 const normalizeVmessSecurity = (value, fallback = 'none') => {
@@ -686,6 +690,9 @@ export class ProxyService {
         applyIfPresent(outbound, 'heartbeat', node.heartbeat);
         applyIfPresent(outbound, 'udp_over_stream', node.udp_over_stream);
         applyIfPresent(outbound, 'zero_rtt_handshake', node.zero_rtt_handshake);
+        if (outbound.tls && (!Array.isArray(outbound.tls.alpn) || !outbound.tls.alpn.length)) {
+          outbound.tls.alpn = defaultTlsAlpnForNode(node);
+        }
       }
 
       if (node.type === 'tuic') {
@@ -1848,12 +1855,17 @@ export class ProxyService {
         }
       } else if (protocol === 'hysteria2' || protocol === 'hy2') {
         config.type = 'hysteria2';
-        config.password = rawUser || rawPass;
+        config.password = rawUser && rawPass
+          ? `${rawUser}:${rawPass}`
+          : (rawUser || rawPass);
         config.obfs = params.get('obfs');
         config.tls = true;
         config.security = config.security || 'tls';
         if (!config.sni) {
           config.sni = config.server;
+        }
+        if (!config.alpn) {
+          config.alpn = 'h3';
         }
         if (!url.port) {
           config.port = 443;
@@ -2028,6 +2040,7 @@ export class ProxyService {
       normalized.tls = true;
       normalized.security = normalized.security || 'tls';
       normalized.sni = normalized.sni || normalized.server;
+      normalized.alpn = normalized.alpn || 'h3';
     }
 
     if (normalized.type === 'tuic') {

@@ -185,7 +185,7 @@ const deriveTransport = (type, node) => {
 };
 
 const normalizeCountryCode = (value) => cleanString(value).toUpperCase();
-const defaultAlpnForType = (type) => (type === 'tuic' ? 'h3' : '');
+const defaultAlpnForType = (type) => (type === 'tuic' || type === 'hysteria2' ? 'h3' : '');
 const normalizeAlpnForForm = (type, value) => {
   const text = Array.isArray(value) ? value.filter(Boolean).join(',') : toFormString(value);
   return text || defaultAlpnForType(type);

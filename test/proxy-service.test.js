@@ -893,6 +893,16 @@ test('parses hysteria2 bandwidth and obfs password fields', () => {
   assert.equal(node.up_mbps, 20);
   assert.equal(node.down_mbps, 80);
   assert.equal(node.sni, 'edge.example');
+  assert.equal(node.alpn, 'h3');
+});
+
+test('parses hysteria2 auth string without truncating colon-delimited credentials', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('hy2://user:pass@example.com:443?sni=edge.example#hy2');
+
+  assert.equal(node.type, 'hysteria2');
+  assert.equal(node.password, 'user:pass');
+  assert.equal(node.alpn, 'h3');
 });
 
 test('parses tuic extended parameters', () => {
@@ -1010,6 +1020,7 @@ test('defaults hysteria2 links to tls and port 443', () => {
   assert.equal(node.tls, true);
   assert.equal(node.security, 'tls');
   assert.equal(node.sni, 'example.com');
+  assert.equal(node.alpn, 'h3');
   assert.equal(node.port, 443);
 });
 
@@ -1132,6 +1143,7 @@ test('emits hysteria2 and tuic advanced outbound fields', () => {
   assert.equal(hy2.udp_over_stream, true);
   assert.equal(hy2.zero_rtt_handshake, true);
   assert.equal(hy2.tls?.utls, undefined);
+  assert.deepEqual(hy2.tls?.alpn, ['h3']);
   assert.equal(tuic.congestion_control, 'cubic');
   assert.equal(tuic.udp_relay_mode, 'native');
   assert.equal(tuic.heartbeat, '10s');
