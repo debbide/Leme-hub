@@ -1543,6 +1543,41 @@ export class ProxyService {
     };
   }
 
+  resolveSpeedtestNodes(nodes = []) {
+    const selectedNodes = (Array.isArray(nodes) ? nodes : [nodes]).filter(Boolean);
+    const sourceNodeMap = new Map(
+      (this.nodes || [])
+        .filter((node) => node?.id)
+        .map((node) => [node.id, node])
+    );
+    const includedNodeMap = new Map();
+    const includeNode = (node) => {
+      if (!node?.id || includedNodeMap.has(node.id)) {
+        return;
+      }
+      includedNodeMap.set(node.id, { ...node });
+    };
+
+    selectedNodes.forEach(includeNode);
+
+    selectedNodes.forEach((node) => {
+      if (String(node.type || '').toLowerCase() !== 'socks') {
+        return;
+      }
+      const frontProxyNodeId = String(node.frontProxyNodeId || '').trim();
+      if (!frontProxyNodeId || frontProxyNodeId === node.id || includedNodeMap.has(frontProxyNodeId)) {
+        return;
+      }
+      const frontProxyNode = sourceNodeMap.get(frontProxyNodeId);
+      if (!frontProxyNode || String(frontProxyNode.type || '').toLowerCase() === 'socks') {
+        return;
+      }
+      includeNode(frontProxyNode);
+    });
+
+    return [...includedNodeMap.values()];
+  }
+
   async stopProcess(processRef) {
     if (!processRef) {
       return;
@@ -1597,11 +1632,14 @@ export class ProxyService {
 
     const execPath = this.resolveExecutablePath(options.binPath || this.executablePath);
     const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(this.proxyListen));
+    const selectedNodeIds = new Set(selectedNodes.map((node) => node?.id).filter(Boolean));
+    const speedtestNodes = this.resolveSpeedtestNodes(selectedNodes);
     const allocatedNodes = [];
-    for (const node of selectedNodes) {
+    for (const node of speedtestNodes) {
       const localPort = await this.reserveEphemeralPort(listenHost);
       allocatedNodes.push({ ...node, local_port: localPort });
     }
+    const testedNodes = allocatedNodes.filter((node) => selectedNodeIds.has(node.id));
 
     const { service, config, runtime } = this.createSpeedtestService(allocatedNodes, {
       ...options,
@@ -1653,7 +1691,7 @@ export class ProxyService {
         listenHost,
         configPath,
         processRef,
-        nodes: allocatedNodes,
+        nodes: testedNodes,
         runtime
       });
     } finally {

@@ -1573,6 +1573,42 @@ test('createSpeedtestService uses direct dns final for dedicated latency checks'
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('in-n1') && rule.outbound === 'out-n1'), true);
 });
 
+test('speedtest runtime includes non-socks front proxy dependencies', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    {
+      id: 'front',
+      type: 'vless',
+      server: 'front.example.com',
+      port: 443,
+      uuid: '00000000-0000-0000-0000-000000000000'
+    },
+    {
+      id: 'socks-exit',
+      type: 'socks',
+      server: 'blocked-socks.example.com',
+      port: 1080,
+      frontProxyNodeId: 'front'
+    }
+  ]);
+
+  const speedtestNodes = service.resolveSpeedtestNodes([
+    {
+      id: 'socks-exit',
+      type: 'socks',
+      server: 'blocked-socks.example.com',
+      port: 1080,
+      frontProxyNodeId: 'front'
+    }
+  ]);
+  const { config } = service.createSpeedtestService(speedtestNodes);
+  const socksOutbound = config.outbounds.find((outbound) => outbound.tag === 'out-socks-exit');
+
+  assert.deepEqual(speedtestNodes.map((node) => node.id), ['socks-exit', 'front']);
+  assert.equal(config.outbounds.some((outbound) => outbound.tag === 'out-front'), true);
+  assert.equal(socksOutbound.detour, 'out-front');
+});
+
 test('measureSpeedtestLatency samples twice and returns the faster result', async () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const calls = [];
