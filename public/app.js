@@ -391,6 +391,7 @@ const nodesPanel = createNodesPanelController({
   syncNodeMutationFeedback,
   prepareManualNodeDraft: (currentGroup) => prepareManualNodeDraft({
     currentGroup,
+    nodesData: nodesPanel.getNodesData(),
     setCurrentEditNodeId: (value) => { currentEditNodeId = value; },
     nodeForm: editNodeForm,
     editAdvancedInput,

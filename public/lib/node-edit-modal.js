@@ -17,6 +17,7 @@ const FIELD_VISIBILITY_MAP = {
   username: ['username'],
   method: ['method', 'plugin', 'plugin_opts'],
   version: ['version'],
+  frontProxy: ['frontProxyNodeId'],
   alterId: ['alterId'],
   flow: ['flow'],
   packetEncoding: ['packet_encoding'],
@@ -43,6 +44,32 @@ const getFieldElements = (nodeForm) => Object.fromEntries(
     .filter((element) => element.name)
     .map((element) => [element.name, element])
 );
+
+const getNodeDisplayName = (node) => node?.name || node?.server || node?.id || 'Node';
+
+const renderFrontProxyOptions = ({ nodeForm, nodesData = [], currentEditNodeId = null }) => {
+  const select = nodeForm?.elements?.frontProxyNodeId;
+  if (!select) {
+    return;
+  }
+
+  const currentValue = select.value;
+  const candidates = (Array.isArray(nodesData) ? nodesData : [])
+    .filter((node) => node?.id && node.id !== currentEditNodeId)
+    .filter((node) => String(node.type || '').toLowerCase() !== 'socks');
+
+  select.innerHTML = [
+    '<option value="">直连 SOCKS5 服务器</option>',
+    ...candidates.map((node) => {
+      const option = document.createElement('option');
+      option.value = node.id;
+      option.textContent = `${getNodeDisplayName(node)} (${String(node.type || '').toUpperCase()})`;
+      return option.outerHTML;
+    })
+  ].join('');
+
+  select.value = candidates.some((node) => node.id === currentValue) ? currentValue : '';
+};
 
 const setFormValues = (nodeForm, formState) => {
   const fields = getFieldElements(nodeForm);
@@ -214,6 +241,7 @@ export const openNodeEditModal = ({
   }
 
   setCurrentEditNodeId(id);
+  renderFrontProxyOptions({ nodeForm, nodesData, currentEditNodeId: id });
   setFormValues(nodeForm, normalizeNodeForForm(node));
   if (editAdvancedInput) {
     editAdvancedInput.value = JSON.stringify(extractAdvancedNodeFields(node), null, 2);
@@ -231,6 +259,7 @@ export const openNodeEditModal = ({
 
 export const prepareManualNodeDraft = ({
   currentGroup,
+  nodesData,
   setCurrentEditNodeId,
   nodeForm,
   editAdvancedInput,
@@ -241,6 +270,7 @@ export const prepareManualNodeDraft = ({
 }) => {
   setCurrentEditNodeId(null);
   if (nodeForm) {
+    renderFrontProxyOptions({ nodeForm, nodesData, currentEditNodeId: null });
     setFormValues(nodeForm, createManualNodeFormState(currentGroup));
     syncNodeFormRuntime({ nodeForm });
   }

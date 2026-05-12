@@ -34,6 +34,50 @@ test('generates socks config for valid node', () => {
   assert.equal(config.route.final, 'direct');
 });
 
+test('generates socks outbound through a front proxy node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    {
+      id: 'front',
+      type: 'vless',
+      server: 'front.example.com',
+      port: 443,
+      uuid: '00000000-0000-0000-0000-000000000000'
+    },
+    {
+      id: 'socks-exit',
+      type: 'socks',
+      server: 'blocked-socks.example.com',
+      port: 1080,
+      frontProxyNodeId: 'front'
+    }
+  ]);
+
+  const config = service.generateConfig();
+  const socksOutbound = config.outbounds.find((outbound) => outbound.tag === 'out-socks-exit');
+
+  assert.equal(socksOutbound.detour, 'out-front');
+});
+
+test('ignores socks front proxy references that point to another socks node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'front-socks', type: 'socks', server: 'front.example.com', port: 1080 },
+    {
+      id: 'socks-exit',
+      type: 'socks',
+      server: 'blocked-socks.example.com',
+      port: 1081,
+      frontProxyNodeId: 'front-socks'
+    }
+  ]);
+
+  const config = service.generateConfig();
+  const socksOutbound = config.outbounds.find((outbound) => outbound.tag === 'out-socks-exit');
+
+  assert.equal(socksOutbound.detour, undefined);
+});
+
 test('generates vless config with default xudp encoding', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'vless', server: '127.0.0.1', port: 1080, uuid: '00000000-0000-0000-0000-000000000000' }]);

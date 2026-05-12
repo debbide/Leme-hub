@@ -38,6 +38,50 @@ test('normalizes existing tuic node into form state', () => {
   assert.equal(formState.congestion_control, 'bbr');
 });
 
+test('persists a front proxy selection only for socks nodes', () => {
+  const socksPayload = buildNodePayloadFromForm({
+    type: 'socks',
+    name: 'Blocked SOCKS',
+    server: 'blocked-socks.example.com',
+    port: '1080',
+    group: '',
+    countryCodeOverride: '',
+    username: '',
+    password: '',
+    version: '5',
+    frontProxyNodeId: 'front-node'
+  });
+
+  assert.equal(socksPayload.frontProxyNodeId, 'front-node');
+
+  const vlessPayload = buildNodePayloadFromForm({
+    type: 'vless',
+    name: 'VLESS Node',
+    server: 'front.example.com',
+    port: '443',
+    group: '',
+    countryCodeOverride: '',
+    security: 'none',
+    transport: 'tcp',
+    uuid: '00000000-0000-0000-0000-000000000000',
+    frontProxyNodeId: 'front-node'
+  });
+
+  assert.equal(vlessPayload.frontProxyNodeId, undefined);
+});
+
+test('normalizes front proxy selection for existing socks nodes', () => {
+  const formState = normalizeNodeForForm({
+    type: 'socks',
+    name: 'Blocked SOCKS',
+    server: 'blocked-socks.example.com',
+    port: 1080,
+    frontProxyNodeId: 'front-node'
+  });
+
+  assert.equal(formState.frontProxyNodeId, 'front-node');
+});
+
 test('keeps vmess tls nodes editable without persisting invalid vmess security', () => {
   const formState = normalizeNodeForForm({
     type: 'vmess',

@@ -523,6 +523,8 @@ export class ProxyService {
 
     this.nodes = validNodes;
     this.updatePortMap();
+    const validNodeMap = new Map(validNodes.map((node) => [node.id, node]));
+    const validNodeIdSet = new Set(validNodeMap.keys());
     const effectiveNodeId = this.resolveDefaultNodeId(validNodes, activeNodeId);
     const effectiveSystemNodeId = this.resolveDefaultNodeId(validNodes, systemDefaultNodeId || activeNodeId);
 
@@ -555,6 +557,14 @@ export class ProxyService {
         }
         if (node.type === 'socks') {
           outbound.version = node.version || '5';
+          const frontProxyNodeId = String(node.frontProxyNodeId || '').trim();
+          const frontProxyNode = validNodeMap.get(frontProxyNodeId);
+          if (frontProxyNodeId
+              && frontProxyNodeId !== node.id
+              && frontProxyNode
+              && String(frontProxyNode.type || '').toLowerCase() !== 'socks') {
+            outbound.detour = `out-${frontProxyNodeId}`;
+          }
         }
       }
 
@@ -745,7 +755,6 @@ export class ProxyService {
 
       return outbound;
     });
-    const validNodeIdSet = new Set(validNodes.map((node) => node.id));
     const normalizedNodeGroups = (nodeGroups || [])
       .filter((group) => group && typeof group === 'object' && group.id)
       .map((group) => {

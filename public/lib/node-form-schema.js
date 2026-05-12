@@ -53,6 +53,7 @@ const FORM_EXCLUDED_KEYS = new Set([
   'alterId',
   'alter_id',
   'version',
+  'frontProxyNodeId',
   'ip',
   'localPort',
   'local_port',
@@ -111,6 +112,7 @@ export const DEFAULT_NODE_FORM_STATE = {
   heartbeat: '',
   udp_over_stream: false,
   zero_rtt_handshake: false,
+  frontProxyNodeId: '',
   ip: ''
 };
 
@@ -261,6 +263,7 @@ export const normalizeNodeForForm = (node) => {
     heartbeat: toFormString(node?.heartbeat),
     udp_over_stream: !!node?.udp_over_stream,
     zero_rtt_handshake: !!node?.zero_rtt_handshake,
+    frontProxyNodeId: toFormString(node?.frontProxyNodeId),
     ip: toFormString(node?.ip)
   };
 };
@@ -411,7 +414,7 @@ const pruneTypeSpecificFields = (node, type, security, transport) => {
     drop('method', 'plugin', 'plugin_opts');
   }
   if (type !== 'socks') {
-    drop('version');
+    drop('version', 'frontProxyNodeId');
   }
   if (!['socks', 'http'].includes(type)) {
     drop('username');
@@ -513,6 +516,7 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
     setIfPresent(node, 'password', cleanOptionalString(formState?.password));
     if (type === 'socks') {
       node.version = cleanOptionalString(formState?.version) || '5';
+      setIfPresent(node, 'frontProxyNodeId', cleanOptionalString(formState?.frontProxyNodeId));
     }
   }
 
@@ -611,6 +615,7 @@ export const getNodeFormVisibility = (formState) => {
     username: ['socks', 'http'].includes(type),
     method: type === 'shadowsocks',
     version: type === 'socks',
+    frontProxy: type === 'socks',
     alterId: type === 'vmess',
     flow: type === 'vless',
     packetEncoding: ['vmess', 'vless'].includes(type),

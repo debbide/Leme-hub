@@ -2312,6 +2312,36 @@ export class CoreManager {
     return this.state.status === 'running';
   }
 
+  normalizeFrontProxyRefs(nodes = []) {
+    const normalizedNodes = Array.isArray(nodes) ? nodes : [];
+    const nodeMap = new Map(normalizedNodes.filter((node) => node?.id).map((node) => [node.id, node]));
+
+    return normalizedNodes.map((node) => {
+      if (!node || typeof node !== 'object') {
+        return node;
+      }
+
+      const frontProxyNodeId = String(node.frontProxyNodeId || '').trim();
+      const targetNode = frontProxyNodeId ? nodeMap.get(frontProxyNodeId) : null;
+      if (String(node.type || '').toLowerCase() === 'socks'
+        && targetNode
+        && targetNode.id !== node.id
+        && String(targetNode.type || '').toLowerCase() !== 'socks') {
+        return {
+          ...node,
+          frontProxyNodeId: targetNode.id
+        };
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(node, 'frontProxyNodeId')) {
+        return node;
+      }
+
+      const { frontProxyNodeId: _frontProxyNodeId, ...rest } = node;
+      return rest;
+    });
+  }
+
   async applyNodeChanges(savedNodes) {
     if (this.state.status !== 'running') {
       const nodes = await this.getNodeRecords();
@@ -2364,7 +2394,7 @@ export class CoreManager {
       return rest;
     });
 
-    return assignStableLocalPorts(normalizedNodes, this.getSettingsSnapshot().proxyBasePort);
+    return assignStableLocalPorts(this.normalizeFrontProxyRefs(normalizedNodes), this.getSettingsSnapshot().proxyBasePort);
   }
 
   saveNodes(nodes) {
