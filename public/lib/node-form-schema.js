@@ -1,7 +1,7 @@
 const SUPPORTED_NODE_TYPES = new Set(['vmess', 'vless', 'trojan', 'tuic', 'hysteria2', 'shadowsocks', 'socks', 'http']);
 const TYPES_WITH_TRANSPORT = new Set(['vmess', 'vless', 'trojan']);
-const TYPES_WITH_SECURITY = new Set(['vmess', 'vless']);
-const TYPES_WITH_FIXED_TLS = new Set(['trojan', 'tuic', 'hysteria2']);
+const TYPES_WITH_SECURITY = new Set(['vmess', 'vless', 'trojan']);
+const TYPES_WITH_FIXED_TLS = new Set(['tuic', 'hysteria2']);
 const TYPES_WITH_FP = new Set(['vmess', 'vless', 'trojan']);
 
 const FORM_EXCLUDED_KEYS = new Set([
@@ -143,10 +143,13 @@ const normalizeType = (value) => {
 };
 
 const normalizeSecurity = (type, value) => {
-  if (type === 'trojan' || type === 'hysteria2' || type === 'tuic') {
+  if (type === 'hysteria2' || type === 'tuic') {
     return 'tls';
   }
   const security = cleanString(value).toLowerCase();
+  if (type === 'trojan') {
+    return ['tls', 'none'].includes(security) ? security : 'tls';
+  }
   if (type === 'vmess') {
     return ['tls', 'none'].includes(security) ? security : 'none';
   }
@@ -164,11 +167,14 @@ const normalizeTransport = (type, value) => {
   return ['tcp', 'ws', 'grpc'].includes(transport) ? transport : 'tcp';
 };
 
-const usesTls = (type, security) => TYPES_WITH_FIXED_TLS.has(type) || ((type === 'vmess' || type === 'vless') && security !== 'none');
+const usesTls = (type, security) => TYPES_WITH_FIXED_TLS.has(type) || ((type === 'vmess' || type === 'vless' || type === 'trojan') && security !== 'none');
 
 const deriveSecurity = (type, node) => {
-  if (type === 'trojan' || type === 'hysteria2' || type === 'tuic') {
+  if (type === 'hysteria2' || type === 'tuic') {
     return 'tls';
+  }
+  if (type === 'trojan') {
+    return node?.security === 'none' ? 'none' : 'tls';
   }
   if (type === 'vless' && (node?.security === 'reality' || node?.pbk || node?.tls?.reality?.public_key)) {
     return 'reality';

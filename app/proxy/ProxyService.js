@@ -162,12 +162,16 @@ const nodeUsesTls = (node = {}) => {
     return true;
   }
 
+  const security = String(node?.security || '').trim().toLowerCase();
+  if (security === 'none') {
+    return false;
+  }
+
   if (node?.tls === true) {
     return true;
   }
 
   const type = String(node?.type || '').trim().toLowerCase();
-  const security = String(node?.security || '').trim().toLowerCase();
   if (type === 'vmess') {
     return security === 'tls';
   }
@@ -593,8 +597,9 @@ export class ProxyService {
 
       const isTls = nodeUsesTls(node);
       const isReality = nodeUsesReality(node);
+      const tlsExplicitlyDisabled = String(node.security || '').trim().toLowerCase() === 'none';
 
-      if (isTls || node.sni) {
+      if (isTls || (node.sni && !tlsExplicitlyDisabled)) {
         outbound.tls = {
           enabled: true,
           server_name: normalizeHost(node.sni) || node.wsHost || serverHost,
@@ -1895,7 +1900,8 @@ export class ProxyService {
       const params = new URLSearchParams(url.search);
       const securityParam = String(params.get('security') || '').trim().toLowerCase();
       const vmessCipherParam = String(params.get('scy') || params.get('cipher') || params.get('encryption') || '').trim().toLowerCase();
-      const wantsTls = ['tls', '1', 'true'].includes(params.get('tls')) || VMESS_TLS_SECURITY_MODES.has(securityParam);
+      const tlsParam = String(params.get('tls') || '').trim().toLowerCase();
+      const wantsTls = ['tls', '1', 'true'].includes(tlsParam) || VMESS_TLS_SECURITY_MODES.has(securityParam);
 
       const config = {
         id: nodeId,
@@ -1931,6 +1937,9 @@ export class ProxyService {
       }
       if (params.get('path')) config.wsPath = params.get('path');
       config.wsHost = params.get('host') || params.get('wsHost') || '';
+      if (!config.wsHost && params.get('host')) {
+        config.wsHost = normalizeHost(params.get('host'));
+      }
       config.transport = params.get('type') || params.get('transport') || params.get('net') || 'tcp';
 
       if (params.get('serviceName')) config.serviceName = params.get('serviceName');
@@ -2026,10 +2035,13 @@ export class ProxyService {
         config.uuid = rawUser || rawPass;
       } else if (protocol === 'trojan') {
         config.password = rawUser;
-        config.tls = true;
-        config.security = config.security || 'tls';
-        if (!config.sni) {
-          config.sni = config.server;
+        const tlsExplicitlyDisabled = securityParam === 'none' || ['0', 'false', 'none'].includes(tlsParam);
+        if (!tlsExplicitlyDisabled) {
+          config.tls = true;
+          config.security = config.security || 'tls';
+          if (!config.sni) {
+            config.sni = config.server;
+          }
         }
         if (!url.port) {
           config.port = 443;
@@ -2202,7 +2214,7 @@ export class ProxyService {
       normalized.alpn = normalized.alpn || 'h3';
     }
 
-    if (normalized.type === 'trojan') {
+    if (normalized.type === 'trojan' && normalized.security !== 'none') {
       normalized.tls = true;
       normalized.security = normalized.security || 'tls';
       normalized.sni = normalized.sni || normalized.server;

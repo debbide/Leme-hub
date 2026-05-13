@@ -5,6 +5,7 @@ import {
   buildNodePayloadFromForm,
   createManualNodeFormState,
   extractAdvancedNodeFields,
+  getNodeFormVisibility,
   normalizeNodeForForm,
 } from '../public/lib/node-form-schema.js';
 
@@ -241,4 +242,33 @@ test('drops stale websocket fields when switching node type', () => {
   assert.equal('headers' in payload, false);
   assert.equal('wsPath' in payload, false);
   assert.equal('grpc_idle_timeout' in payload, false);
+});
+
+test('preserves explicit none security for trojan websocket nodes', () => {
+  const formState = normalizeNodeForForm({
+    type: 'trojan',
+    name: 'DE-Oracle_Cloud',
+    server: '150.230.149.166',
+    port: 1053,
+    security: 'none',
+    transport: 'ws',
+    password: '7bd180e8-1142-4387-93f5-03e8d750a896',
+    wsPath: '/7bd180e8',
+    wsHost: '150.230.149.166',
+    sni: '150.230.149.166',
+    fp: 'chrome'
+  });
+  const payload = buildNodePayloadFromForm(formState);
+  const visibility = getNodeFormVisibility(formState);
+
+  assert.equal(formState.security, 'none');
+  assert.equal(visibility.security, true);
+  assert.equal(visibility.sni, false);
+  assert.equal(payload.security, 'none');
+  assert.equal(payload.tls, undefined);
+  assert.equal(payload.sni, undefined);
+  assert.equal(payload.fp, undefined);
+  assert.equal(payload.transport, 'ws');
+  assert.equal(payload.wsPath, '/7bd180e8');
+  assert.equal(payload.wsHost, '150.230.149.166');
 });

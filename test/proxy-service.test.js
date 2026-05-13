@@ -1090,6 +1090,27 @@ test('defaults trojan links to tls and port 443', () => {
   assert.equal(node.port, 443);
 });
 
+test('respects explicit security none for trojan websocket links', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('trojan://7bd180e8-1142-4387-93f5-03e8d750a896@150.230.149.166:1053?security=none&type=ws&host=150.230.149.166&path=%2F7bd180e8&sni=150.230.149.166&fp=chrome#DE-Oracle_Cloud');
+  service.setNodes([{ id: node.id, ...node }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(node.type, 'trojan');
+  assert.equal(node.security, 'none');
+  assert.equal(node.tls, undefined);
+  assert.equal(outbound.type, 'trojan');
+  assert.equal(outbound.server, '150.230.149.166');
+  assert.equal(outbound.server_port, 1053);
+  assert.equal(outbound.tls, undefined);
+  assert.equal(outbound.transport.type, 'ws');
+  assert.equal(outbound.transport.path, '/7bd180e8');
+  assert.equal(node.wsHost, '150.230.149.166');
+  assert.equal(outbound.transport.headers.Host, undefined);
+});
+
 test('defaults hysteria2 links to tls and port 443', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://secret@example.com?obfs=salamander#hy2');

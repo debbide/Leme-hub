@@ -137,7 +137,7 @@ export const syncNodeFormRuntime = ({ nodeForm }) => {
   const visibility = getNodeFormVisibility(state);
 
   if (!visibility.security && nodeForm.elements.security) {
-    nodeForm.elements.security.value = ['trojan', 'tuic', 'hysteria2'].includes(state.type) ? 'tls' : 'none';
+    nodeForm.elements.security.value = ['tuic', 'hysteria2'].includes(state.type) ? 'tls' : 'none';
   }
   if (!visibility.transport && nodeForm.elements.transport) {
     nodeForm.elements.transport.value = 'tcp';
