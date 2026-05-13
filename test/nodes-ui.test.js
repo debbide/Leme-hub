@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { copySelectedNodeShareLinks } from '../public/lib/nodes-ui.js';
+import { createQrMatrix } from '../public/lib/qr-code.js';
+import { copySelectedNodeShareLinks, renderNodeRow } from '../public/lib/nodes-ui.js';
 
 const restoreGlobal = (key, descriptor) => {
   if (descriptor) {
@@ -74,4 +75,40 @@ test('copySelectedNodeShareLinks reports when no selected node has a share link'
       tone: 'error',
     }
   ]);
+});
+
+test('renderNodeRow includes a QR share action beside copy link', () => {
+  const html = renderNodeRow({
+    node: {
+      id: 'node-1',
+      type: 'vmess',
+      server: 'example.com',
+      port: 443,
+      name: 'Example',
+      shareLink: 'vmess://one'
+    },
+    activeNodeId: null,
+    groupsData: [],
+    nodesData: [],
+    escapeHtml: (value) => String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;'),
+  });
+
+  assert.match(html, /class="row-action-btn qr-node-btn"/u);
+  assert.match(html, /title="二维码分享"/u);
+  assert.match(html, /ph ph-qr-code/u);
+});
+
+test('createQrMatrix generates a square QR matrix for proxy links', () => {
+  const qr = createQrMatrix('vmess://one');
+
+  assert.equal(qr.size, 21);
+  assert.equal(qr.modules.length, qr.size);
+  assert.equal(qr.modules.every((row) => row.length === qr.size), true);
+  assert.equal(qr.modules[0][0], true);
+  assert.equal(qr.modules[6][6], true);
 });

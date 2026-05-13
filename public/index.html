@@ -793,6 +793,30 @@
       </div>
     </div>
 
+    <!-- Node QR Share Modal -->
+    <div id="node-share-qr-modal" class="modal-overlay">
+      <div class="modal node-share-qr-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="node-share-qr-title">二维码分享</h2>
+          <button type="button" class="btn-icon modal-close-btn" data-node-share-qr-close>&times;</button>
+        </div>
+        <div class="modal-body node-share-qr-body">
+          <div class="node-share-qr-card">
+            <canvas id="node-share-qr-canvas" class="node-share-qr-canvas" width="320" height="320"></canvas>
+          </div>
+          <div class="node-share-qr-meta">
+            <strong id="node-share-qr-name" class="node-share-qr-name"></strong>
+            <textarea id="node-share-qr-link" class="node-share-qr-link" readonly spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" data-node-share-qr-close>关闭</button>
+          <button type="button" class="btn-outline" id="node-share-qr-copy"><i class="ph ph-copy"></i>复制链接</button>
+          <button type="button" class="btn-primary" id="node-share-qr-download"><i class="ph ph-download-simple"></i>保存二维码</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Node Group Config Modal -->
     <div id="node-group-modal" class="modal-overlay">
       <div class="modal" style="max-width:560px;">

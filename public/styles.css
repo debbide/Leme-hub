@@ -3006,6 +3006,75 @@ input:focus + .cyber-slider {
   box-shadow: var(--focus-ring);
 }
 
+.node-share-qr-modal {
+  max-width: 430px;
+}
+
+.node-share-qr-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.node-share-qr-card {
+  width: min(100%, 340px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  padding: 0.75rem;
+  background: #ffffff;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+}
+
+.node-share-qr-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.node-share-qr-meta {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.node-share-qr-name {
+  color: var(--text-main);
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-share-qr-link {
+  width: 100%;
+  min-height: 4.75rem;
+  max-height: 7rem;
+  resize: vertical;
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.012));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 0.65rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  outline: none;
+  user-select: text;
+}
+
+.node-share-qr-modal .modal-footer {
+  flex-wrap: wrap;
+}
+
+.node-share-qr-modal .modal-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
 .node-form-modal {
   max-width: 980px;
 }

@@ -1,7 +1,7 @@
 import { bindNodesPanelEvents } from './nodes-bindings.js';
 import { renderGroupTabs as renderGroupTabsView, testAllNodes as testAllNodesView, updateBulkBar as updateBulkBarView } from './nodes-controller.js';
 import { deleteNodeRecord, deleteSubscriptionRecord, importNodeLink, loadNodesData, refreshSubscriptionNodes, syncSubscriptionNodes, testSingleNode } from './nodes-data.js';
-import { applyLatencyResult, copyNodeShareLink, copySelectedNodeShareLinks, renderNodeRow, resetLatencyPlaceholders, showInlineMessage } from './nodes-ui.js';
+import { applyLatencyResult, copyNodeShareLink, copySelectedNodeShareLinks, openNodeShareQrModal, renderNodeRow, resetLatencyPlaceholders, showInlineMessage } from './nodes-ui.js';
 
 const formatDateTime = (value) => {
   if (!value) {
@@ -330,6 +330,12 @@ export const createNodesPanelController = ({
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         copyNodeShareLink({ id: btn.dataset.id, nodesData, showToast });
+      });
+    });
+    nodesTbody.querySelectorAll('.qr-node-btn').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openNodeShareQrModal({ id: btn.dataset.id, nodesData, showToast });
       });
     });
     nodesTbody.querySelectorAll('.delete-node-btn').forEach((btn) => {

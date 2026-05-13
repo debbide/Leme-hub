@@ -1,3 +1,4 @@
+import { renderQrCodeToCanvas } from './qr-code.js';
 import { copyTextToClipboard, flagFromCountryCode } from './utils.js';
 
 export const showInlineMessage = (target, message, tone = '') => {
@@ -80,6 +81,7 @@ export const renderNodeRow = ({
       <td class="row-actions-cell">
         <div class="row-actions">
           <button type="button" class="row-action-btn share-node-btn" data-id="${escapeHtml(node.id)}" title="复制代理链接"><i class="ph ph-share-network"></i></button>
+          <button type="button" class="row-action-btn qr-node-btn" data-id="${escapeHtml(node.id)}" title="二维码分享"><i class="ph ph-qr-code"></i></button>
           <button type="button" class="row-action-btn test-node-btn" data-id="${escapeHtml(node.id)}" title="测试延迟"><i class="ph ph-activity"></i></button>
           <button type="button" class="row-action-btn country-node-btn" data-id="${escapeHtml(node.id)}" title="修正国家归属"><i class="ph ph-flag-banner"></i></button>
           <button type="button" class="row-action-btn detail-node-btn" data-id="${escapeHtml(node.id)}" title="编辑详情"><i class="ph ph-pencil-simple"></i></button>
@@ -103,6 +105,88 @@ export const copyNodeShareLink = async ({ id, nodesData, showToast }) => {
   } catch (error) {
     showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
   }
+};
+
+const downloadCanvasPng = (canvas, filename) => {
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+const sanitizeFilePart = (value) => String(value || 'node')
+  .trim()
+  .replace(/[\\/:*?"<>|]+/gu, '-')
+  .replace(/\s+/gu, '-')
+  .slice(0, 80) || 'node';
+
+export const closeNodeShareQrModal = () => {
+  const overlay = document.getElementById('node-share-qr-modal');
+  overlay?.classList.remove('active');
+};
+
+export const openNodeShareQrModal = ({ id, nodesData, showToast }) => {
+  const node = nodesData.find((item) => item.id === id);
+  if (!node?.shareLink) {
+    showToast('该节点暂不支持二维码分享', 'error');
+    return false;
+  }
+
+  const overlay = document.getElementById('node-share-qr-modal');
+  const title = document.getElementById('node-share-qr-title');
+  const name = document.getElementById('node-share-qr-name');
+  const canvas = document.getElementById('node-share-qr-canvas');
+  const linkField = document.getElementById('node-share-qr-link');
+  const copyBtn = document.getElementById('node-share-qr-copy');
+  const downloadBtn = document.getElementById('node-share-qr-download');
+  const closeBtns = overlay?.querySelectorAll('[data-node-share-qr-close]') || [];
+
+  if (!overlay || !title || !name || !canvas || !linkField || !copyBtn || !downloadBtn) {
+    showToast('二维码弹窗初始化失败', 'error');
+    return false;
+  }
+
+  title.textContent = '二维码分享';
+  name.textContent = node.name || node.server || '未命名节点';
+  linkField.value = node.shareLink;
+
+  try {
+    renderQrCodeToCanvas(canvas, node.shareLink, { maxSize: 320 });
+  } catch (error) {
+    showToast(`二维码生成失败: ${error.message}`, 'error');
+    return false;
+  }
+
+  copyBtn.onclick = async () => {
+    try {
+      await copyTextToClipboard(node.shareLink);
+      showToast('代理链接已复制', 'success');
+    } catch (error) {
+      showToast(`复制失败: ${error.message || '请检查剪贴板权限'}`, 'error');
+    }
+  };
+
+  downloadBtn.onclick = () => {
+    try {
+      downloadCanvasPng(canvas, `${sanitizeFilePart(node.name || node.server || node.id)}.png`);
+      showToast('二维码已保存', 'success');
+    } catch (error) {
+      showToast(`保存失败: ${error.message || '请检查浏览器权限'}`, 'error');
+    }
+  };
+
+  closeBtns.forEach((button) => {
+    button.onclick = closeNodeShareQrModal;
+  });
+  overlay.onclick = (event) => {
+    if (event.target === overlay) {
+      closeNodeShareQrModal();
+    }
+  };
+  overlay.classList.add('active');
+  return true;
 };
 
 export const copySelectedNodeShareLinks = async ({ selectedNodeIds, nodesData, showToast }) => {
