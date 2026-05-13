@@ -162,8 +162,9 @@ const nodeUsesTls = (node = {}) => {
     return true;
   }
 
+  const type = String(node?.type || '').trim().toLowerCase();
   const security = String(node?.security || '').trim().toLowerCase();
-  if (security === 'none') {
+  if (type !== 'vmess' && security === 'none') {
     return false;
   }
 
@@ -171,7 +172,6 @@ const nodeUsesTls = (node = {}) => {
     return true;
   }
 
-  const type = String(node?.type || '').trim().toLowerCase();
   if (type === 'vmess') {
     return security === 'tls';
   }
@@ -597,7 +597,7 @@ export class ProxyService {
 
       const isTls = nodeUsesTls(node);
       const isReality = nodeUsesReality(node);
-      const tlsExplicitlyDisabled = String(node.security || '').trim().toLowerCase() === 'none';
+      const tlsExplicitlyDisabled = node.type !== 'vmess' && String(node.security || '').trim().toLowerCase() === 'none';
 
       if (isTls || (node.sni && !tlsExplicitlyDisabled)) {
         outbound.tls = {

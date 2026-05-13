@@ -92,6 +92,25 @@ test('generates vmess config with default packetaddr encoding', () => {
   assert.equal(config.outbounds[0].packet_encoding, 'packetaddr');
 });
 
+test('keeps vmess none cipher separate from tls detection', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('vmess://eyJ2IjoiMiIsInBzIjoiUk4iLCJhZGQiOiJzYWFzLnNpbi5mYW4iLCJwb3J0Ijo0NDMsImlkIjoiZGJkOTI3ZmUtYjEyMi00MWJiLThjOTYtN2QzM2YyNzBjYTUzIiwiYWlkIjowLCJzY3kiOiJub25lIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiJybi42MTE1NDMyMS5kcGRucy5vcmciLCJwYXRoIjoiL3ZtZXNzLWFyZ28/ZWQ9MjU2MCIsInRscyI6IiIsInNuaSI6InJuLjYxMTU0MzIxLmRwZG5zLm9yZyIsImFscG4iOiIiLCJmcCI6ImZpcmVmb3gifQ==');
+  service.setNodes([{ id: node.id, ...node }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(node.security, 'none');
+  assert.equal(outbound.security, 'none');
+  assert.equal(outbound.tls.enabled, true);
+  assert.equal(outbound.tls.server_name, 'rn.61154321.dpdns.org');
+  assert.equal(outbound.tls.utls.fingerprint, 'firefox');
+  assert.equal(outbound.transport.type, 'ws');
+  assert.equal(outbound.transport.path, '/vmess-argo');
+  assert.equal(outbound.transport.max_early_data, 2560);
+  assert.equal(outbound.transport.headers.Host, 'rn.61154321.dpdns.org');
+});
+
 test('sanitizes invalid vmess tls security while keeping tls enabled', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{
