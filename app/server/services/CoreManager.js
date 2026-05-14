@@ -138,6 +138,44 @@ const buildInvalidNodeWarning = (invalidNodes = []) => {
 
 const buildDeferredApplyWarning = (errorMessage) => `节点已保存，但未自动应用到当前核心：${truncateText(errorMessage, 180)}`;
 
+const NODE_RUNTIME_METADATA_KEYS = new Set([
+  'name',
+  'group',
+  'countryCodeOverride'
+]);
+
+const stableStringify = (value) => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+};
+
+const getNodeRuntimeComparable = (node) => {
+  if (!node || typeof node !== 'object') {
+    return node;
+  }
+
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([key]) => !NODE_RUNTIME_METADATA_KEYS.has(key))
+      .map(([key, value]) => [key, getNodeRuntimeComparable(value)])
+  );
+};
+
+const getNodesRuntimeSignature = (nodes = []) => stableStringify(
+  (Array.isArray(nodes) ? nodes : []).map((node) => getNodeRuntimeComparable(node))
+);
+
 const normalizeSystemProxyAutoSwitchSettings = (settings = {}, nodeGroups = [], options = {}) => {
   const { strict = false } = options;
   const requestedEnabled = !!settings.systemProxyAutoSwitchEnabled;
@@ -904,6 +942,10 @@ export class CoreManager {
       log: this.createLogger(),
       onRoutingHit: (hit) => this.appendRoutingHitHistory(hit)
     });
+
+    this._nodeApplyPendingNodes = null;
+    this._nodeApplyRunning = false;
+    this._nodeApplyLastError = null;
 
     this._nodeGroupAutoTestBusy = false;
     this._nodeGroupLatencySwitchState = new Map();
@@ -2376,6 +2418,93 @@ export class CoreManager {
     };
   }
 
+  async queueNodeChangesApply(savedNodes) {
+    if (this.state.status !== 'running') {
+      const nodes = await this.getNodeRecords();
+      return {
+        nodes,
+        restartRequired: false,
+        autoRestarted: false,
+        applyPending: false,
+        core: this.getStatus()
+      };
+    }
+
+    this._nodeApplyPendingNodes = Array.isArray(savedNodes) ? [...savedNodes] : [];
+    this._nodeApplyLastError = null;
+
+    const shouldStartApply = !this._nodeApplyRunning;
+    if (shouldStartApply) {
+      this._nodeApplyRunning = true;
+    }
+
+    const nodes = await this.getNodeRecords();
+
+    if (shouldStartApply) {
+      setTimeout(() => {
+        void this.runNodeChangesApplyQueue();
+      }, 0);
+    }
+
+    return {
+      nodes,
+      restartRequired: false,
+      autoRestarted: false,
+      applyPending: true,
+      warning: '节点已保存，正在后台应用到核心',
+      core: this.getStatus()
+    };
+  }
+
+  async runNodeChangesApplyQueue() {
+    while (this._nodeApplyPendingNodes) {
+      const nodes = this._nodeApplyPendingNodes;
+      this._nodeApplyPendingNodes = null;
+
+      if (this.state.status !== 'running') {
+        continue;
+      }
+
+      try {
+        await this.validateRuntimeConfig(nodes);
+        if (this._nodeApplyPendingNodes) {
+          continue;
+        }
+        if (this.state.status === 'running') {
+          await this.restart();
+          this.store.appendLog('[CoreManager] Queued node changes applied to running core');
+        }
+        this._nodeApplyLastError = null;
+      } catch (error) {
+        this._nodeApplyLastError = error.message;
+        this.store.appendLog(`[CoreManager] Queued node apply failed: ${error.message}`);
+      }
+    }
+
+    this._nodeApplyRunning = false;
+
+    if (this._nodeApplyPendingNodes) {
+      this._nodeApplyRunning = true;
+      setTimeout(() => {
+        void this.runNodeChangesApplyQueue();
+      }, 0);
+    }
+  }
+
+  shouldApplyNodeRuntimeChanges(previousNodes, nextNodes) {
+    return getNodesRuntimeSignature(previousNodes) !== getNodesRuntimeSignature(nextNodes);
+  }
+
+  async buildSavedNodeChangeResult() {
+    return {
+      nodes: await this.getNodeRecords(),
+      restartRequired: false,
+      autoRestarted: false,
+      applyPending: false,
+      core: this.getStatus()
+    };
+  }
+
   normalizeNodes(nodes) {
     const normalizedNodes = (Array.isArray(nodes) ? nodes : []).map((node) => {
       const normalizedOverride = normalizeCountryCode(node?.countryCodeOverride);
@@ -2535,7 +2664,7 @@ export class CoreManager {
     const existingNodes = this.store.getNodes();
     const duplicateCount = countPotentialDuplicateNodes(existingNodes, validNodes);
     const savedNodes = this.saveNodes(appendNodes(existingNodes, validNodes));
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = await this.queueNodeChangesApply(savedNodes);
     const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
     return {
       node: applied.nodes.find((item) => item.id === validNodes[0].id),
@@ -2559,7 +2688,7 @@ export class CoreManager {
     }
 
     const savedNodes = this.saveNodes(nextNodes);
-    return this.applyNodeChanges(savedNodes);
+    return this.queueNodeChangesApply(savedNodes);
   }
 
   async updateNode(nodeId, patch) {
@@ -2594,14 +2723,19 @@ export class CoreManager {
         : {})
     };
 
-    try {
-      await this.validateSingleNodeConfig(nodes[index]);
-    } catch (error) {
-      throw createHttpError(`节点配置校验失败：${error.message}`, 400);
+    const shouldApplyRuntimeChanges = this.shouldApplyNodeRuntimeChanges([currentNode], [nodes[index]]);
+    if (shouldApplyRuntimeChanges) {
+      try {
+        await this.validateSingleNodeConfig(nodes[index]);
+      } catch (error) {
+        throw createHttpError(`节点配置校验失败：${error.message}`, 400);
+      }
     }
 
     const savedNodes = this.saveNodes(nodes);
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = shouldApplyRuntimeChanges
+      ? await this.queueNodeChangesApply(savedNodes)
+      : await this.buildSavedNodeChangeResult();
     return {
       node: applied.nodes.find((item) => item.id === nodeId),
       ...applied
@@ -2615,7 +2749,7 @@ export class CoreManager {
       throw createHttpError('Node not found', 404);
     }
 
-    return this.applyNodeChanges(this.saveNodes(remainingNodes));
+    return this.queueNodeChangesApply(this.saveNodes(remainingNodes));
   }
 
   getGroups() {
@@ -2655,7 +2789,7 @@ export class CoreManager {
       nodeIds.includes(node.id) ? { ...node, group: normalizedGroup } : node
     );
     const savedNodes = this.saveNodes(updatedNodes);
-    return this.applyNodeChanges(savedNodes);
+    return this.buildSavedNodeChangeResult();
   }
 
   async renameGroup(oldName, newName) {
@@ -2671,7 +2805,7 @@ export class CoreManager {
     );
     this.store.saveSettings({ ...settings, groups, subscriptions });
     const savedNodes = this.saveNodes(nodes);
-    return this.applyNodeChanges(savedNodes);
+    return this.buildSavedNodeChangeResult();
   }
 
   async deleteGroup(groupName) {
@@ -2687,7 +2821,7 @@ export class CoreManager {
     const groups = (settings.groups || []).filter(g => g !== groupName);
     this.store.saveSettings({ ...settings, groups });
     const savedNodes = this.saveNodes(nodes);
-    return this.applyNodeChanges(savedNodes);
+    return this.buildSavedNodeChangeResult();
   }
 
   async groupNodesByCountry() {
@@ -2718,7 +2852,7 @@ export class CoreManager {
 
     const savedNodes = this.saveNodes(nextNodes);
     this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = await this.queueNodeChangesApply(savedNodes);
     return {
       groupedCount,
       skippedCount,
@@ -2752,7 +2886,7 @@ export class CoreManager {
       nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
     );
     this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = await this.queueNodeChangesApply(savedNodes);
     return {
       node: applied.nodes.find((item) => item.id === nodeId) || null,
       groups: this.getGroups(),
@@ -2989,7 +3123,7 @@ export class CoreManager {
     });
 
     const savedNodes = this.saveNodes(remainingNodes);
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = await this.queueNodeChangesApply(savedNodes);
     return {
       subscription,
       subscriptions: this.getSubscriptions(),
@@ -3055,7 +3189,7 @@ export class CoreManager {
       ...(groupName ? { group: groupName } : {})
     }))));
 
-    const applied = await this.applyNodeChanges(savedNodes);
+    const applied = await this.queueNodeChangesApply(savedNodes);
     const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
     const subscription = this.updateSubscriptionRecord({
       id: existingRecord?.id,

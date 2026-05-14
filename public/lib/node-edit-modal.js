@@ -324,7 +324,7 @@ export const saveNodeEdit = async ({
     renderNodesElement();
     syncNodeMutationFeedback(payload);
     closeModal();
-    if (!payload.autoRestarted) {
+    if (!payload.autoRestarted && !payload.applyPending) {
       showToast(currentEditNodeId ? '节点已更新' : '节点已添加', 'success');
     }
   } catch (error) {

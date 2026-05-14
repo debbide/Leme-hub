@@ -577,6 +577,7 @@ test('uses a dedicated selector outbound for the active node', () => {
   assert.ok(selector);
   assert.equal(selector.type, 'selector');
   assert.deepEqual(selector.outbounds, ['out-n2', 'out-n1']);
+  assert.equal(selector.interrupt_exist_connections, true);
   assert.equal(config.route.final, ACTIVE_NODE_SELECTOR_TAG);
   assert.equal(config.dns.servers.some((server) => server.tag === 'dns-remote' && server.detour === ACTIVE_NODE_SELECTOR_TAG), true);
 });

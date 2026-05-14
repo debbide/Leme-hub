@@ -267,6 +267,15 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
     return;
   }
 
+  if (payload.applyPending) {
+    updateRestartWarning(false);
+    if (successMessage) {
+      showToast(successMessage, 'success');
+    }
+    showToast(payload.warning || '节点已保存，正在后台应用到核心', 'info');
+    return;
+  }
+
   updateRestartWarning(payload.restartRequired);
   if (successMessage) {
     showToast(successMessage, 'success');

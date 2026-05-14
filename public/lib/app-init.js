@@ -60,6 +60,7 @@ export const bindWindowChromeFallbacks = ({ showToast }) => {
 
   document.addEventListener('click', () => {
     document.querySelectorAll('.group-menu.open').forEach((menu) => menu.classList.remove('open'));
+    document.querySelectorAll('.node-action-menu.open').forEach((menu) => menu.classList.remove('open'));
   });
 };
 

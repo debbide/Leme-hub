@@ -786,7 +786,7 @@ export class ProxyService {
             ...(effectiveNodeId ? [`out-${effectiveNodeId}`] : []),
             ...validNodes.map((node) => `out-${node.id}`)
           ].filter(Boolean))],
-          interrupt_exist_connections: false
+          interrupt_exist_connections: true
         }
       : null;
     const nodeGroupOutbounds = normalizedNodeGroups.map((group) => ({

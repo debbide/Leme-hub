@@ -14,14 +14,18 @@ const formatDateTime = (value) => {
   });
 };
 
+const getNodeLabel = (node) => node?.name || node?.server || node?.id || '--';
+
 export const renderSystemProxyNodeOptions = ({ dashActiveNodeSelect, nodes, activeNodeId }) => {
   if (!dashActiveNodeSelect) return;
 
   const currentValue = activeNodeId || '';
+  const fallbackNode = nodes[0] || null;
+  const fallbackLabel = fallbackNode ? `默认：${getNodeLabel(fallbackNode)}` : '暂无可用节点';
   dashActiveNodeSelect.innerHTML = [
-    '<option value="">默认首个节点</option>',
+    `<option value="">${fallbackLabel}</option>`,
     ...nodes.map((node) => {
-      const label = node.name || node.server || node.id;
+      const label = getNodeLabel(node);
       return `<option value="${node.id}">${label}</option>`;
     })
   ].join('');
@@ -75,14 +79,11 @@ export const renderSystemProxyAutoSwitchControls = ({
   }
 
   if (dashSystemAutoSwitchCurrent) {
-    const currentNode = autoSwitch.effectiveNode?.name
-      || autoSwitch.effectiveNode?.server
-      || proxyProfile.systemDefaultNode?.name
-      || proxyProfile.systemDefaultNode?.server
-      || '--';
+    const currentNode = getNodeLabel(autoSwitch.effectiveNode || proxyProfile.systemDefaultNode);
+    const activeNode = getNodeLabel(proxyProfile.activeNode);
     dashSystemAutoSwitchCurrent.textContent = autoSwitch.enabled
-      ? `当前接管节点：${currentNode}`
-      : `当前系统节点：${currentNode}`;
+      ? `系统代理出口：${currentNode}`
+      : `系统代理出口：${currentNode} · 主节点：${activeNode}`;
   }
 
   if (dashSystemAutoSwitchNext) {

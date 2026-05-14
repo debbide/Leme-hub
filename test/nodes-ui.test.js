@@ -77,7 +77,7 @@ test('copySelectedNodeShareLinks reports when no selected node has a share link'
   ]);
 });
 
-test('renderNodeRow includes a QR share action beside copy link', () => {
+test('renderNodeRow groups frequent actions and share options clearly', () => {
   const html = renderNodeRow({
     node: {
       id: 'node-1',
@@ -98,9 +98,16 @@ test('renderNodeRow includes a QR share action beside copy link', () => {
       .replace(/'/g, '&#39;'),
   });
 
-  assert.match(html, /class="row-action-btn qr-node-btn"/u);
-  assert.match(html, /title="二维码分享"/u);
+  assert.match(html, /row-action-btn row-action-btn-label test-node-btn/u);
+  assert.match(html, />测速</u);
+  assert.match(html, /row-action-btn row-action-btn-label detail-node-btn/u);
+  assert.match(html, />编辑</u);
+  assert.match(html, /node-action-menu-btn" data-menu="share"/u);
+  assert.match(html, /class="node-menu-item share-node-btn"/u);
+  assert.match(html, /class="node-menu-item qr-node-btn"/u);
   assert.match(html, /ph ph-qr-code/u);
+  assert.match(html, /node-action-more-btn/u);
+  assert.match(html, /class="node-menu-item is-danger delete-node-btn"/u);
 });
 
 test('createQrMatrix generates a square QR matrix for proxy links', () => {

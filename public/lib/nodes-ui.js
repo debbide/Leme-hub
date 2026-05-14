@@ -43,17 +43,17 @@ export const renderNodeRow = ({
   const flagTitle = escapeHtml(node.countryName || node.countryCode || 'GeoIP 数据准备中');
   const countryOverrideBadge = node.countryOverridden ? '<span class="pill pill-dark">手动国家</span>' : '';
   const groupMenuItems = [
-    `<div class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</div>`,
+    `<button type="button" class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</button>`,
     ...allGroups.map((group) => {
       const safeGroup = escapeHtml(group);
-      return `<div class="group-menu-item${node.group === group ? ' active' : ''}" data-group="${safeGroup}">${safeGroup}</div>`;
+      return `<button type="button" class="group-menu-item${node.group === group ? ' active' : ''}" data-group="${safeGroup}">${safeGroup}</button>`;
     })
   ].join('');
   const moveGroupAction = isSubscriptionNode
-    ? '<button type="button" class="row-action-btn row-action-btn-disabled" disabled title="订阅节点固定在专属分组"><i class="ph ph-lock"></i></button>'
+    ? '<button type="button" class="node-menu-item is-disabled" disabled title="订阅节点固定在专属分组"><i class="ph ph-lock"></i><span>移动分组</span></button>'
     : `
         <div class="move-group-wrap" data-id="${escapeHtml(node.id)}">
-          <button type="button" class="row-action-btn move-group-btn" data-id="${escapeHtml(node.id)}" title="移动到分组"><i class="ph ph-folder-simple-arrow"></i></button>
+          <button type="button" class="node-menu-item move-group-btn" data-id="${escapeHtml(node.id)}" title="移动到分组"><i class="ph ph-folder-simple-arrow"></i><span>移动分组</span></button>
           <div class="group-menu">${groupMenuItems}</div>
         </div>
       `;
@@ -80,13 +80,24 @@ export const renderNodeRow = ({
       <td><span class="latency" id="test-result-${escapeHtml(node.id)}">-</span></td>
       <td class="row-actions-cell">
         <div class="row-actions">
-          <button type="button" class="row-action-btn share-node-btn" data-id="${escapeHtml(node.id)}" title="复制代理链接"><i class="ph ph-share-network"></i></button>
-          <button type="button" class="row-action-btn qr-node-btn" data-id="${escapeHtml(node.id)}" title="二维码分享"><i class="ph ph-qr-code"></i></button>
-          <button type="button" class="row-action-btn test-node-btn" data-id="${escapeHtml(node.id)}" title="测试延迟"><i class="ph ph-activity"></i></button>
-          <button type="button" class="row-action-btn country-node-btn" data-id="${escapeHtml(node.id)}" title="修正国家归属"><i class="ph ph-flag-banner"></i></button>
-          <button type="button" class="row-action-btn detail-node-btn" data-id="${escapeHtml(node.id)}" title="编辑详情"><i class="ph ph-pencil-simple"></i></button>
-          ${moveGroupAction}
-          <button type="button" class="row-action-btn btn-danger-icon delete-node-btn" data-id="${escapeHtml(node.id)}" title="删除"><i class="ph ph-trash"></i></button>
+          <button type="button" class="row-action-btn row-action-btn-label test-node-btn" data-id="${escapeHtml(node.id)}" title="测试延迟"><i class="ph ph-activity"></i><span>测速</span></button>
+          <button type="button" class="row-action-btn row-action-btn-label detail-node-btn" data-id="${escapeHtml(node.id)}" title="编辑详情"><i class="ph ph-pencil-simple"></i><span>编辑</span></button>
+          <div class="node-action-menu-wrap">
+            <button type="button" class="row-action-btn row-action-btn-label node-action-menu-btn" data-menu="share" data-id="${escapeHtml(node.id)}" title="分享节点"><i class="ph ph-share-network"></i><span>分享</span><i class="ph ph-caret-down"></i></button>
+            <div class="node-action-menu" data-menu-panel="share">
+              <button type="button" class="node-menu-item share-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-copy"></i><span>复制链接</span></button>
+              <button type="button" class="node-menu-item qr-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-qr-code"></i><span>二维码分享</span></button>
+            </div>
+          </div>
+          <div class="node-action-menu-wrap">
+            <button type="button" class="row-action-btn node-action-more-btn node-action-menu-btn" data-menu="more" data-id="${escapeHtml(node.id)}" title="更多操作"><i class="ph ph-dots-three"></i></button>
+            <div class="node-action-menu" data-menu-panel="more">
+              <button type="button" class="node-menu-item country-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-flag-banner"></i><span>修正国家</span></button>
+              ${moveGroupAction}
+              <hr class="group-menu-separator">
+              <button type="button" class="node-menu-item is-danger delete-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-trash"></i><span>删除节点</span></button>
+            </div>
+          </div>
         </div>
       </td>
     </tr>`;

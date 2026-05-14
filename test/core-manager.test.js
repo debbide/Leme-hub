@@ -1606,7 +1606,7 @@ test('updateSettings applies auto start registration state', async () => {
   assert.equal(enabled, false);
 });
 
-test('importRawNode auto restarts when core is already running', async () => {
+test('importRawNode queues runtime apply when core is already running', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   manager.state.status = 'running';
   let restarted = false;
@@ -1624,9 +1624,13 @@ test('importRawNode auto restarts when core is already running', async () => {
 
   const result = await manager.importRawNode({ type: 'socks', server: 'two.example', port: 1081 });
 
-  assert.equal(restarted, true);
-  assert.equal(result.autoRestarted, true);
+  assert.equal(restarted, false);
+  assert.equal(result.applyPending, true);
+  assert.equal(result.autoRestarted, false);
   assert.equal(result.restartRequired, false);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(restarted, true);
 });
 
 test('importRawNode rejects invalid node configs before saving', async () => {
@@ -1666,6 +1670,72 @@ test('applyNodeChanges keeps the running core alive when validation fails', asyn
   assert.equal(result.restartRequired, false);
   assert.match(result.warning, /missing obfs password/);
   assert.equal(manager.getStatus().status, 'running');
+});
+
+test('updateNode skips validation and restart for metadata-only edits', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080, group: 'Old' }
+  ]));
+  manager.state.status = 'running';
+  attachPassiveNodeServices(manager);
+  let validated = false;
+  let restarted = false;
+  manager.validateSingleNodeConfig = async () => {
+    validated = true;
+  };
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.updateNode('n1', {
+    type: 'socks',
+    server: 'one.example',
+    port: 1080,
+    name: 'Renamed',
+    group: 'New',
+    countryCodeOverride: 'JP'
+  });
+
+  assert.equal(validated, false);
+  assert.equal(restarted, false);
+  assert.equal(result.applyPending, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.node.name, 'Renamed');
+  assert.equal(result.node.group, 'New');
+  assert.equal(result.node.countryCodeOverride, 'JP');
+});
+
+test('updateNode queues runtime apply for connection setting edits', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+  manager.state.status = 'running';
+  attachPassiveNodeServices(manager);
+  let validated = false;
+  let restarted = false;
+  manager.validateSingleNodeConfig = async () => {
+    validated = true;
+  };
+  manager.restart = async () => {
+    restarted = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+
+  const result = await manager.updateNode('n1', {
+    type: 'socks',
+    server: 'two.example',
+    port: 1080
+  });
+
+  assert.equal(validated, true);
+  assert.equal(restarted, false);
+  assert.equal(result.applyPending, true);
+  assert.equal(result.autoRestarted, false);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(restarted, true);
 });
 
 test('testNode auto starts core when stopped', async () => {
@@ -1821,6 +1891,7 @@ test('updateNode replaces form-managed fields while preserving local port', asyn
   assert.equal(result.node.group, '新分组');
   assert.equal('wsPath' in result.node, false);
   assert.equal('headers' in result.node, false);
+  assert.equal(result.applyPending, false);
 });
 
 test('groupNodesByCountry updates only nodes with country code', async () => {

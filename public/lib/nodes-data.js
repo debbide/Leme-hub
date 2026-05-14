@@ -186,14 +186,21 @@ export const deleteSubscriptionRecord = async ({
 
 export const deleteNodeRecord = async ({
   id,
+  nodesData = [],
   requestJson,
   setNodesData,
   renderNodesElement,
   syncNodeMutationFeedback,
   showInlineMessage,
   nodesError,
+  showConfirmModal,
 }) => {
-  if (!confirm('确定要删除这个节点吗？')) return;
+  const node = nodesData.find((item) => item.id === id);
+  const nodeName = node?.name || node?.server || id;
+  const confirmed = typeof showConfirmModal === 'function'
+    ? await showConfirmModal(`删除节点 ${nodeName}`, '此操作不可撤销，确认删除这个节点吗？')
+    : confirm('确定要删除这个节点吗？');
+  if (!confirmed) return;
   try {
     const payload = await requestJson('/api/nodes', {
       method: 'DELETE',

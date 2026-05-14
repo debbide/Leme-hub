@@ -320,41 +320,51 @@ export const createNodesPanelController = ({
       escapeHtml,
     })).join('');
 
-    nodesTbody.querySelectorAll('.test-node-btn').forEach((btn) => {
+    const closeOpenNodeMenus = () => {
+      nodesTbody.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
+        menu.classList.remove('open');
+      });
+    };
+
+    const bindRowAction = (selector, handler) => {
+      nodesTbody.querySelectorAll(selector).forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          closeOpenNodeMenus();
+          handler(btn);
+        });
+      });
+    };
+
+    nodesTbody.querySelectorAll('.node-action-menu-btn').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
-        testNode(btn.dataset.id);
+        const wrap = btn.closest('.node-action-menu-wrap');
+        const menu = wrap?.querySelector('.node-action-menu');
+        if (!menu) return;
+        const isOpen = menu.classList.contains('open');
+        closeOpenNodeMenus();
+        if (!isOpen) menu.classList.add('open');
       });
     });
-    nodesTbody.querySelectorAll('.share-node-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        copyNodeShareLink({ id: btn.dataset.id, nodesData, showToast });
-      });
+
+    bindRowAction('.test-node-btn', (btn) => {
+      testNode(btn.dataset.id);
     });
-    nodesTbody.querySelectorAll('.qr-node-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openNodeShareQrModal({ id: btn.dataset.id, nodesData, showToast });
-      });
+    bindRowAction('.share-node-btn', (btn) => {
+      copyNodeShareLink({ id: btn.dataset.id, nodesData, showToast });
     });
-    nodesTbody.querySelectorAll('.delete-node-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        deleteNode(btn.dataset.id);
-      });
+    bindRowAction('.qr-node-btn', (btn) => {
+      openNodeShareQrModal({ id: btn.dataset.id, nodesData, showToast });
     });
-    nodesTbody.querySelectorAll('.detail-node-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openEditModal(btn.dataset.id);
-      });
+    bindRowAction('.delete-node-btn', (btn) => {
+      deleteNode(btn.dataset.id);
     });
-    nodesTbody.querySelectorAll('.country-node-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        setNodeCountryOverride(btn.dataset.id);
-      });
+    bindRowAction('.detail-node-btn', (btn) => {
+      openEditModal(btn.dataset.id);
+    });
+    bindRowAction('.country-node-btn', (btn) => {
+      setNodeCountryOverride(btn.dataset.id);
     });
 
     nodesTbody.querySelectorAll('.move-group-wrap').forEach((wrap) => {
@@ -363,13 +373,15 @@ export const createNodesPanelController = ({
       menuBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         const isOpen = menu.classList.contains('open');
-        document.querySelectorAll('.group-menu.open').forEach((item) => item.classList.remove('open'));
+        closeOpenNodeMenus();
+        const parentMenu = wrap.closest('.node-action-menu');
+        if (parentMenu) parentMenu.classList.add('open');
         if (!isOpen) menu.classList.add('open');
       });
       menu.querySelectorAll('.group-menu-item').forEach((item) => {
         item.addEventListener('click', async (event) => {
           event.stopPropagation();
-          menu.classList.remove('open');
+          closeOpenNodeMenus();
           const nodeId = wrap.dataset.id;
           const group = item.dataset.group || null;
           try {
@@ -451,7 +463,7 @@ export const createNodesPanelController = ({
             method: 'PUT',
             body: JSON.stringify({ activeNodeId: nodeId })
           });
-          showToast('节点切换已触发，核心正在重载...', 'info');
+          showToast('主节点已切换，旧连接已断开', 'success');
           loadNodes();
         } catch (error) {
           showToast(`节点切换失败: ${error.message}`, 'error');
@@ -512,12 +524,14 @@ export const createNodesPanelController = ({
 
   const deleteNode = (id) => deleteNodeRecord({
     id,
+    nodesData,
     requestJson,
     setNodesData,
     renderNodesElement,
     syncNodeMutationFeedback,
     showInlineMessage,
     nodesError,
+    showConfirmModal,
   });
 
   const testNode = (id) => testSingleNode({
