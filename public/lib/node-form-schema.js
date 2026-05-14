@@ -199,6 +199,26 @@ const normalizeAlpnForForm = (type, value) => {
   return text || defaultAlpnForType(type);
 };
 
+const isPositiveIntegerString = (value) => {
+  const trimmed = cleanString(value);
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isInteger(parsed) && parsed > 0 && String(parsed) === trimmed;
+};
+
+const isOptionalIntegerString = (value) => {
+  const trimmed = cleanString(value);
+  if (!trimmed) return true;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isInteger(parsed) && parsed >= 0 && String(parsed) === trimmed;
+};
+
+const isOptionalNumberString = (value) => {
+  const trimmed = cleanString(value);
+  if (!trimmed) return true;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0;
+};
+
 export const createManualNodeFormState = (currentGroup = '') => ({
   ...DEFAULT_NODE_FORM_STATE,
   group: cleanString(currentGroup),
@@ -289,6 +309,81 @@ export const parseAdvancedNodeFields = (value) => {
     throw new Error('高级参数 JSON 必须是对象');
   }
   return parsed;
+};
+
+export const validateNodeFormState = (formState = {}, advancedText = '{}') => {
+  const type = normalizeType(formState?.type);
+  const security = normalizeSecurity(type, formState?.security);
+  const transport = normalizeTransport(type, formState?.transport);
+  const errors = {};
+
+  const setError = (field, message) => {
+    if (!errors[field]) {
+      errors[field] = message;
+    }
+  };
+
+  if (!cleanString(formState?.server)) {
+    setError('server', '请填写服务器地址');
+  }
+
+  if (!isPositiveIntegerString(formState?.port)) {
+    setError('port', '端口必须是正整数');
+  }
+
+  const countryCodeOverride = normalizeCountryCode(formState?.countryCodeOverride);
+  if (countryCodeOverride && !/^[A-Z]{2}$/u.test(countryCodeOverride)) {
+    setError('countryCodeOverride', '国家代码必须是 2 位字母，例如 JP / US');
+  }
+
+  if (['vmess', 'vless', 'tuic'].includes(type) && !cleanString(formState?.uuid)) {
+    setError('uuid', '该协议需要填写 UUID');
+  }
+
+  if (['trojan', 'tuic', 'hysteria2'].includes(type) && !cleanString(formState?.password)) {
+    setError('password', '该协议需要填写密码');
+  }
+
+  if (type === 'shadowsocks') {
+    if (!cleanString(formState?.method)) {
+      setError('method', 'Shadowsocks 需要填写加密方法');
+    }
+    if (!cleanString(formState?.password)) {
+      setError('password', 'Shadowsocks 需要填写密码');
+    }
+  }
+
+  if (type === 'vmess' && !isOptionalIntegerString(formState?.alterId)) {
+    setError('alterId', 'Alter ID 必须是 0 或正整数');
+  }
+
+  if (transport === 'ws' && !isOptionalIntegerString(formState?.max_early_data)) {
+    setError('max_early_data', 'WS Early Data 必须是 0 或正整数');
+  }
+
+  if (type === 'vless' && security === 'reality' && !cleanString(formState?.pbk)) {
+    setError('pbk', 'Reality 模式需要填写公钥');
+  }
+
+  if (type === 'hysteria2') {
+    if (!isOptionalNumberString(formState?.up_mbps)) {
+      setError('up_mbps', '上行带宽格式不正确');
+    }
+    if (!isOptionalNumberString(formState?.down_mbps)) {
+      setError('down_mbps', '下行带宽格式不正确');
+    }
+  }
+
+  try {
+    parseAdvancedNodeFields(advancedText);
+  } catch (error) {
+    setError('advanced', error.message);
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors
+  };
 };
 
 const parsePositiveInteger = (value, fieldLabel) => {

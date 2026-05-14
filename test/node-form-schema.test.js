@@ -7,6 +7,7 @@ import {
   extractAdvancedNodeFields,
   getNodeFormVisibility,
   normalizeNodeForForm,
+  validateNodeFormState,
 } from '../public/lib/node-form-schema.js';
 
 test('creates manual draft defaults for vless nodes', () => {
@@ -37,6 +38,44 @@ test('normalizes existing tuic node into form state', () => {
   assert.equal(formState.insecure, true);
   assert.equal(formState.alpn, 'h3');
   assert.equal(formState.congestion_control, 'bbr');
+});
+
+test('validateNodeFormState reports field-level errors for manual node forms', () => {
+  const validation = validateNodeFormState({
+    type: 'vless',
+    server: '',
+    port: 'abc',
+    countryCodeOverride: 'jpn',
+    security: 'reality',
+    transport: 'ws',
+    uuid: '',
+    max_early_data: '-1',
+    pbk: ''
+  }, '{bad json');
+
+  assert.equal(validation.valid, false);
+  assert.equal(validation.errors.server, '请填写服务器地址');
+  assert.equal(validation.errors.port, '端口必须是正整数');
+  assert.equal(validation.errors.countryCodeOverride, '国家代码必须是 2 位字母，例如 JP / US');
+  assert.equal(validation.errors.uuid, '该协议需要填写 UUID');
+  assert.equal(validation.errors.max_early_data, 'WS Early Data 必须是 0 或正整数');
+  assert.equal(validation.errors.pbk, 'Reality 模式需要填写公钥');
+  assert.match(validation.errors.advanced, /高级参数 JSON 格式错误/);
+});
+
+test('validateNodeFormState accepts a complete manual vless form', () => {
+  const validation = validateNodeFormState({
+    type: 'vless',
+    server: 'example.com',
+    port: '443',
+    countryCodeOverride: 'JP',
+    security: 'none',
+    transport: 'tcp',
+    uuid: '00000000-0000-0000-0000-000000000000'
+  }, '{}');
+
+  assert.equal(validation.valid, true);
+  assert.deepEqual(validation.errors, {});
 });
 
 test('persists a front proxy selection only for socks nodes', () => {

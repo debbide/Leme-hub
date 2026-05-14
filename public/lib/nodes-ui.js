@@ -228,15 +228,53 @@ export const applyLatencyResult = (result) => {
   if (!resultEl) return;
 
   resultEl.className = 'latency';
+  resultEl.title = '';
+  delete resultEl.dataset.startedAt;
   if (result.ok) {
     resultEl.textContent = `${result.latencyMs}ms`;
     resultEl.classList.add(result.latencyMs < 150 ? 'good' : (result.latencyMs < 400 ? 'warn' : 'bad'));
+    if (result.elapsedMs != null) {
+      resultEl.title = `测试耗时 ${Math.max(0, Math.round(Number(result.elapsedMs)))} ms`;
+    }
     return;
   }
 
   resultEl.textContent = '失败';
   resultEl.classList.add('error');
   resultEl.title = result.error || '测试失败';
+};
+
+export const markLatencyTesting = (id, label = '测试中...') => {
+  const resultEl = document.querySelector(`#test-result-${id}`);
+  if (!resultEl) return null;
+
+  resultEl.textContent = label;
+  resultEl.className = 'latency testing';
+  resultEl.title = '正在通过该节点访问测速地址';
+  resultEl.dataset.startedAt = String(Date.now());
+  return resultEl;
+};
+
+export const setNodeTestingActionState = (id, isTesting) => {
+  const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+    ? CSS.escape(String(id))
+    : String(id).replace(/"/g, '\\"');
+  const button = document.querySelector(`.test-node-btn[data-id="${safeId}"]`);
+  if (!button) return;
+
+  button.disabled = Boolean(isTesting);
+  button.classList.toggle('is-testing', Boolean(isTesting));
+  const label = button.querySelector('span');
+  if (label) {
+    label.textContent = isTesting ? '测速中' : '测速';
+  }
+  button.title = isTesting ? '该节点正在测速' : '测试延迟';
+};
+
+export const getLatencyTestingElapsed = (id) => {
+  const resultEl = document.querySelector(`#test-result-${id}`);
+  const startedAt = Number(resultEl?.dataset?.startedAt || 0);
+  return startedAt > 0 ? Date.now() - startedAt : null;
 };
 
 export const resetLatencyPlaceholders = (ids) => {
@@ -246,5 +284,7 @@ export const resetLatencyPlaceholders = (ids) => {
     resultEl.textContent = '-';
     resultEl.className = 'latency';
     resultEl.title = '';
+    delete resultEl.dataset.startedAt;
+    setNodeTestingActionState(id, false);
   });
 };

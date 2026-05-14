@@ -30,8 +30,8 @@ export const loadNodesData = async ({
     setSubscriptionsData(payload.subscriptions || []);
     setGeoIpStatus(payload.geoIp || null);
     clearSelectedNodeIds();
-    renderSubscriptions();
     renderGroupTabs();
+    renderSubscriptions();
     renderNodesElement();
     renderGeoIpStatus(payload.geoIp || null);
     updateCoreStatus(payload.core);
@@ -116,8 +116,8 @@ export const syncSubscriptionNodes = async ({
     setNodesData(payload.nodes || []);
     setGroupsData(payload.groups || []);
     setSubscriptionsData(payload.subscriptions || []);
-    renderSubscriptions();
     renderGroupTabs();
+    renderSubscriptions();
     renderNodesElement();
     syncNodeMutationFeedback(payload);
     syncUrlInput.value = '';
@@ -151,8 +151,8 @@ export const refreshSubscriptionNodes = async ({
   setNodesData(payload.nodes || []);
   setGroupsData(payload.groups || []);
   setSubscriptionsData(payload.subscriptions || []);
-  renderSubscriptions();
   renderGroupTabs();
+  renderSubscriptions();
   renderNodesElement();
   syncNodeMutationFeedback(payload);
   showToast(`订阅已刷新，导入 ${payload.importedCount} 个节点`, 'success');
@@ -177,8 +177,8 @@ export const deleteSubscriptionRecord = async ({
   setNodesData(payload.nodes || []);
   setGroupsData(payload.groups || []);
   setSubscriptionsData(payload.subscriptions || []);
-  renderSubscriptions();
   renderGroupTabs();
+  renderSubscriptions();
   renderNodesElement();
   syncNodeMutationFeedback(payload, '订阅已删除');
   showToast('订阅及对应节点已删除', 'success');
@@ -220,11 +220,14 @@ export const testSingleNode = async ({
   updateCoreStatus,
   showToast,
   applyLatencyResult,
+  markLatencyTesting,
+  setNodeTestingActionState,
+  getLatencyTestingElapsed,
 }) => {
   const resultEl = document.querySelector(`#test-result-${id}`);
   if (!resultEl) return;
-  resultEl.textContent = '测试中...';
-  resultEl.className = 'latency';
+  markLatencyTesting?.(id);
+  setNodeTestingActionState?.(id, true);
 
   try {
     const payload = await requestJson('/api/nodes/test', {
@@ -239,9 +242,11 @@ export const testSingleNode = async ({
       showToast('已自动启动核心并完成延迟测试', 'success');
     }
 
-    applyLatencyResult({ id, ok: true, latencyMs: payload.latencyMs });
+    applyLatencyResult({ id, ok: true, latencyMs: payload.latencyMs, elapsedMs: getLatencyTestingElapsed?.(id) });
   } catch (error) {
-    applyLatencyResult({ id, ok: false, error: error.message || '未知错误' });
+    applyLatencyResult({ id, ok: false, error: error.message || '未知错误', elapsedMs: getLatencyTestingElapsed?.(id) });
     showToast(`延迟测试失败: ${error.message || '未知错误'}`, 'error');
+  } finally {
+    setNodeTestingActionState?.(id, false);
   }
 };

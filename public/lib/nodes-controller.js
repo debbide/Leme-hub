@@ -1,3 +1,5 @@
+import { escapeHtml } from './utils.js';
+
 export const renderGroupTabs = ({
   groupTabsEl,
   nodesData,
@@ -12,6 +14,8 @@ export const renderGroupTabs = ({
   requestJson,
   showToast,
   loadNodes,
+  getSubscriptionForGroup = () => null,
+  isSubscriptionRefreshing = () => false,
 }) => {
   if (!groupTabsEl) return;
 
@@ -24,13 +28,33 @@ export const renderGroupTabs = ({
     { key: null, label: '全部', count: nodesData.length }
   ];
   for (const group of allGroups) {
+    const subscription = getSubscriptionForGroup(group);
+    const isRefreshing = subscription ? isSubscriptionRefreshing(subscription.id) : false;
+    const subscriptionStatus = subscription
+      ? isRefreshing
+        ? 'syncing'
+        : subscription.lastStatus === 'success'
+          ? 'success'
+          : subscription.lastStatus === 'error'
+            ? 'error'
+            : 'idle'
+      : null;
+    const subscriptionLabel = subscription
+      ? isRefreshing
+        ? '刷新中'
+        : subscription.lastStatus === 'error'
+          ? '失败'
+          : '订阅'
+      : '';
     tabs.push({
       key: group,
       label: group,
       count: nodesData.filter((node) => node.group === group).length,
       renameable: true,
       deleteable: !subscriptionGroups.has(group),
-      managedBySubscription: subscriptionGroups.has(group)
+      managedBySubscription: subscriptionGroups.has(group),
+      subscriptionStatus,
+      subscriptionLabel
     });
   }
   if (hasUngrouped) {
@@ -38,21 +62,34 @@ export const renderGroupTabs = ({
   }
 
   const validKeys = new Set(tabs.map((tab) => tab.key));
+  let activeKey = activeGroupTab;
   if (!validKeys.has(activeGroupTab)) {
+    activeKey = null;
     setActiveGroupTab(null);
     setCurrentGroup(null);
   }
 
   groupTabsEl.innerHTML = tabs.map((tab) => {
-    const isActive = activeGroupTab === tab.key;
+    const isActive = activeKey === tab.key;
+    const safeKey = tab.key == null ? '' : escapeHtml(tab.key);
+    const safeLabel = escapeHtml(tab.label);
+    const safeCount = escapeHtml(String(tab.count));
+    const title = tab.managedBySubscription
+      ? `订阅分组：${tab.label}，点击查看订阅详情`
+      : tab.key === null
+        ? '查看全部节点'
+        : tab.key === '__ungrouped__'
+          ? '查看未分组节点'
+          : `查看分组：${tab.label}`;
+    const safeTitle = escapeHtml(title);
     const actions = tab.renameable ? `
       <span class="group-tab-actions">
-        <button class="group-tab-action-btn group-rename-btn" data-group="${tab.key}" title="重命名">改名</button>
-        ${tab.deleteable ? `<button class="group-tab-action-btn group-delete-btn" data-group="${tab.key}" title="删除">删除</button>` : ''}
+        <button class="group-tab-action-btn group-rename-btn" data-group="${safeKey}" title="重命名" aria-label="重命名分组"><i class="ph ph-pencil-simple"></i></button>
+        ${tab.deleteable ? `<button class="group-tab-action-btn group-delete-btn" data-group="${safeKey}" title="删除" aria-label="删除分组"><i class="ph ph-trash"></i></button>` : ''}
       </span>
     ` : '';
-    const badge = tab.managedBySubscription ? '<span class="group-tab-badge">订阅</span>' : '';
-    return `<button type="button" class="group-tab${isActive ? ' active' : ''}" data-key="${tab.key ?? ''}">${tab.label}${badge}<span class="group-tab-count">${tab.count}</span>${actions}</button>`;
+    const badge = tab.managedBySubscription ? `<span class="group-tab-badge is-${tab.subscriptionStatus || 'idle'}">${escapeHtml(tab.subscriptionLabel || '订阅')}</span>` : '';
+    return `<button type="button" class="group-tab${isActive ? ' active' : ''}${tab.managedBySubscription ? ' is-subscription' : ''}" data-key="${safeKey}" title="${safeTitle}">${safeLabel}${badge}<span class="group-tab-count">${safeCount}</span>${actions}</button>`;
   }).join('');
 
   groupTabsEl.querySelectorAll('.group-tab').forEach((button) => {
@@ -182,6 +219,9 @@ export const testAllNodes = async ({
   updateCoreStatus,
   applyLatencyResult,
   resetLatencyPlaceholders,
+  markLatencyTesting,
+  setNodeTestingActionState,
+  getLatencyTestingElapsed,
   showToast,
 }) => {
   let targetNodes = activeGroupTab === null
@@ -208,12 +248,8 @@ export const testAllNodes = async ({
   }
 
   targetNodes.forEach((node) => {
-    const resultEl = document.querySelector(`#test-result-${node.id}`);
-    if (resultEl) {
-      resultEl.textContent = '测试中...';
-      resultEl.className = 'latency';
-      resultEl.title = '';
-    }
+    markLatencyTesting?.(node.id);
+    setNodeTestingActionState?.(node.id, true);
   });
 
   try {
@@ -226,9 +262,13 @@ export const testAllNodes = async ({
 
     let done = 0;
     payload.results.forEach((result) => {
-      applyLatencyResult(result);
+      applyLatencyResult({
+        ...result,
+        elapsedMs: getLatencyTestingElapsed?.(result.id)
+      });
       done += 1;
       if (testAllBtn) testAllBtn.textContent = `测试 ${done}/${targetNodes.length}...`;
+      setNodeTestingActionState?.(result.id, false);
     });
 
     const successCount = payload.results.filter((result) => result.ok).length;
@@ -239,6 +279,7 @@ export const testAllNodes = async ({
     resetLatencyPlaceholders(targetNodes.map((node) => node.id));
     showToast(`批量测试失败: ${error.message}`, 'error');
   } finally {
+    targetNodes.forEach((node) => setNodeTestingActionState?.(node.id, false));
     if (testAllBtn) {
       testAllBtn.disabled = false;
       testAllBtn.textContent = '批量测试';

@@ -5,6 +5,7 @@ import {
   getNodeFormVisibility,
   normalizeNodeForForm,
   parseAdvancedNodeFields,
+  validateNodeFormState,
 } from './node-form-schema.js';
 
 const FOCUS_TARGETS = ['name', 'server', 'uuid', 'password'];
@@ -94,6 +95,77 @@ const readFormValues = (nodeForm) => {
   ]));
 };
 
+const getValidationWrapper = (nodeForm, name) => {
+  if (name === 'advanced') {
+    return nodeForm?.querySelector('[data-form-section="advanced"]');
+  }
+  return nodeForm?.querySelector(`[data-form-field="${name}"]`);
+};
+
+const getValidationControl = (nodeForm, name) => {
+  if (name === 'advanced') {
+    return nodeForm?.querySelector('#edit-node-advanced-input');
+  }
+  return nodeForm?.elements?.[name];
+};
+
+const clearNodeFormValidation = (nodeForm) => {
+  if (!nodeForm) {
+    return;
+  }
+  nodeForm.querySelectorAll('.node-form-field-wrap.has-error, .node-form-section.has-error').forEach((wrapper) => {
+    wrapper.classList.remove('has-error');
+  });
+  nodeForm.querySelectorAll('.node-form-field-error').forEach((item) => item.remove());
+  Array.from(nodeForm.elements || []).forEach((field) => {
+    field.classList?.remove('has-error');
+    field.removeAttribute?.('aria-invalid');
+    field.removeAttribute?.('aria-describedby');
+  });
+};
+
+export const applyNodeFormValidation = ({ nodeForm, errors = {} } = {}) => {
+  clearNodeFormValidation(nodeForm);
+  if (!nodeForm) {
+    return;
+  }
+
+  Object.entries(errors).forEach(([name, message]) => {
+    const wrapper = getValidationWrapper(nodeForm, name);
+    const control = getValidationControl(nodeForm, name);
+    if (!wrapper || !control) {
+      return;
+    }
+
+    const errorId = `edit-node-${name}-error`;
+    const errorEl = document.createElement('p');
+    errorEl.className = 'node-form-field-error';
+    errorEl.id = errorId;
+    errorEl.textContent = message;
+
+    wrapper.classList.add('has-error');
+    control.classList?.add('has-error');
+    control.setAttribute?.('aria-invalid', 'true');
+    control.setAttribute?.('aria-describedby', errorId);
+    wrapper.appendChild(errorEl);
+  });
+};
+
+const validateVisibleNodeForm = ({ nodeForm, editAdvancedInput }) => {
+  const formState = readFormValues(nodeForm);
+  const validation = validateNodeFormState(formState, editAdvancedInput?.value);
+  const visibleErrors = Object.fromEntries(Object.entries(validation.errors).filter(([name]) => {
+    const wrapper = getValidationWrapper(nodeForm, name);
+    return name === 'advanced' || (wrapper && !wrapper.classList.contains('hidden'));
+  }));
+  applyNodeFormValidation({ nodeForm, errors: visibleErrors });
+  return {
+    valid: Object.keys(visibleErrors).length === 0,
+    errors: visibleErrors,
+    formState
+  };
+};
+
 const resetGroupInputState = (groupInput) => {
   if (!groupInput) {
     return;
@@ -124,7 +196,7 @@ const updateFormSections = (nodeForm) => {
   });
 };
 
-export const syncNodeFormRuntime = ({ nodeForm }) => {
+export const syncNodeFormRuntime = ({ nodeForm, editAdvancedInput, validate = false } = {}) => {
   if (!nodeForm) {
     return;
   }
@@ -163,9 +235,14 @@ export const syncNodeFormRuntime = ({ nodeForm }) => {
   });
 
   updateFormSections(nodeForm);
+  if (validate) {
+    validateVisibleNodeForm({ nodeForm, editAdvancedInput });
+  } else {
+    clearNodeFormValidation(nodeForm);
+  }
 };
 
-export const bindNodeFormRuntime = ({ nodeForm }) => {
+export const bindNodeFormRuntime = ({ nodeForm, editAdvancedInput }) => {
   if (!nodeForm || nodeForm.dataset.bound === '1') {
     return;
   }
@@ -173,12 +250,30 @@ export const bindNodeFormRuntime = ({ nodeForm }) => {
   ['type', 'security', 'transport'].forEach((name) => {
     const field = nodeForm.elements[name];
     field?.addEventListener('change', () => {
-      syncNodeFormRuntime({ nodeForm });
+      syncNodeFormRuntime({ nodeForm, editAdvancedInput, validate: nodeForm.dataset.validateOnInput === '1' });
     });
   });
 
+  nodeForm.addEventListener('input', (event) => {
+    if (nodeForm.dataset.validateOnInput !== '1') {
+      return;
+    }
+    if (event.target?.name || event.target?.id === 'edit-node-advanced-input') {
+      validateVisibleNodeForm({ nodeForm, editAdvancedInput });
+    }
+  });
+
+  nodeForm.addEventListener('change', (event) => {
+    if (nodeForm.dataset.validateOnInput !== '1') {
+      return;
+    }
+    if (event.target?.name || event.target?.id === 'edit-node-advanced-input') {
+      validateVisibleNodeForm({ nodeForm, editAdvancedInput });
+    }
+  });
+
   nodeForm.dataset.bound = '1';
-  syncNodeFormRuntime({ nodeForm });
+  syncNodeFormRuntime({ nodeForm, editAdvancedInput });
 };
 
 const focusFirstField = (nodeForm) => {
@@ -210,8 +305,9 @@ export const closeNodeEditModal = ({
   saveNodeBtn
 }) => {
   if (nodeForm) {
+    nodeForm.dataset.validateOnInput = '0';
     setFormValues(nodeForm, createManualNodeFormState(''));
-    syncNodeFormRuntime({ nodeForm });
+    syncNodeFormRuntime({ nodeForm, editAdvancedInput });
   }
   if (editAdvancedInput) {
     editAdvancedInput.value = '{}';
@@ -251,7 +347,8 @@ export const openNodeEditModal = ({
   } else {
     resetGroupInputState(editNodeGroupInput);
   }
-  syncNodeFormRuntime({ nodeForm });
+  nodeForm.dataset.validateOnInput = '0';
+  syncNodeFormRuntime({ nodeForm, editAdvancedInput });
   setModalMode({ editModalTitle, saveNodeBtn, currentEditNodeId: id });
   editModal?.classList.add('active');
   focusFirstField(nodeForm);
@@ -272,7 +369,8 @@ export const prepareManualNodeDraft = ({
   if (nodeForm) {
     renderFrontProxyOptions({ nodeForm, nodesData, currentEditNodeId: null });
     setFormValues(nodeForm, createManualNodeFormState(currentGroup));
-    syncNodeFormRuntime({ nodeForm });
+    nodeForm.dataset.validateOnInput = '0';
+    syncNodeFormRuntime({ nodeForm, editAdvancedInput });
   }
   if (editAdvancedInput) {
     editAdvancedInput.value = '{}';
@@ -302,7 +400,18 @@ export const saveNodeEdit = async ({
   }
 
   try {
-    const formState = readFormValues(nodeForm);
+    nodeForm.dataset.validateOnInput = '1';
+    const validation = validateVisibleNodeForm({ nodeForm, editAdvancedInput });
+    if (!validation.valid) {
+      const firstInvalid = Object.keys(validation.errors)
+        .map((name) => getValidationControl(nodeForm, name))
+        .find((field) => field && !field.disabled && !field.closest('.hidden'));
+      firstInvalid?.focus?.();
+      showToast('请先修正表单里标红的字段', 'error');
+      return;
+    }
+
+    const formState = validation.formState;
     const advancedFields = parseAdvancedNodeFields(editAdvancedInput?.value);
     const payloadBody = buildNodePayloadFromForm(formState, advancedFields);
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createQrMatrix } from '../public/lib/qr-code.js';
-import { copySelectedNodeShareLinks, renderNodeRow } from '../public/lib/nodes-ui.js';
+import { applyLatencyResult, copySelectedNodeShareLinks, markLatencyTesting, renderNodeRow, resetLatencyPlaceholders, setNodeTestingActionState } from '../public/lib/nodes-ui.js';
 
 const restoreGlobal = (key, descriptor) => {
   if (descriptor) {
@@ -108,6 +108,75 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
   assert.match(html, /ph ph-qr-code/u);
   assert.match(html, /node-action-more-btn/u);
   assert.match(html, /class="node-menu-item is-danger delete-node-btn"/u);
+});
+
+test('latency helpers show testing state, elapsed detail, and reset action buttons', () => {
+  const elements = new Map();
+  const resultEl = {
+    textContent: '',
+    className: '',
+    title: '',
+    dataset: {},
+    classList: {
+      values: new Set(),
+      add(value) { this.values.add(value); },
+    }
+  };
+  const buttonLabel = { textContent: '测速' };
+  const button = {
+    disabled: false,
+    title: '',
+    classList: {
+      values: new Set(),
+      toggle(value, enabled) {
+        if (enabled) this.values.add(value);
+        else this.values.delete(value);
+      }
+    },
+    querySelector(selector) {
+      return selector === 'span' ? buttonLabel : null;
+    }
+  };
+  elements.set('#test-result-node-1', resultEl);
+  elements.set('.test-node-btn[data-id="node-1"]', button);
+
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const cssDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'CSS');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      querySelector: (selector) => elements.get(selector) || null,
+    }
+  });
+  Object.defineProperty(globalThis, 'CSS', {
+    configurable: true,
+    writable: true,
+    value: { escape: (value) => value }
+  });
+
+  try {
+    markLatencyTesting('node-1');
+    setNodeTestingActionState('node-1', true);
+
+    assert.equal(resultEl.textContent, '测试中...');
+    assert.equal(resultEl.className, 'latency testing');
+    assert.equal(button.disabled, true);
+    assert.equal(buttonLabel.textContent, '测速中');
+
+    applyLatencyResult({ id: 'node-1', ok: true, latencyMs: 120, elapsedMs: 456 });
+    assert.equal(resultEl.textContent, '120ms');
+    assert.equal(resultEl.classList.values.has('good'), true);
+    assert.equal(resultEl.title, '测试耗时 456 ms');
+
+    resetLatencyPlaceholders(['node-1']);
+    assert.equal(resultEl.textContent, '-');
+    assert.equal(button.disabled, false);
+    assert.equal(buttonLabel.textContent, '测速');
+  } finally {
+    restoreGlobal('document', documentDescriptor);
+    restoreGlobal('CSS', cssDescriptor);
+  }
 });
 
 test('createQrMatrix generates a square QR matrix for proxy links', () => {

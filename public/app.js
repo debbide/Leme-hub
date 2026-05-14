@@ -33,10 +33,7 @@ const importUrlInput = document.querySelector('#import-url');
 const syncUrlInput = document.querySelector('#sync-url');
 const syncNameInput = document.querySelector('#sync-name');
 const nodeCountLabel = document.querySelector('#node-count-label');
-const subscriptionsPanel = document.querySelector('#subscriptions-panel');
-const subscriptionsEmpty = document.querySelector('#subscriptions-empty');
-const subscriptionsList = document.querySelector('#subscriptions-list');
-const subscriptionsSummary = document.querySelector('#subscriptions-summary');
+const subscriptionDetailPanel = document.querySelector('#subscription-detail-panel');
 const toastContainer = document.querySelector('#toast-container');
 const coreStatusIndicator = document.querySelector('#core-status-indicator');
 const systemProxyModeSelect = document.querySelector('.system-proxy-mode');
@@ -450,10 +447,7 @@ const nodesPanel = createNodesPanelController({
   nodeCountLabel,
   groupTabsEl,
   addGroupBtn,
-  subscriptionsPanel,
-  subscriptionsEmpty,
-  subscriptionsList,
-  subscriptionsSummary,
+  subscriptionDetailPanel,
   showInputModal,
   showConfirmModal,
   showToast,
@@ -605,6 +599,7 @@ const openEditModal = (id) => openNodeEditModalView({
 
 bindNodeFormRuntime({
   nodeForm: editNodeForm,
+  editAdvancedInput,
 });
 
 bindNodeEditEvents({

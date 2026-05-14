@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deleteNodeRecord } from '../public/lib/nodes-data.js';
+import { deleteNodeRecord, testSingleNode } from '../public/lib/nodes-data.js';
+
+const restoreGlobal = (key, descriptor) => {
+  if (descriptor) {
+    Object.defineProperty(globalThis, key, descriptor);
+    return;
+  }
+
+  delete globalThis[key];
+};
 
 test('deleteNodeRecord uses the shared confirm modal when available', async () => {
   const confirmCalls = [];
@@ -61,4 +70,45 @@ test('deleteNodeRecord stops when shared confirm modal is cancelled', async () =
   });
 
   assert.equal(requested, false);
+});
+
+test('testSingleNode marks row testing state and passes elapsed time to latency result', async () => {
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      querySelector: (selector) => selector === '#test-result-n1' ? {} : null
+    }
+  });
+
+  const calls = [];
+  try {
+    await testSingleNode({
+      id: 'n1',
+      requestJson: async (url, options) => {
+        calls.push({ url, options });
+        return { latencyMs: 88, core: { status: 'running' } };
+      },
+      updateCoreStatus: (core) => calls.push({ core }),
+      showToast: (message, tone) => calls.push({ message, tone }),
+      markLatencyTesting: (id) => calls.push({ mark: id }),
+      setNodeTestingActionState: (id, isTesting) => calls.push({ action: id, isTesting }),
+      getLatencyTestingElapsed: (id) => {
+        calls.push({ elapsedFor: id });
+        return 321;
+      },
+      applyLatencyResult: (result) => calls.push({ result }),
+    });
+  } finally {
+    restoreGlobal('document', documentDescriptor);
+  }
+
+  assert.equal(calls[0].mark, 'n1');
+  assert.deepEqual(calls.filter((item) => item.action), [
+    { action: 'n1', isTesting: true },
+    { action: 'n1', isTesting: false }
+  ]);
+  assert.equal(calls.find((item) => item.result)?.result.elapsedMs, 321);
+  assert.equal(calls.find((item) => item.result)?.result.latencyMs, 88);
 });
