@@ -1,7 +1,7 @@
 import { createToastController, showConfirmModal, showInputModal } from './lib/ui.js';
 import { createNodesPanelController } from './lib/nodes-panel.js';
 import { createRoutingController } from './lib/routing-controller.js';
-import { pollTraffic as pollTrafficView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyAutoSwitchControls as renderSystemProxyAutoSwitchControlsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
+import { pollTraffic as pollTrafficView, renderNodeApplyStatus as renderNodeApplyStatusView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyAutoSwitchControls as renderSystemProxyAutoSwitchControlsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
 import { createNodeGroupsController } from './lib/node-groups-controller.js';
 import { bindNodeFormRuntime, closeNodeEditModal as closeNodeEditModalView, openNodeEditModal as openNodeEditModalView, prepareManualNodeDraft, saveNodeEdit } from './lib/node-edit-modal.js';
 import { bindNodeEditEvents } from './lib/node-edit-bindings.js';
@@ -46,6 +46,7 @@ const dashSystemAutoSwitchGroupSelect = document.querySelector('#dash-system-aut
 const dashSystemAutoSwitchIntervalInput = document.querySelector('#dash-system-auto-switch-interval');
 const dashSystemAutoSwitchCurrent = document.querySelector('#dash-system-auto-switch-current');
 const dashSystemAutoSwitchNext = document.querySelector('#dash-system-auto-switch-next');
+const dashNodeApplyStatus = document.querySelector('#dash-node-apply-status');
 const dashUptime = document.querySelector('#dash-uptime');
 const dashSpeedValue = document.querySelector('#dash-speed-value');
 const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
@@ -125,6 +126,9 @@ let trafficPoller = null;
 let routingStatusPoller = null;
 let lastTrafficSample = null;
 let speedHistory = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+let nodeApplyWatchTimer = null;
+let lastNodeApplyState = null;
+let lastNodeApplyResultKey = null;
 let geoIpStatus = null;
 let rulesetDatabaseStatus = null;
 let routingNodeOptions = [];
@@ -273,6 +277,7 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
       showToast(successMessage, 'success');
     }
     showToast(payload.warning || '节点已保存，正在后台应用到核心', 'info');
+    startNodeApplyWatch();
     return;
   }
 
@@ -299,6 +304,64 @@ const renderSystemProxyAutoSwitchControls = (proxyProfile = {}) => renderSystemP
   dashSystemAutoSwitchNext,
 });
 
+const getNodeApplyResultKey = (nodeApply) => [
+  nodeApply?.state || 'idle',
+  nodeApply?.lastAppliedAt || '',
+  nodeApply?.lastFailedAt || '',
+  nodeApply?.lastError || ''
+].join('|');
+
+const handleNodeApplyStatusChange = (nodeApply) => {
+  if (!nodeApply) return;
+  const state = nodeApply.state || 'idle';
+  const resultKey = getNodeApplyResultKey(nodeApply);
+
+  if (lastNodeApplyState === 'applying' && state === 'applied' && resultKey !== lastNodeApplyResultKey) {
+    showToast('节点配置已应用到核心', 'success');
+    lastNodeApplyResultKey = resultKey;
+  } else if (lastNodeApplyState === 'applying' && state === 'failed' && resultKey !== lastNodeApplyResultKey) {
+    showToast(`节点配置应用失败: ${nodeApply.lastError || '请查看日志'}`, 'error');
+    lastNodeApplyResultKey = resultKey;
+  }
+
+  lastNodeApplyState = state;
+};
+
+const renderNodeApplyStatus = (nodeApply) => {
+  renderNodeApplyStatusView({
+    nodeApply,
+    dashNodeApplyStatus
+  });
+  handleNodeApplyStatusChange(nodeApply);
+};
+
+const stopNodeApplyWatch = () => {
+  if (nodeApplyWatchTimer) {
+    clearInterval(nodeApplyWatchTimer);
+    nodeApplyWatchTimer = null;
+  }
+};
+
+const startNodeApplyWatch = () => {
+  stopNodeApplyWatch();
+  let attempts = 0;
+  nodeApplyWatchTimer = setInterval(async () => {
+    attempts += 1;
+    try {
+      const payload = await requestJson('/api/system/status');
+      updateCoreStatus(payload.core);
+      const state = payload.core?.nodeApply?.state || 'idle';
+      if (state !== 'applying' || attempts >= 20) {
+        stopNodeApplyWatch();
+      }
+    } catch {
+      if (attempts >= 20) {
+        stopNodeApplyWatch();
+      }
+    }
+  }, 1500);
+};
+
 const updateCoreStatus = (core) => updateCoreStatusView({
   core,
   setCurrentCoreState: (value) => { currentCoreState = value; },
@@ -313,6 +376,7 @@ const updateCoreStatus = (core) => updateCoreStatusView({
   dashUptime,
   renderProxyEndpoints,
   renderSystemProxyAutoSwitchControls,
+  renderNodeApplyStatus,
 });
 
 

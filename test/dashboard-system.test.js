@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  renderNodeApplyStatus,
   renderSystemProxyAutoSwitchControls,
   renderSystemProxyNodeOptions
 } from '../public/lib/dashboard-system.js';
@@ -47,4 +48,35 @@ test('renderSystemProxyAutoSwitchControls separates system proxy outlet from act
 
   assert.equal(current.textContent, '系统代理出口：System Node · 主节点：Manual Node');
   assert.equal(next.textContent, '下次切换：未启用');
+});
+
+test('renderNodeApplyStatus exposes background apply progress and failures', () => {
+  const el = {
+    className: '',
+    classList: {
+      values: [],
+      add(value) {
+        this.values.push(value);
+      }
+    },
+    textContent: '',
+    title: ''
+  };
+
+  renderNodeApplyStatus({
+    dashNodeApplyStatus: el,
+    nodeApply: { state: 'applying' }
+  });
+
+  assert.equal(el.textContent, '节点配置：正在应用到核心');
+  assert.equal(el.classList.values.includes('is-applying'), true);
+
+  renderNodeApplyStatus({
+    dashNodeApplyStatus: el,
+    nodeApply: { state: 'failed', lastError: 'missing obfs password' }
+  });
+
+  assert.equal(el.textContent, '节点配置：应用失败');
+  assert.equal(el.classList.values.includes('is-failed'), true);
+  assert.match(el.title, /missing obfs password/);
 });

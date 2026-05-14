@@ -1628,9 +1628,12 @@ test('importRawNode queues runtime apply when core is already running', async ()
   assert.equal(result.applyPending, true);
   assert.equal(result.autoRestarted, false);
   assert.equal(result.restartRequired, false);
+  assert.equal(manager.getStatus().nodeApply.state, 'applying');
 
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(restarted, true);
+  assert.equal(manager.getStatus().nodeApply.state, 'applied');
+  assert.ok(manager.getStatus().nodeApply.lastAppliedAt);
 });
 
 test('importRawNode rejects invalid node configs before saving', async () => {
@@ -1670,6 +1673,29 @@ test('applyNodeChanges keeps the running core alive when validation fails', asyn
   assert.equal(result.restartRequired, false);
   assert.match(result.warning, /missing obfs password/);
   assert.equal(manager.getStatus().status, 'running');
+});
+
+test('queued node apply exposes validation failures in core status', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  manager.state.status = 'running';
+  manager.validateRuntimeConfig = async () => {
+    throw new Error('missing obfs password');
+  };
+  manager.restart = async () => {
+    throw new Error('restart should not run');
+  };
+  attachPassiveNodeServices(manager);
+
+  const result = await manager.queueNodeChangesApply(manager.store.getNodes());
+
+  assert.equal(result.applyPending, true);
+  assert.equal(manager.getStatus().nodeApply.state, 'applying');
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const status = manager.getStatus().nodeApply;
+  assert.equal(status.state, 'failed');
+  assert.match(status.lastError, /missing obfs password/);
+  assert.ok(status.lastFailedAt);
 });
 
 test('updateNode skips validation and restart for metadata-only edits', async () => {

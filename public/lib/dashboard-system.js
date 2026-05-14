@@ -170,6 +170,51 @@ export const pollTraffic = async ({
   }
 };
 
+const formatApplyTime = (value) => {
+  if (!value) return '';
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return '';
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+};
+
+export const renderNodeApplyStatus = ({ nodeApply, dashNodeApplyStatus }) => {
+  if (!dashNodeApplyStatus) return;
+  const state = nodeApply?.state || 'idle';
+  dashNodeApplyStatus.className = 'dashboard-apply-status';
+
+  if (state === 'applying') {
+    dashNodeApplyStatus.classList.add('is-applying');
+    dashNodeApplyStatus.textContent = '节点配置：正在应用到核心';
+    dashNodeApplyStatus.title = '节点已保存，正在后台校验并重启核心';
+    return;
+  }
+
+  if (state === 'failed') {
+    const detail = nodeApply?.lastError ? `：${nodeApply.lastError}` : '';
+    dashNodeApplyStatus.classList.add('is-failed');
+    dashNodeApplyStatus.textContent = '节点配置：应用失败';
+    dashNodeApplyStatus.title = `节点保存成功，但应用到核心失败${detail}`;
+    return;
+  }
+
+  if (state === 'applied') {
+    const time = formatApplyTime(nodeApply?.lastAppliedAt);
+    dashNodeApplyStatus.classList.add('is-applied');
+    dashNodeApplyStatus.textContent = `节点配置：已应用${time ? ` ${time}` : ''}`;
+    dashNodeApplyStatus.title = '最新节点配置已应用到核心';
+    return;
+  }
+
+  dashNodeApplyStatus.classList.add('is-idle');
+  dashNodeApplyStatus.textContent = '节点配置：已同步';
+  dashNodeApplyStatus.title = '当前没有待应用的节点变更';
+};
+
 export const updateCoreStatus = ({
   core,
   setCurrentCoreState,
@@ -184,6 +229,7 @@ export const updateCoreStatus = ({
   dashUptime,
   renderProxyEndpoints,
   renderSystemProxyAutoSwitchControls,
+  renderNodeApplyStatus,
 }) => {
   if (!core) return;
   setCurrentCoreState(core);
@@ -197,6 +243,9 @@ export const updateCoreStatus = ({
   renderProxyEndpoints(proxyProfile);
   if (typeof renderSystemProxyAutoSwitchControls === 'function') {
     renderSystemProxyAutoSwitchControls(proxyProfile);
+  }
+  if (typeof renderNodeApplyStatus === 'function') {
+    renderNodeApplyStatus(core.nodeApply || null);
   }
 
   if (systemProxyModeSelect && proxyProfile.mode) {

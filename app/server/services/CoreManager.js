@@ -946,6 +946,9 @@ export class CoreManager {
     this._nodeApplyPendingNodes = null;
     this._nodeApplyRunning = false;
     this._nodeApplyLastError = null;
+    this._nodeApplyLastAppliedAt = null;
+    this._nodeApplyLastStartedAt = null;
+    this._nodeApplyLastFailedAt = null;
 
     this._nodeGroupAutoTestBusy = false;
     this._nodeGroupLatencySwitchState = new Map();
@@ -2078,6 +2081,7 @@ export class CoreManager {
       autoStart: { ...this.state.autoStart },
       geoIp: this.getGeoIpStatus(),
       rulesetDatabase: this.getRulesetDatabaseStatus(),
+      nodeApply: this.getNodeApplyStatus(),
       settings: this.getSettingsSnapshot(),
       paths: {
         root: this.paths.root,
@@ -2432,10 +2436,12 @@ export class CoreManager {
 
     this._nodeApplyPendingNodes = Array.isArray(savedNodes) ? [...savedNodes] : [];
     this._nodeApplyLastError = null;
+    this._nodeApplyLastFailedAt = null;
 
     const shouldStartApply = !this._nodeApplyRunning;
     if (shouldStartApply) {
       this._nodeApplyRunning = true;
+      this._nodeApplyLastStartedAt = new Date().toISOString();
     }
 
     const nodes = await this.getNodeRecords();
@@ -2472,11 +2478,14 @@ export class CoreManager {
         }
         if (this.state.status === 'running') {
           await this.restart();
+          this._nodeApplyLastAppliedAt = new Date().toISOString();
           this.store.appendLog('[CoreManager] Queued node changes applied to running core');
         }
         this._nodeApplyLastError = null;
+        this._nodeApplyLastFailedAt = null;
       } catch (error) {
         this._nodeApplyLastError = error.message;
+        this._nodeApplyLastFailedAt = new Date().toISOString();
         this.store.appendLog(`[CoreManager] Queued node apply failed: ${error.message}`);
       }
     }
@@ -2485,10 +2494,34 @@ export class CoreManager {
 
     if (this._nodeApplyPendingNodes) {
       this._nodeApplyRunning = true;
+      this._nodeApplyLastStartedAt = new Date().toISOString();
       setTimeout(() => {
         void this.runNodeChangesApplyQueue();
       }, 0);
     }
+  }
+
+  getNodeApplyStatus() {
+    const pending = Boolean(this._nodeApplyPendingNodes);
+    const running = Boolean(this._nodeApplyRunning);
+    const lastError = this._nodeApplyLastError || null;
+    const state = running || pending
+      ? 'applying'
+      : lastError
+        ? 'failed'
+        : this._nodeApplyLastAppliedAt
+          ? 'applied'
+          : 'idle';
+
+    return {
+      state,
+      pending,
+      running,
+      lastError,
+      lastStartedAt: this._nodeApplyLastStartedAt,
+      lastAppliedAt: this._nodeApplyLastAppliedAt,
+      lastFailedAt: this._nodeApplyLastFailedAt
+    };
   }
 
   shouldApplyNodeRuntimeChanges(previousNodes, nextNodes) {
