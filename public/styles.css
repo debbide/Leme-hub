@@ -83,6 +83,7 @@
 .ph-path::before { content: '⤴'; }
 .ph-plugs-connected::before { content: '⇄'; }
 .ph-radar::before { content: '◉'; }
+.ph-magic-wand::before { content: '✦'; }
 
 body {
   background-color: var(--bg-main);
@@ -3262,6 +3263,40 @@ input:focus + .cyber-slider {
 
 .node-form-field-wrap {
   min-width: 0;
+}
+
+.node-form-inline-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.node-form-inline-btn {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.node-form-inline-btn:hover {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.16);
+  color: var(--text-main);
+}
+
+.node-form-inline-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .node-form-toggle-wrap {

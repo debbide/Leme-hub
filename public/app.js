@@ -387,6 +387,7 @@ const editNodeForm = document.querySelector('#edit-node-form');
 const editAdvancedInput = document.querySelector('#edit-node-advanced-input');
 const editNodeGroupInput = document.querySelector('#edit-node-group');
 const saveNodeBtn = document.querySelector('#save-node-btn');
+const generateUuidBtn = document.querySelector('#generate-node-uuid');
 const closeModalBtns = editModal?.querySelectorAll('#close-modal-top, .cancel-modal-btn') || [];
 let currentEditNodeId = null;
 
@@ -610,6 +611,8 @@ bindNodeEditEvents({
   closeModalBtns,
   closeModal,
   saveNodeBtn,
+  generateUuidBtn,
+  nodeForm: editNodeForm,
   saveNodeEdit: () => saveNodeEdit({
     saveNodeBtn,
     nodeForm: editNodeForm,

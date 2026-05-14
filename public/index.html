@@ -555,7 +555,12 @@
                 </div>
                 <div class="node-form-field-wrap" data-form-field="uuid">
                   <label class="modal-field-label" for="edit-node-uuid">UUID</label>
-                  <input type="text" id="edit-node-uuid" name="uuid" class="modal-field-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+                  <div class="node-form-inline-action">
+                    <input type="text" id="edit-node-uuid" name="uuid" class="modal-field-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+                    <button type="button" class="node-form-inline-btn" id="generate-node-uuid" data-generate-uuid title="生成 UUID" aria-label="生成 UUID">
+                      <i class="ph ph-magic-wand"></i><span>生成</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="node-form-field-wrap" data-form-field="password">
                   <label class="modal-field-label" for="edit-node-password">密码</label>
