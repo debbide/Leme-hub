@@ -94,10 +94,11 @@ test('windows apply writes manual proxy, clears pac, and refreshes wininet', asy
   assert.match(calls[2][8], /192\.168\.\*/);
   assert.equal(calls[3][4], 'AutoConfigURL');
   assert.equal(calls[3][8], '');
-  assert.equal(calls[4][0], 'powershell.exe');
-  assert.equal(calls[4][1], '-NoProfile');
-  assert.equal(calls[4][5], '-Command');
-  assert.match(calls[4][6], /InternetSetOption/);
+  assert.deepEqual(calls[4], ['netsh', 'winhttp', 'set', 'proxy', '127.0.0.1:20101', 'bypass-list=localhost;127.*;::1;<local>']);
+  assert.equal(calls[5][0], 'powershell.exe');
+  assert.equal(calls[5][1], '-NoProfile');
+  assert.equal(calls[5][5], '-Command');
+  assert.match(calls[5][6], /InternetSetOption/);
 });
 
 test('windows apply normalizes wildcard host to loopback', async () => {
@@ -135,7 +136,8 @@ test('windows disable clears proxy values and refreshes wininet', async () => {
   assert.equal(calls[2][8], '');
   assert.equal(calls[3][4], 'AutoConfigURL');
   assert.equal(calls[3][8], '');
-  assert.equal(calls[4][0], 'powershell.exe');
+  assert.deepEqual(calls[4], ['netsh', 'winhttp', 'reset', 'proxy']);
+  assert.equal(calls[5][0], 'powershell.exe');
 });
 
 test('linux apply sets http and socks endpoints together', async (t) => {

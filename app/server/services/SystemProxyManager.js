@@ -53,6 +53,12 @@ const WINDOWS_PROXY_OVERRIDE = [
   'fd*',
   'fe80:*'
 ].join(';');
+const WINDOWS_WINHTTP_BYPASS = [
+  'localhost',
+  '127.*',
+  '::1',
+  '<local>'
+].join(';');
 const LINUX_PROXY_IGNORE_HOSTS = [
   'localhost',
   '127.0.0.0/8',
@@ -99,6 +105,10 @@ const formatWindowsProxyServer = (host, port) => {
   const normalizedHost = normalizeWindowsSystemProxyHost(host);
   const displayHost = normalizedHost.includes(':') ? `[${normalizedHost}]` : normalizedHost;
   return `${displayHost}:${port}`;
+};
+const formatWinHttpProxyServer = (host, port) => {
+  const normalizedHost = normalizeWindowsSystemProxyHost(host);
+  return `${normalizedHost}:${port}`;
 };
 const normalizeLinuxSystemProxyHost = (value) => {
   const normalized = trimValue(value).replace(/^\[(.*)\]$/, '$1');
@@ -336,6 +346,7 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', proxyServer, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', WINDOWS_PROXY_OVERRIDE, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.setWindowsWinHttpProxy({ host, httpPort });
     await this.notifyWindowsProxyChanged();
   }
 
@@ -344,7 +355,17 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.resetWindowsWinHttpProxy();
     await this.notifyWindowsProxyChanged();
+  }
+
+  async setWindowsWinHttpProxy({ host, httpPort }) {
+    const proxyServer = formatWinHttpProxyServer(host, httpPort);
+    await this.exec('netsh', ['winhttp', 'set', 'proxy', proxyServer, `bypass-list=${WINDOWS_WINHTTP_BYPASS}`]);
+  }
+
+  async resetWindowsWinHttpProxy() {
+    await this.exec('netsh', ['winhttp', 'reset', 'proxy']);
   }
 
   async notifyWindowsProxyChanged() {
