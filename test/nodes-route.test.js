@@ -162,14 +162,13 @@ test('system routes expose Microsoft Store UWP loopback status and actions', asy
     },
     uwpLoopbackManager: {
       getMicrosoftStoreStatus: async () => ({ supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] }),
-      resolveMicrosoftStorePackageFamilyName: async () => 'Microsoft.WindowsStore_8wekyb3d8bbwe',
-      addExemption: async (packageFamilyName) => {
-        calls.push(['add', packageFamilyName]);
-        return { supported: true, packageFamilyName, exempted: true, exemptions: [packageFamilyName] };
+      addMicrosoftStoreExemptions: async () => {
+        calls.push(['add-store-login']);
+        return { supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: true, exemptions: ['Microsoft.WindowsStore_8wekyb3d8bbwe'] };
       },
-      removeExemption: async (packageFamilyName) => {
-        calls.push(['remove', packageFamilyName]);
-        return { supported: true, packageFamilyName, exempted: false, exemptions: [] };
+      removeMicrosoftStoreExemptions: async () => {
+        calls.push(['remove-store-login']);
+        return { supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] };
       }
     }
   });
@@ -184,8 +183,8 @@ test('system routes expose Microsoft Store UWP loopback status and actions', asy
   assert.equal(enableResponse.body.uwpLoopback.exempted, true);
   assert.equal(disableResponse.body.uwpLoopback.exempted, false);
   assert.deepEqual(calls, [
-    ['add', 'Microsoft.WindowsStore_8wekyb3d8bbwe'],
-    ['remove', 'Microsoft.WindowsStore_8wekyb3d8bbwe']
+    ['add-store-login'],
+    ['remove-store-login']
   ]);
 });
 
@@ -228,9 +227,8 @@ test('system UWP loopback action returns post-check failure status', async () =>
     },
     uwpLoopbackManager: {
       getMicrosoftStoreStatus: async () => ({ supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] }),
-      resolveMicrosoftStorePackageFamilyName: async () => 'Microsoft.WindowsStore_8wekyb3d8bbwe',
-      addExemption: async () => {
-        const error = new Error('修复命令已执行，但系统复查后仍未放行微软商店回环');
+      addMicrosoftStoreExemptions: async () => {
+        const error = new Error('修复命令已执行，但系统复查后仍有微软商店登录组件未放行回环');
         error.status = 409;
         error.uwpLoopback = { supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] };
         throw error;
@@ -243,7 +241,7 @@ test('system UWP loopback action returns post-check failure status', async () =>
   assert.equal(response.status, 409);
   assert.equal(response.body.ok, false);
   assert.equal(response.body.uwpLoopback.exempted, false);
-  assert.match(response.body.error, /复查后仍未放行/u);
+  assert.match(response.body.error, /仍有微软商店登录组件/u);
 });
 
 test('system routes expose ruleset database status and refresh endpoint', async () => {

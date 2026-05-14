@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   MICROSOFT_STORE_PACKAGE_FAMILY,
+  MICROSOFT_STORE_LOOPBACK_TARGETS,
   UwpLoopbackManager,
   internals
 } from '../app/server/services/UwpLoopbackManager.js';
@@ -65,7 +66,32 @@ test('manager resolves Microsoft Store package family through PowerShell', async
   assert.equal(calls[0][0], 'powershell.exe');
   assert.equal(calls[0][1], '-NoProfile');
   assert.equal(calls[0][5], '-Command');
-  assert.match(calls[0][6], /Get-AppxPackage Microsoft\.WindowsStore/u);
+  assert.match(calls[0][6], /Get-AppxPackage -AllUsers Microsoft\.WindowsStore/u);
+});
+
+test('manager resolves Microsoft Store loopback target package family names', async () => {
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 3),
+    execFile: async (_command, args) => {
+      const script = args[args.length - 1];
+      if (script.includes('Microsoft.StorePurchaseApp')) {
+        return { stdout: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe\n' };
+      }
+      if (script.includes('Microsoft.AAD.BrokerPlugin')) {
+        return { stdout: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy\n' };
+      }
+      return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
+    }
+  });
+
+  const targets = await manager.resolveMicrosoftStoreLoopbackTargets();
+
+  assert.deepEqual(targets.map((target) => target.packageFamilyName), [
+    MICROSOFT_STORE_PACKAGE_FAMILY,
+    'Microsoft.StorePurchaseApp_8wekyb3d8bbwe',
+    'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy'
+  ]);
 });
 
 test('add and remove exemptions call CheckNetIsolation with argument arrays', async () => {
@@ -101,6 +127,9 @@ test('add and remove exemptions call CheckNetIsolation with argument arrays', as
 test('status treats CheckNetIsolation package names case-insensitively', async () => {
   const manager = new UwpLoopbackManager({
     platform: 'win32',
+    loopbackTargets: [
+      { id: 'store', label: 'Store', packageName: 'Microsoft.WindowsStore', fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY }
+    ],
     microsoftStorePackageFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
     execFile: async (_command, args) => {
       if (args.includes('-s')) {
@@ -113,6 +142,72 @@ test('status treats CheckNetIsolation package names case-insensitively', async (
   const status = await manager.getMicrosoftStoreStatus();
 
   assert.equal(status.exempted, true);
+});
+
+test('store login status requires all configured targets to be exempted', async () => {
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    loopbackTargets: [
+      { id: 'store', label: 'Store', packageName: 'Microsoft.WindowsStore', fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY },
+      { id: 'aad', label: 'AAD', packageName: 'Microsoft.AAD.BrokerPlugin', fallbackFamilyName: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy' }
+    ],
+    execFile: async (_command, args) => {
+      if (args.includes('-s')) {
+        return { stdout: '名称: microsoft.windowsstore_8wekyb3d8bbwe' };
+      }
+      const script = args[args.length - 1] || '';
+      if (script.includes('Microsoft.AAD.BrokerPlugin')) {
+        return { stdout: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy\n' };
+      }
+      return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
+    }
+  });
+
+  const status = await manager.getMicrosoftStoreStatus();
+
+  assert.equal(status.exempted, false);
+  assert.equal(status.hasAnyExemption, true);
+  assert.equal(status.exemptedCount, 1);
+  assert.equal(status.totalCount, 2);
+});
+
+test('store login repair adds only missing target exemptions', async () => {
+  const calls = [];
+  let aadExempted = false;
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    loopbackTargets: [
+      { id: 'store', label: 'Store', packageName: 'Microsoft.WindowsStore', fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY },
+      { id: 'aad', label: 'AAD', packageName: 'Microsoft.AAD.BrokerPlugin', fallbackFamilyName: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy' }
+    ],
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      if (args.includes('-a') && args.includes('-n=Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy')) {
+        aadExempted = true;
+      }
+      if (args.includes('-s')) {
+        return {
+          stdout: [
+            '名称: microsoft.windowsstore_8wekyb3d8bbwe',
+            aadExempted ? '名称: microsoft.aad.brokerplugin_cw5n1h2txyewy' : ''
+          ].join('\n')
+        };
+      }
+      const script = args[args.length - 1] || '';
+      if (script.includes('Microsoft.AAD.BrokerPlugin')) {
+        return { stdout: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy\n' };
+      }
+      return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
+    }
+  });
+
+  const status = await manager.addMicrosoftStoreExemptions();
+
+  assert.equal(status.exempted, true);
+  assert.deepEqual(
+    calls.filter((call) => call[0] === 'CheckNetIsolation.exe' && call.includes('-a')),
+    [['CheckNetIsolation.exe', 'LoopbackExempt', '-a', '-n=Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy']]
+  );
 });
 
 test('add exemption fails when post-check still reports not exempted', async () => {

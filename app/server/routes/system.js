@@ -1,7 +1,12 @@
 const unsupportedUwpLoopback = {
   supported: false,
   packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe',
+  packageFamilyNames: ['Microsoft.WindowsStore_8wekyb3d8bbwe'],
+  packages: [],
   exempted: false,
+  hasAnyExemption: false,
+  exemptedCount: 0,
+  totalCount: 0,
   exemptions: [],
   lastError: null
 };
@@ -40,14 +45,6 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
         lastError: error.message
       };
     }
-  };
-
-  const getMicrosoftStorePackageFamilyName = async () => {
-    if (!uwpLoopbackManager || typeof uwpLoopbackManager.resolveMicrosoftStorePackageFamilyName !== 'function') {
-      return unsupportedUwpLoopback.packageFamilyName;
-    }
-
-    return uwpLoopbackManager.resolveMicrosoftStorePackageFamilyName();
   };
 
   return {
@@ -95,16 +92,15 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
     },
     'POST /api/system/uwp-loopback/store/enable': async () => {
       try {
-        if (!uwpLoopbackManager || typeof uwpLoopbackManager.addExemption !== 'function') {
+        if (!uwpLoopbackManager || typeof uwpLoopbackManager.addMicrosoftStoreExemptions !== 'function') {
           throw new Error('UWP loopback exemption is not available');
         }
 
-        const packageFamilyName = await getMicrosoftStorePackageFamilyName();
         return {
           status: 200,
           body: {
             ok: true,
-            uwpLoopback: await uwpLoopbackManager.addExemption(packageFamilyName),
+            uwpLoopback: await uwpLoopbackManager.addMicrosoftStoreExemptions(),
             core: coreManager.getStatus()
           }
         };
@@ -117,16 +113,15 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
     },
     'POST /api/system/uwp-loopback/store/disable': async () => {
       try {
-        if (!uwpLoopbackManager || typeof uwpLoopbackManager.removeExemption !== 'function') {
+        if (!uwpLoopbackManager || typeof uwpLoopbackManager.removeMicrosoftStoreExemptions !== 'function') {
           throw new Error('UWP loopback exemption is not available');
         }
 
-        const packageFamilyName = await getMicrosoftStorePackageFamilyName();
         return {
           status: 200,
           body: {
             ok: true,
-            uwpLoopback: await uwpLoopbackManager.removeExemption(packageFamilyName),
+            uwpLoopback: await uwpLoopbackManager.removeMicrosoftStoreExemptions(),
             core: coreManager.getStatus()
           }
         };

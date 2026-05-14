@@ -10,6 +10,9 @@ export const renderUwpLoopbackStatus = ({
   const exempted = !!status?.exempted;
   const pending = !status;
   const lastError = status?.lastError || '';
+  const totalCount = Number(status?.totalCount) || 0;
+  const exemptedCount = Number(status?.exemptedCount) || 0;
+  const progressText = totalCount > 1 ? ` ${exemptedCount}/${totalCount}` : '';
 
   if (uwpLoopbackStatusEl) {
     uwpLoopbackStatusEl.className = 'uwp-loopback-status';
@@ -24,10 +27,10 @@ export const renderUwpLoopbackStatus = ({
       uwpLoopbackStatusEl.textContent = '检测失败';
     } else if (exempted) {
       uwpLoopbackStatusEl.classList.add('is-ok');
-      uwpLoopbackStatusEl.textContent = '已修复';
+      uwpLoopbackStatusEl.textContent = `已修复${progressText}`;
     } else {
       uwpLoopbackStatusEl.classList.add('is-warn');
-      uwpLoopbackStatusEl.textContent = '未修复';
+      uwpLoopbackStatusEl.textContent = `未修复${progressText}`;
     }
   }
 
@@ -39,9 +42,11 @@ export const renderUwpLoopbackStatus = ({
     } else if (lastError) {
       uwpLoopbackDesc.textContent = lastError;
     } else if (exempted) {
-      uwpLoopbackDesc.textContent = '微软商店已允许访问 127.0.0.1 本地代理';
+      uwpLoopbackDesc.textContent = '微软商店、购买和账号登录组件已允许访问本地代理';
     } else {
-      uwpLoopbackDesc.textContent = '微软商店默认不能访问 127.0.0.1，本地代理可能无效';
+      uwpLoopbackDesc.textContent = totalCount > 1
+        ? '微软商店登录链路仍有组件不能访问本地代理'
+        : '微软商店默认不能访问 127.0.0.1，本地代理可能无效';
     }
   }
 

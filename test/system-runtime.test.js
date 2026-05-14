@@ -46,6 +46,34 @@ test('renderUwpLoopbackStatus shows repair action when Microsoft Store is not ex
   assert.equal(disableBtn.hidden, true);
 });
 
+test('renderUwpLoopbackStatus shows store login repair progress', () => {
+  const statusEl = createElement();
+  const desc = createElement();
+
+  renderUwpLoopbackStatus({
+    status: { supported: true, exempted: false, exemptedCount: 2, totalCount: 6 },
+    uwpLoopbackStatusEl: statusEl,
+    uwpLoopbackDesc: desc
+  });
+
+  assert.equal(statusEl.textContent, '未修复 2/6');
+  assert.match(desc.textContent, /登录链路/u);
+});
+
+test('renderUwpLoopbackStatus shows completed store login repair progress', () => {
+  const statusEl = createElement();
+  const desc = createElement();
+
+  renderUwpLoopbackStatus({
+    status: { supported: true, exempted: true, exemptedCount: 6, totalCount: 6 },
+    uwpLoopbackStatusEl: statusEl,
+    uwpLoopbackDesc: desc
+  });
+
+  assert.equal(statusEl.textContent, '已修复 6/6');
+  assert.match(desc.textContent, /账号登录组件/u);
+});
+
 test('renderUwpLoopbackStatus shows revoke action when Microsoft Store is exempted', () => {
   const statusEl = createElement();
   const enableBtn = createElement();
