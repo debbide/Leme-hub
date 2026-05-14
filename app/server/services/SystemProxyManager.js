@@ -320,10 +320,8 @@ export class SystemProxyManager {
       return { enabled: false, http: null, raw: text };
     }
 
-    const proxyLine = text.split(/\r?\n/u)
-      .map((line) => line.trim())
-      .find((line) => /proxy server|代理服务器/iu.test(line));
-    const candidate = proxyLine?.match(/:\s*(.+)$/u)?.[1]?.trim() || text.trim();
+    const proxyMatch = text.match(/(?:^|\r?\n)\s*(?:proxy server(?:s)?(?:\(\w+\))?|代理服务器)\s*[:：]\s*([^\r\n]+)/iu);
+    const candidate = proxyMatch?.[1]?.trim() || text.trim();
     const parsed = this.parseWindowsProxyServer(candidate);
     const http = parsed.http || parseHostPort(candidate);
 

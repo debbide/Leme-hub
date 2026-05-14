@@ -61,6 +61,19 @@ test('windows WinHTTP status parses netsh proxy output', () => {
   );
 });
 
+test('windows WinHTTP status parses localized netsh proxy output', () => {
+  const manager = new SystemProxyManager({ platform: 'win32' });
+
+  assert.deepEqual(
+    manager.parseWindowsWinHttpProxy('\r\n当前的 WinHTTP 代理服务器设置:\r\n\r\n    代理服务器:  127.0.0.1:18999\r\n    绕过列表     :  localhost;127.*;::1;<local>\r\n\r\n'),
+    {
+      enabled: true,
+      http: { host: '127.0.0.1', port: 18999 },
+      raw: '\r\n当前的 WinHTTP 代理服务器设置:\r\n\r\n    代理服务器:  127.0.0.1:18999\r\n    绕过列表     :  localhost;127.*;::1;<local>\r\n\r\n'
+    }
+  );
+});
+
 test('windows WinHTTP status treats direct access as disabled', () => {
   const manager = new SystemProxyManager({ platform: 'win32' });
   const status = manager.parseWindowsWinHttpProxy('Current WinHTTP proxy settings:\r\n    Direct access (no proxy server).');
