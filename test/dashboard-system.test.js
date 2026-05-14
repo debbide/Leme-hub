@@ -80,3 +80,45 @@ test('renderNodeApplyStatus exposes background apply progress and failures', () 
   assert.equal(el.classList.values.includes('is-failed'), true);
   assert.match(el.title, /missing obfs password/);
 });
+
+test('renderNodeApplyStatus hides node-page status when idle', () => {
+  const classes = new Set(['nodes-apply-status']);
+  const el = {
+    get className() {
+      return [...classes].join(' ');
+    },
+    set className(value) {
+      classes.clear();
+      String(value).split(/\s+/u).filter(Boolean).forEach((item) => classes.add(item));
+    },
+    classList: {
+      contains(value) {
+        return classes.has(value);
+      },
+      add(value) {
+        classes.add(value);
+      },
+      remove(value) {
+        classes.delete(value);
+      }
+    },
+    textContent: '',
+    title: ''
+  };
+
+  renderNodeApplyStatus({
+    dashNodeApplyStatus: el,
+    nodeApply: { state: 'idle' }
+  });
+
+  assert.equal(classes.has('nodes-apply-status'), true);
+  assert.equal(classes.has('hidden'), true);
+
+  renderNodeApplyStatus({
+    dashNodeApplyStatus: el,
+    nodeApply: { state: 'applying' }
+  });
+
+  assert.equal(classes.has('hidden'), false);
+  assert.equal(classes.has('is-applying'), true);
+});

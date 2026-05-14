@@ -101,6 +101,19 @@ export function createNodeRoutes({ coreManager }) {
       }
     },
 
+    'DELETE /api/nodes/batch': async ({ body }) => {
+      const nodeIds = body?.ids || body?.nodeIds;
+      if (!Array.isArray(nodeIds) || !nodeIds.length) {
+        return json({ ok: false, error: 'Missing node ids' }, 400);
+      }
+
+      try {
+        return json({ ok: true, ...(await coreManager.deleteNodes(nodeIds)) });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
     'POST /api/nodes/test': async ({ body }) => {
       const nodeId = body?.id;
       if (!nodeId) {

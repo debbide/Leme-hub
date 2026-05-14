@@ -2785,6 +2785,28 @@ export class CoreManager {
     return this.queueNodeChangesApply(this.saveNodes(remainingNodes));
   }
 
+  async deleteNodes(nodeIds) {
+    const ids = [...new Set((Array.isArray(nodeIds) ? nodeIds : []).map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!ids.length) {
+      throw createHttpError('Missing node ids', 400);
+    }
+
+    const nodes = this.store.getNodes();
+    const existingIds = new Set(nodes.map((node) => node.id));
+    const missingIds = ids.filter((id) => !existingIds.has(id));
+    if (missingIds.length) {
+      throw createHttpError(`Node not found: ${missingIds[0]}`, 404);
+    }
+
+    const idSet = new Set(ids);
+    const remainingNodes = nodes.filter((node) => !idSet.has(node.id));
+    const applied = await this.queueNodeChangesApply(this.saveNodes(remainingNodes));
+    return {
+      deletedCount: ids.length,
+      ...applied
+    };
+  }
+
   getGroups() {
     const nodes = this.store.getNodes();
     const stored = this.getSettingsSnapshot().groups || [];

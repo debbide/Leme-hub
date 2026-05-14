@@ -185,9 +185,15 @@ const formatApplyTime = (value) => {
 export const renderNodeApplyStatus = ({ nodeApply, dashNodeApplyStatus }) => {
   if (!dashNodeApplyStatus) return;
   const state = nodeApply?.state || 'idle';
-  dashNodeApplyStatus.className = 'dashboard-apply-status';
+  const hasNodePageClass = typeof dashNodeApplyStatus.classList?.contains === 'function'
+    && dashNodeApplyStatus.classList.contains('nodes-apply-status');
+  const baseClass = hasNodePageClass
+    ? 'nodes-apply-status dashboard-apply-status'
+    : 'dashboard-apply-status';
+  dashNodeApplyStatus.className = baseClass;
 
   if (state === 'applying') {
+    dashNodeApplyStatus.classList.remove?.('hidden');
     dashNodeApplyStatus.classList.add('is-applying');
     dashNodeApplyStatus.textContent = '节点配置：正在应用到核心';
     dashNodeApplyStatus.title = '节点已保存，正在后台校验并重启核心';
@@ -196,6 +202,7 @@ export const renderNodeApplyStatus = ({ nodeApply, dashNodeApplyStatus }) => {
 
   if (state === 'failed') {
     const detail = nodeApply?.lastError ? `：${nodeApply.lastError}` : '';
+    dashNodeApplyStatus.classList.remove?.('hidden');
     dashNodeApplyStatus.classList.add('is-failed');
     dashNodeApplyStatus.textContent = '节点配置：应用失败';
     dashNodeApplyStatus.title = `节点保存成功，但应用到核心失败${detail}`;
@@ -204,12 +211,16 @@ export const renderNodeApplyStatus = ({ nodeApply, dashNodeApplyStatus }) => {
 
   if (state === 'applied') {
     const time = formatApplyTime(nodeApply?.lastAppliedAt);
+    dashNodeApplyStatus.classList.remove?.('hidden');
     dashNodeApplyStatus.classList.add('is-applied');
     dashNodeApplyStatus.textContent = `节点配置：已应用${time ? ` ${time}` : ''}`;
     dashNodeApplyStatus.title = '最新节点配置已应用到核心';
     return;
   }
 
+  if (baseClass.includes('nodes-apply-status')) {
+    dashNodeApplyStatus.classList.add('hidden');
+  }
   dashNodeApplyStatus.classList.add('is-idle');
   dashNodeApplyStatus.textContent = '节点配置：已同步';
   dashNodeApplyStatus.title = '当前没有待应用的节点变更';

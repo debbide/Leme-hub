@@ -33,6 +33,7 @@ const importUrlInput = document.querySelector('#import-url');
 const syncUrlInput = document.querySelector('#sync-url');
 const syncNameInput = document.querySelector('#sync-name');
 const nodeCountLabel = document.querySelector('#node-count-label');
+const nodesApplyStatus = document.querySelector('#nodes-apply-status');
 const subscriptionDetailPanel = document.querySelector('#subscription-detail-panel');
 const toastContainer = document.querySelector('#toast-container');
 const coreStatusIndicator = document.querySelector('#core-status-indicator');
@@ -328,6 +329,10 @@ const renderNodeApplyStatus = (nodeApply) => {
   renderNodeApplyStatusView({
     nodeApply,
     dashNodeApplyStatus
+  });
+  renderNodeApplyStatusView({
+    nodeApply,
+    dashNodeApplyStatus: nodesApplyStatus
   });
   handleNodeApplyStatusChange(nodeApply);
 };

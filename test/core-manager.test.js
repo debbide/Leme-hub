@@ -1764,6 +1764,40 @@ test('updateNode queues runtime apply for connection setting edits', async () =>
   assert.equal(restarted, true);
 });
 
+test('deleteNodes removes multiple nodes with one queued apply', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 },
+    { id: 'n3', type: 'socks', server: 'three.example', port: 1082 }
+  ]));
+  manager.state.status = 'running';
+  attachPassiveNodeServices(manager);
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+
+  const result = await manager.deleteNodes(['n1', 'n2', 'n2']);
+
+  assert.equal(result.deletedCount, 2);
+  assert.equal(result.applyPending, true);
+  assert.deepEqual(manager.store.getNodes().map((node) => node.id), ['n3']);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(restarted, true);
+});
+
+test('deleteNodes rejects missing node ids before saving', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+
+  await assert.rejects(() => manager.deleteNodes(['n1', 'missing']), /Node not found: missing/);
+  assert.deepEqual(manager.store.getNodes().map((node) => node.id), ['n1']);
+});
+
 test('testNode auto starts core when stopped', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   let started = false;

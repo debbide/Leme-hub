@@ -152,6 +152,7 @@ export const updateBulkBar = ({
   clearSelectedNodeIds,
   renderGroupTabs,
   renderNodesElement,
+  syncNodeMutationFeedback,
   showToast,
 }) => {
   const bar = document.getElementById('bulk-action-bar');
@@ -184,7 +185,10 @@ export const updateBulkBar = ({
   const allGroups = [...new Set([...groupsData, ...nodesData.map((node) => node.group).filter(Boolean)])];
   menu.innerHTML = [
     '<div class="group-menu-item" data-group="">未分组</div>',
-    ...allGroups.map((group) => `<div class="group-menu-item" data-group="${group}">${group}</div>`)
+    ...allGroups.map((group) => {
+      const safeGroup = escapeHtml(group);
+      return `<div class="group-menu-item" data-group="${safeGroup}">${safeGroup}</div>`;
+    })
   ].join('');
 
   menu.querySelectorAll('.group-menu-item').forEach((item) => {
@@ -202,7 +206,7 @@ export const updateBulkBar = ({
         clearSelectedNodeIds();
         renderGroupTabs();
         renderNodesElement();
-        showToast('批量移动分组完成', 'success');
+        syncNodeMutationFeedback(payload, '批量移动分组完成');
       } catch (error) {
         showToast(`移动失败: ${error.message}`, 'error');
       }

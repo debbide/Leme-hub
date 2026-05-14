@@ -13,6 +13,8 @@ export const bindNodesPanelEvents = ({
   showToast,
   renderNodesElement,
   updateBulkBar,
+  setNodesData,
+  syncNodeMutationFeedback,
   setNodeSearchQuery,
   getActiveGroupTab,
   resetActiveGroup,
@@ -52,12 +54,15 @@ export const bindNodesPanelEvents = ({
     if (!selectedNodeIds.size) return;
     if (!await showConfirmModal(`删除 ${selectedNodeIds.size} 个节点`, '此操作不可撤销，确认删除所选节点吗？')) return;
     try {
-      await Promise.all([...selectedNodeIds].map((id) =>
-        requestJson('/api/nodes', { method: 'DELETE', body: JSON.stringify({ id }) })
-      ));
+      const payload = await requestJson('/api/nodes/batch', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids: [...selectedNodeIds] })
+      });
+      setNodesData(payload.nodes || []);
       selectedNodeIds.clear();
-      await loadNodes();
-      showToast('批量删除完成', 'success');
+      renderNodesElement();
+      updateBulkBar();
+      syncNodeMutationFeedback(payload, `已删除 ${payload.deletedCount || 0} 个节点`);
     } catch (error) {
       showToast(`删除失败: ${error.message}`, 'error');
     }

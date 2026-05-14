@@ -68,6 +68,26 @@ test('node routes expose country grouping and override endpoints', async () => {
   assert.equal(invalidResponse.status, 400);
 });
 
+test('node routes support deleting multiple nodes in one request', async () => {
+  const deleteCalls = [];
+  const routes = createNodeRoutes({
+    coreManager: {
+      deleteNodes: async (ids) => {
+        deleteCalls.push(ids);
+        return { deletedCount: ids.length, nodes: [{ id: 'left' }], core: { status: 'running' } };
+      }
+    }
+  });
+
+  const response = await routes['DELETE /api/nodes/batch']({ body: { ids: ['n1', 'n2'] } });
+  const invalidResponse = await routes['DELETE /api/nodes/batch']({ body: { ids: [] } });
+
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.deletedCount, 2);
+  assert.deepEqual(deleteCalls, [['n1', 'n2']]);
+  assert.equal(invalidResponse.status, 400);
+});
+
 test('subscription routes support sync by url or id and delete by id', async () => {
   const syncCalls = [];
   const deleteCalls = [];

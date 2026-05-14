@@ -84,6 +84,136 @@ export const createNodesPanelController = ({
 
   const getSubscriptionForGroup = (groupName) => subscriptionsData.find((item) => item.groupName === groupName) || null;
 
+  const closeOpenNodeMenus = () => {
+    nodesTbody?.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
+      menu.classList.remove('open');
+    });
+  };
+
+  const syncSelectAllState = () => {
+    const selectAll = document.getElementById('select-all-nodes');
+    if (!selectAll || !nodesTbody) return;
+    const all = [...nodesTbody.querySelectorAll('.node-checkbox')];
+    const checked = all.filter((item) => item.checked).length;
+    selectAll.checked = all.length > 0 && checked === all.length;
+    selectAll.indeterminate = checked > 0 && checked < all.length;
+  };
+
+  const moveNodeToGroup = async (nodeId, group) => {
+    try {
+      const payload = await requestJson('/api/nodes/group', {
+        method: 'PUT',
+        body: JSON.stringify({ nodeIds: [nodeId], group })
+      });
+      setNodesData(payload.nodes);
+      setGroupsData(payload.groups || groupsData);
+      refreshNodesView();
+      syncNodeMutationFeedback(payload, '节点已移动到分组');
+    } catch (error) {
+      showToast(`移动失败: ${error.message}`, 'error');
+    }
+  };
+
+  const switchActiveNode = async (nodeId) => {
+    if (getCurrentCoreState()?.proxy?.activeNodeId === nodeId) return;
+    try {
+      await requestJson('/api/system/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ activeNodeId: nodeId })
+      });
+      showToast('主节点已切换，旧连接已断开', 'success');
+      loadNodes();
+    } catch (error) {
+      showToast(`节点切换失败: ${error.message}`, 'error');
+    }
+  };
+
+  const bindNodesTableEvents = () => {
+    if (!nodesTbody || nodesTbody.dataset.delegatedBound === '1') return;
+    nodesTbody.dataset.delegatedBound = '1';
+
+    nodesTbody.addEventListener('click', async (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target) return;
+
+      const menuButton = target.closest('.node-action-menu-btn');
+      if (menuButton && nodesTbody.contains(menuButton)) {
+        event.stopPropagation();
+        const wrap = menuButton.closest('.node-action-menu-wrap');
+        const menu = wrap?.querySelector('.node-action-menu');
+        if (!menu) return;
+        const isOpen = menu.classList.contains('open');
+        closeOpenNodeMenus();
+        if (!isOpen) menu.classList.add('open');
+        return;
+      }
+
+      const moveGroupButton = target.closest('.move-group-btn');
+      if (moveGroupButton && nodesTbody.contains(moveGroupButton)) {
+        event.stopPropagation();
+        const wrap = moveGroupButton.closest('.move-group-wrap');
+        const menu = wrap?.querySelector('.group-menu');
+        if (!menu) return;
+        const isOpen = menu.classList.contains('open');
+        closeOpenNodeMenus();
+        const parentMenu = wrap.closest('.node-action-menu');
+        if (parentMenu) parentMenu.classList.add('open');
+        if (!isOpen) menu.classList.add('open');
+        return;
+      }
+
+      const groupItem = target.closest('.move-group-wrap .group-menu-item');
+      if (groupItem && nodesTbody.contains(groupItem)) {
+        event.stopPropagation();
+        closeOpenNodeMenus();
+        const wrap = groupItem.closest('.move-group-wrap');
+        const nodeId = wrap?.dataset.id;
+        if (nodeId) {
+          await moveNodeToGroup(nodeId, groupItem.dataset.group || null);
+        }
+        return;
+      }
+
+      const actionButton = target.closest('.test-node-btn, .share-node-btn, .qr-node-btn, .delete-node-btn, .detail-node-btn, .country-node-btn');
+      if (actionButton && nodesTbody.contains(actionButton)) {
+        event.stopPropagation();
+        closeOpenNodeMenus();
+        const id = actionButton.dataset.id;
+        if (actionButton.classList.contains('test-node-btn')) {
+          testNode(id);
+        } else if (actionButton.classList.contains('share-node-btn')) {
+          copyNodeShareLink({ id, nodesData, showToast });
+        } else if (actionButton.classList.contains('qr-node-btn')) {
+          openNodeShareQrModal({ id, nodesData, showToast });
+        } else if (actionButton.classList.contains('delete-node-btn')) {
+          deleteNode(id);
+        } else if (actionButton.classList.contains('detail-node-btn')) {
+          openEditModal(id);
+        } else if (actionButton.classList.contains('country-node-btn')) {
+          setNodeCountryOverride(id);
+        }
+        return;
+      }
+
+      const row = target.closest('.node-row');
+      if (!row || !nodesTbody.contains(row)) return;
+      if (target.closest('.node-check-cell') || target.closest('.row-actions')) return;
+      await switchActiveNode(row.dataset.id);
+    });
+
+    nodesTbody.addEventListener('change', (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target) return;
+      const checkbox = target.closest('.node-checkbox');
+      if (!checkbox || !nodesTbody.contains(checkbox)) return;
+      event.stopPropagation();
+      if (checkbox.checked) selectedNodeIds.add(checkbox.dataset.id);
+      else selectedNodeIds.delete(checkbox.dataset.id);
+      syncSelectAllState();
+      updateBulkBar();
+    });
+  };
+
   const renderSubscriptionDetail = () => {
     if (!subscriptionDetailPanel) {
       return;
@@ -321,86 +451,7 @@ export const createNodesPanelController = ({
       nodesData,
       escapeHtml,
     })).join('');
-
-    const closeOpenNodeMenus = () => {
-      nodesTbody.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
-        menu.classList.remove('open');
-      });
-    };
-
-    const bindRowAction = (selector, handler) => {
-      nodesTbody.querySelectorAll(selector).forEach((btn) => {
-        btn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          closeOpenNodeMenus();
-          handler(btn);
-        });
-      });
-    };
-
-    nodesTbody.querySelectorAll('.node-action-menu-btn').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const wrap = btn.closest('.node-action-menu-wrap');
-        const menu = wrap?.querySelector('.node-action-menu');
-        if (!menu) return;
-        const isOpen = menu.classList.contains('open');
-        closeOpenNodeMenus();
-        if (!isOpen) menu.classList.add('open');
-      });
-    });
-
-    bindRowAction('.test-node-btn', (btn) => {
-      testNode(btn.dataset.id);
-    });
-    bindRowAction('.share-node-btn', (btn) => {
-      copyNodeShareLink({ id: btn.dataset.id, nodesData, showToast });
-    });
-    bindRowAction('.qr-node-btn', (btn) => {
-      openNodeShareQrModal({ id: btn.dataset.id, nodesData, showToast });
-    });
-    bindRowAction('.delete-node-btn', (btn) => {
-      deleteNode(btn.dataset.id);
-    });
-    bindRowAction('.detail-node-btn', (btn) => {
-      openEditModal(btn.dataset.id);
-    });
-    bindRowAction('.country-node-btn', (btn) => {
-      setNodeCountryOverride(btn.dataset.id);
-    });
-
-    nodesTbody.querySelectorAll('.move-group-wrap').forEach((wrap) => {
-      const menuBtn = wrap.querySelector('.move-group-btn');
-      const menu = wrap.querySelector('.group-menu');
-      menuBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const isOpen = menu.classList.contains('open');
-        closeOpenNodeMenus();
-        const parentMenu = wrap.closest('.node-action-menu');
-        if (parentMenu) parentMenu.classList.add('open');
-        if (!isOpen) menu.classList.add('open');
-      });
-      menu.querySelectorAll('.group-menu-item').forEach((item) => {
-        item.addEventListener('click', async (event) => {
-          event.stopPropagation();
-          closeOpenNodeMenus();
-          const nodeId = wrap.dataset.id;
-          const group = item.dataset.group || null;
-          try {
-            const payload = await requestJson('/api/nodes/group', {
-              method: 'PUT',
-              body: JSON.stringify({ nodeIds: [nodeId], group })
-            });
-            setNodesData(payload.nodes);
-            setGroupsData(payload.groups || groupsData);
-            refreshNodesView();
-            showToast('节点已移动到分组', 'success');
-          } catch (error) {
-            showToast(`移动失败: ${error.message}`, 'error');
-          }
-        });
-      });
-    });
+    bindNodesTableEvents();
 
     const sortTh = document.getElementById('sort-latency-th');
     if (sortTh && !sortTh.dataset.bound) {
@@ -421,14 +472,14 @@ export const createNodesPanelController = ({
 
     const selectAllCb = document.getElementById('select-all-nodes');
     if (selectAllCb) {
-      const all = nodesTbody.querySelectorAll('.node-checkbox');
-      const checked = [...all].filter((item) => item.checked).length;
-      selectAllCb.checked = all.length > 0 && checked === all.length;
-      selectAllCb.indeterminate = checked > 0 && checked < all.length;
+      nodesTbody.querySelectorAll('.node-checkbox').forEach((cb) => {
+        cb.checked = selectedNodeIds.has(cb.dataset.id);
+      });
+      syncSelectAllState();
       if (!selectAllCb.dataset.bound) {
         selectAllCb.dataset.bound = '1';
         selectAllCb.addEventListener('change', () => {
-          document.querySelectorAll('.node-checkbox').forEach((cb) => {
+          nodesTbody.querySelectorAll('.node-checkbox').forEach((cb) => {
             cb.checked = selectAllCb.checked;
             if (selectAllCb.checked) selectedNodeIds.add(cb.dataset.id);
             else selectedNodeIds.delete(cb.dataset.id);
@@ -437,41 +488,6 @@ export const createNodesPanelController = ({
         });
       }
     }
-
-    nodesTbody.querySelectorAll('.node-checkbox').forEach((cb) => {
-      cb.checked = selectedNodeIds.has(cb.dataset.id);
-      cb.addEventListener('change', (event) => {
-        event.stopPropagation();
-        if (cb.checked) selectedNodeIds.add(cb.dataset.id);
-        else selectedNodeIds.delete(cb.dataset.id);
-        const all = nodesTbody.querySelectorAll('.node-checkbox');
-        const checked = [...all].filter((item) => item.checked).length;
-        const selectAll = document.getElementById('select-all-nodes');
-        if (selectAll) {
-          selectAll.checked = checked === all.length;
-          selectAll.indeterminate = checked > 0 && checked < all.length;
-        }
-        updateBulkBar();
-      });
-    });
-
-    nodesTbody.querySelectorAll('.node-row').forEach((row) => {
-      row.addEventListener('click', async (event) => {
-        if (event.target.closest('.node-check-cell') || event.target.closest('.row-actions')) return;
-        const nodeId = row.dataset.id;
-        if (getCurrentCoreState()?.proxy?.activeNodeId === nodeId) return;
-        try {
-          await requestJson('/api/system/settings', {
-            method: 'PUT',
-            body: JSON.stringify({ activeNodeId: nodeId })
-          });
-          showToast('主节点已切换，旧连接已断开', 'success');
-          loadNodes();
-        } catch (error) {
-          showToast(`节点切换失败: ${error.message}`, 'error');
-        }
-      });
-    });
   };
 
   const loadNodes = () => loadNodesData({
@@ -557,6 +573,7 @@ export const createNodesPanelController = ({
     clearSelectedNodeIds,
     renderGroupTabs,
     renderNodesElement,
+    syncNodeMutationFeedback,
     showToast,
   });
 
@@ -612,6 +629,8 @@ export const createNodesPanelController = ({
       showToast,
       renderNodesElement,
       updateBulkBar,
+      setNodesData,
+      syncNodeMutationFeedback,
       setNodeSearchQuery: (value) => { nodeSearchQuery = value; },
       getActiveGroupTab: () => activeGroupTab,
       resetActiveGroup: () => {

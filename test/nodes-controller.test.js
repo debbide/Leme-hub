@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderGroupTabs } from '../public/lib/nodes-controller.js';
+import { renderGroupTabs, updateBulkBar } from '../public/lib/nodes-controller.js';
 
 const createTabsElement = () => ({
   innerHTML: '',
@@ -88,4 +88,58 @@ test('renderGroupTabs marks refreshing subscriptions without expanding the tab c
 
   assert.match(html, /group-tab-badge is-syncing">刷新中/u);
   assert.doesNotMatch(html, /https?:\/\//u);
+});
+
+test('updateBulkBar escapes group menu labels', () => {
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const bar = {
+    classList: { add() {}, remove() {} }
+  };
+  const label = { textContent: '' };
+  const trigger = { disabled: false, title: '' };
+  const menu = {
+    innerHTML: '',
+    classList: { remove() {} },
+    querySelectorAll: () => []
+  };
+
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      getElementById(id) {
+        return {
+          'bulk-action-bar': bar,
+          'bulk-count-label': label,
+          'bulk-move-btn': trigger,
+          'bulk-group-menu': menu,
+        }[id] || null;
+      }
+    }
+  });
+
+  try {
+    updateBulkBar({
+      selectedNodeIds: new Set(['n1']),
+      groupsData: ['Feed <A>'],
+      nodesData: [{ id: 'n1', group: 'Feed <A>' }],
+      requestJson: async () => ({}),
+      setNodesData: () => {},
+      setGroupsData: () => {},
+      clearSelectedNodeIds: () => {},
+      renderGroupTabs: () => {},
+      renderNodesElement: () => {},
+      syncNodeMutationFeedback: () => {},
+      showToast: () => {},
+    });
+
+    assert.match(menu.innerHTML, /Feed &lt;A&gt;/u);
+    assert.doesNotMatch(menu.innerHTML, /Feed <A>/u);
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, 'document', documentDescriptor);
+    } else {
+      delete globalThis.document;
+    }
+  }
 });
