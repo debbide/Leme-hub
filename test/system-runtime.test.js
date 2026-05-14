@@ -74,6 +74,29 @@ test('renderUwpLoopbackStatus shows completed store login repair progress', () =
   assert.match(desc.textContent, /账号登录组件/u);
 });
 
+test('renderUwpLoopbackStatus shows proxy diagnosis failures after UWP repair', () => {
+  const statusEl = createElement();
+  const desc = createElement();
+
+  renderUwpLoopbackStatus({
+    status: { supported: true, exempted: true, exemptedCount: 2, totalCount: 2 },
+    systemProxyDiagnosis: {
+      ok: false,
+      checks: {
+        wininet: { ok: true },
+        winhttp: { ok: false },
+        localProxy: { ok: true }
+      }
+    },
+    uwpLoopbackStatusEl: statusEl,
+    uwpLoopbackDesc: desc
+  });
+
+  assert.equal(statusEl.textContent, '待验证 2/2');
+  assert.match(desc.textContent, /WinHTTP/u);
+  assert.match(statusEl.className, /is-warn/u);
+});
+
 test('renderUwpLoopbackStatus shows revoke action when Microsoft Store is exempted', () => {
   const statusEl = createElement();
   const enableBtn = createElement();

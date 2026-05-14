@@ -8,17 +8,19 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     id: 'windows-store',
     label: 'Microsoft Store',
     packageName: 'Microsoft.WindowsStore',
-    fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY
+    fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
+    required: true
   },
   {
-    id: 'store-purchase',
-    label: 'Store Purchase',
+    id: 'store-experience-host',
+    label: 'Store Experience Host',
     packageName: 'Microsoft.StorePurchaseApp',
-    fallbackFamilyName: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe'
+    fallbackFamilyName: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe',
+    required: true
   },
   {
-    id: 'aad-broker',
-    label: 'Microsoft Account Sign-in',
+    id: 'microsoft-account',
+    label: 'Microsoft Account',
     packageName: 'Microsoft.AAD.BrokerPlugin',
     fallbackFamilyName: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy'
   },
@@ -39,6 +41,18 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     label: 'Xbox Identity Provider',
     packageName: 'Microsoft.XboxIdentityProvider',
     fallbackFamilyName: 'Microsoft.XboxIdentityProvider_8wekyb3d8bbwe'
+  },
+  {
+    id: 'web-experience',
+    label: 'Windows Web Experience Pack',
+    packageName: 'MicrosoftWindows.Client.WebExperience',
+    fallbackFamilyName: 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy'
+  },
+  {
+    id: 'store-engagement',
+    label: 'Microsoft Store Engagement',
+    packageName: 'Microsoft.Services.Store.Engagement',
+    fallbackFamilyName: 'Microsoft.Services.Store.Engagement_8wekyb3d8bbwe'
   }
 ];
 const PACKAGE_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*_[A-Za-z0-9]+$/u;
@@ -54,6 +68,39 @@ const parsePackageFamilyNames = (stdout) => String(stdout || '')
     return PACKAGE_FAMILY_RE.test(candidate) ? [candidate] : [];
   });
 
+const parseAppxPackages = (stdout) => {
+  const packages = [];
+  let current = {};
+  const pushCurrent = () => {
+    if (current.name && current.packageFamilyName) {
+      packages.push(current);
+    }
+    current = {};
+  };
+
+  for (const rawLine of String(stdout || '').split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line) {
+      pushCurrent();
+      continue;
+    }
+
+    const separator = line.indexOf(':');
+    if (separator <= 0) continue;
+
+    const key = line.slice(0, separator).trim().toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    if (key === 'name') {
+      current.name = value;
+    } else if (key === 'packagefamilyname') {
+      current.packageFamilyName = value;
+    }
+  }
+
+  pushCurrent();
+  return packages.filter((item) => PACKAGE_NAME_RE.test(item.name) && PACKAGE_FAMILY_RE.test(item.packageFamilyName));
+};
+
 const parseLoopbackExemptions = (stdout) => {
   const result = new Set();
   const tokens = String(stdout || '').match(/[A-Za-z0-9][A-Za-z0-9._-]*_[A-Za-z0-9]+/gu) || [];
@@ -68,6 +115,7 @@ const parseLoopbackExemptions = (stdout) => {
 const samePackageFamilyName = (left, right) => String(left || '').toLowerCase() === String(right || '').toLowerCase();
 const hasPackageFamilyName = (packageFamilyNames, packageFamilyName) => packageFamilyNames
   .some((value) => samePackageFamilyName(value, packageFamilyName));
+const samePackageName = (left, right) => String(left || '').toLowerCase() === String(right || '').toLowerCase();
 
 const normalizeCommandError = (command, error) => {
   const detail = [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
@@ -89,6 +137,7 @@ export class UwpLoopbackManager {
     this.microsoftStorePackageFamilyName = options.microsoftStorePackageFamilyName || null;
     this.loopbackTargets = options.loopbackTargets || MICROSOFT_STORE_LOOPBACK_TARGETS;
     this.packageFamilyNameCache = new Map();
+    this.installedPackageCache = null;
   }
 
   get supported() {
@@ -126,6 +175,31 @@ export class UwpLoopbackManager {
 
     const { stdout } = await this.exec('CheckNetIsolation.exe', ['LoopbackExempt', '-s']);
     return parseLoopbackExemptions(stdout);
+  }
+
+  async listInstalledPackages() {
+    if (!this.supported) {
+      return [];
+    }
+    if (this.installedPackageCache) {
+      return this.installedPackageCache;
+    }
+
+    try {
+      const { stdout } = await this.exec('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        'Get-AppxPackage | Select-Object Name,PackageFamilyName | Format-List'
+      ]);
+      this.installedPackageCache = parseAppxPackages(stdout);
+    } catch {
+      this.installedPackageCache = [];
+    }
+
+    return this.installedPackageCache;
   }
 
   async resolvePackageFamilyName(packageName, fallbackFamilyName = null) {
@@ -179,10 +253,18 @@ export class UwpLoopbackManager {
     }
 
     const resolvedTargets = [];
+    const installedPackages = await this.listInstalledPackages();
     for (const target of this.loopbackTargets) {
-      const packageFamilyName = await this.resolvePackageFamilyName(target.packageName, target.fallbackFamilyName);
+      const installedPackage = installedPackages.find((item) => samePackageName(item.name, target.packageName));
+      const packageFamilyName = installedPackage?.packageFamilyName
+        || await this.resolvePackageFamilyName(target.packageName, target.required ? target.fallbackFamilyName : null);
       if (packageFamilyName) {
-        resolvedTargets.push({ ...target, packageFamilyName });
+        resolvedTargets.push({
+          ...target,
+          packageFamilyName,
+          installed: Boolean(installedPackage),
+          required: Boolean(target.required)
+        });
       }
     }
     return resolvedTargets;
@@ -276,6 +358,8 @@ export class UwpLoopbackManager {
       label: target.label,
       packageName: target.packageName,
       packageFamilyName: target.packageFamilyName,
+      installed: target.installed !== false,
+      required: Boolean(target.required),
       exempted: hasPackageFamilyName(exemptions, target.packageFamilyName)
     }));
     const exemptedCount = packages.filter((target) => target.exempted).length;
@@ -298,7 +382,9 @@ export class UwpLoopbackManager {
 
 export const internals = {
   parseLoopbackExemptions,
+  parseAppxPackages,
   parsePackageFamilyNames,
   hasPackageFamilyName,
+  samePackageName,
   samePackageFamilyName
 };

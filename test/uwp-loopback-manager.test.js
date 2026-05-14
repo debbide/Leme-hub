@@ -50,6 +50,21 @@ test('package parser accepts raw PowerShell package family output', () => {
   );
 });
 
+test('appx package parser reads current-user package list', () => {
+  const packages = internals.parseAppxPackages(`
+Name              : Microsoft.WindowsStore
+PackageFamilyName : Microsoft.WindowsStore_8wekyb3d8bbwe
+
+Name              : Microsoft.StorePurchaseApp
+PackageFamilyName : Microsoft.StorePurchaseApp_8wekyb3d8bbwe
+`);
+
+  assert.deepEqual(packages, [
+    { name: 'Microsoft.WindowsStore', packageFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY },
+    { name: 'Microsoft.StorePurchaseApp', packageFamilyName: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe' }
+  ]);
+});
+
 test('manager resolves Microsoft Store package family through PowerShell', async () => {
   const calls = [];
   const manager = new UwpLoopbackManager({
@@ -75,6 +90,20 @@ test('manager resolves Microsoft Store loopback target package family names', as
     loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 3),
     execFile: async (_command, args) => {
       const script = args[args.length - 1];
+      if (String(script).includes('Get-AppxPackage | Select-Object')) {
+        return {
+          stdout: `
+Name              : Microsoft.WindowsStore
+PackageFamilyName : Microsoft.WindowsStore_8wekyb3d8bbwe
+
+Name              : Microsoft.StorePurchaseApp
+PackageFamilyName : Microsoft.StorePurchaseApp_8wekyb3d8bbwe
+
+Name              : Microsoft.AAD.BrokerPlugin
+PackageFamilyName : Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy
+`
+        };
+      }
       if (script.includes('Microsoft.StorePurchaseApp')) {
         return { stdout: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe\n' };
       }
@@ -92,6 +121,31 @@ test('manager resolves Microsoft Store loopback target package family names', as
     'Microsoft.StorePurchaseApp_8wekyb3d8bbwe',
     'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy'
   ]);
+});
+
+test('manager only falls back for required Store packages when package list is unavailable', async () => {
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    execFile: async (_command, args) => {
+      const script = args[args.length - 1] || '';
+      if (String(script).includes('Get-AppxPackage | Select-Object')) {
+        throw new Error('Access is denied');
+      }
+      if (String(script).includes('Microsoft.WindowsStore')) {
+        return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
+      }
+      if (String(script).includes('Microsoft.StorePurchaseApp')) {
+        return { stdout: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe\n' };
+      }
+      return { stdout: '' };
+    }
+  });
+
+  const targets = await manager.resolveMicrosoftStoreLoopbackTargets();
+
+  assert.equal(targets.some((target) => target.id === 'windows-store'), true);
+  assert.equal(targets.some((target) => target.id === 'store-experience-host'), true);
+  assert.equal(targets.some((target) => target.id === 'microsoft-account'), false);
 });
 
 test('add and remove exemptions call CheckNetIsolation with argument arrays', async () => {
@@ -128,7 +182,7 @@ test('status treats CheckNetIsolation package names case-insensitively', async (
   const manager = new UwpLoopbackManager({
     platform: 'win32',
     loopbackTargets: [
-      { id: 'store', label: 'Store', packageName: 'Microsoft.WindowsStore', fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY }
+      { id: 'store', label: 'Store', packageName: 'Microsoft.WindowsStore', fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY, required: true }
     ],
     microsoftStorePackageFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
     execFile: async (_command, args) => {

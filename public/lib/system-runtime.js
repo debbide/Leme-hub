@@ -1,5 +1,6 @@
 export const renderUwpLoopbackStatus = ({
   status,
+  systemProxyDiagnosis = null,
   uwpLoopbackStatusEl,
   uwpLoopbackDesc,
   uwpLoopbackRefreshBtn,
@@ -13,6 +14,14 @@ export const renderUwpLoopbackStatus = ({
   const totalCount = Number(status?.totalCount) || 0;
   const exemptedCount = Number(status?.exemptedCount) || 0;
   const progressText = totalCount > 1 ? ` ${exemptedCount}/${totalCount}` : '';
+  const diagnosis = systemProxyDiagnosis || status?.systemProxyDiagnosis || null;
+  const diagnosisFailedChecks = diagnosis?.checks
+    ? Object.entries(diagnosis.checks)
+      .filter(([, check]) => check && check.ok === false)
+      .map(([name]) => name)
+    : [];
+  const diagnosisOk = !diagnosis || diagnosis.ok !== false;
+  const allOk = exempted && diagnosisOk;
 
   if (uwpLoopbackStatusEl) {
     uwpLoopbackStatusEl.className = 'uwp-loopback-status';
@@ -25,9 +34,12 @@ export const renderUwpLoopbackStatus = ({
     } else if (lastError) {
       uwpLoopbackStatusEl.classList.add('is-warn');
       uwpLoopbackStatusEl.textContent = '检测失败';
-    } else if (exempted) {
+    } else if (allOk) {
       uwpLoopbackStatusEl.classList.add('is-ok');
       uwpLoopbackStatusEl.textContent = `已修复${progressText}`;
+    } else if (exempted) {
+      uwpLoopbackStatusEl.classList.add('is-warn');
+      uwpLoopbackStatusEl.textContent = `待验证${progressText}`;
     } else {
       uwpLoopbackStatusEl.classList.add('is-warn');
       uwpLoopbackStatusEl.textContent = `未修复${progressText}`;
@@ -41,8 +53,16 @@ export const renderUwpLoopbackStatus = ({
       uwpLoopbackDesc.textContent = '仅 Windows 的微软商店需要处理 UWP 回环限制';
     } else if (lastError) {
       uwpLoopbackDesc.textContent = lastError;
+    } else if (exempted && !diagnosisOk) {
+      const labels = {
+        wininet: '系统代理',
+        winhttp: 'WinHTTP',
+        localProxy: '本地代理入口'
+      };
+      const failedText = diagnosisFailedChecks.map((name) => labels[name] || name).join('、') || diagnosis?.lastError || '代理链路';
+      uwpLoopbackDesc.textContent = `UWP 已放行，但 ${failedText} 未通过；请确认代理已启动并以管理员身份修复`;
     } else if (exempted) {
-      uwpLoopbackDesc.textContent = '微软商店、购买和账号登录组件已允许访问本地代理';
+      uwpLoopbackDesc.textContent = '微软商店、Store Experience Host 和账号登录组件已允许访问本地代理';
     } else {
       uwpLoopbackDesc.textContent = totalCount > 1
         ? '微软商店登录链路仍有组件不能访问本地代理'
@@ -71,7 +91,7 @@ export const loadUwpLoopbackStatus = async ({
 }) => {
   try {
     const payload = await requestJson('/api/system/uwp-loopback');
-    renderUwpLoopbackStatus(payload.uwpLoopback || null);
+    renderUwpLoopbackStatus(payload.uwpLoopback || null, payload.systemProxyDiagnosis || null);
     if (payload.core) updateCoreStatus(payload.core);
     return payload.uwpLoopback || null;
   } catch (error) {
@@ -91,7 +111,7 @@ export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, 
     renderGeoIpStatus(payload.geoIp || payload.core?.geoIp || null);
     renderRulesetDatabaseStatus(payload.rulesetDatabase || payload.core?.rulesetDatabase || null);
     if (typeof renderUwpLoopbackStatus === 'function') {
-      renderUwpLoopbackStatus(payload.uwpLoopback || null);
+      renderUwpLoopbackStatus(payload.uwpLoopback || null, payload.systemProxyDiagnosis || null);
     }
     updateCoreStatus(payload.core);
     if (typeof applySettingsSnapshot === 'function') {

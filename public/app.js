@@ -571,8 +571,9 @@ const refreshRulesetDatabase = () => refreshRulesetDatabaseState({
   showToast,
 });
 
-const renderUwpLoopbackStatus = (status) => renderUwpLoopbackStatusView({
+const renderUwpLoopbackStatus = (status, systemProxyDiagnosis = null) => renderUwpLoopbackStatusView({
   status,
+  systemProxyDiagnosis,
   uwpLoopbackStatusEl,
   uwpLoopbackDesc,
   uwpLoopbackRefreshBtn,

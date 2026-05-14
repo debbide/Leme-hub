@@ -1,4 +1,5 @@
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
@@ -179,6 +180,11 @@ const buildLinuxEnvironmentFile = (entries) => [
   '# Managed by Leme Hub',
   ...Object.entries(entries).map(([key, value]) => `${key}=${value}`)
 ].join('\n') + '\n';
+const sameEndpoint = (left, right) => {
+  if (!left || !right) return false;
+  return trimValue(left.host).toLowerCase() === trimValue(right.host).toLowerCase()
+    && Number(left.port) === Number(right.port);
+};
 
 export class SystemProxyManager {
   constructor(options = {}) {
@@ -308,6 +314,26 @@ export class SystemProxyManager {
     return parsed;
   }
 
+  parseWindowsWinHttpProxy(value) {
+    const text = String(value || '');
+    if (/direct access|no proxy server|直接访问|没有代理服务器/iu.test(text)) {
+      return { enabled: false, http: null, raw: text };
+    }
+
+    const proxyLine = text.split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find((line) => /proxy server|代理服务器/iu.test(line));
+    const candidate = proxyLine?.match(/:\s*(.+)$/u)?.[1]?.trim() || text.trim();
+    const parsed = this.parseWindowsProxyServer(candidate);
+    const http = parsed.http || parseHostPort(candidate);
+
+    return {
+      enabled: Boolean(http),
+      http,
+      raw: text
+    };
+  }
+
   async getWindowsRegistryValue(name) {
     const { stdout } = await this.exec('reg', ['query', WINDOWS_PROXY_REG_PATH, '/v', name]);
     const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -350,6 +376,11 @@ export class SystemProxyManager {
     await this.notifyWindowsProxyChanged();
   }
 
+  async getWindowsWinHttpStatus() {
+    const { stdout } = await this.exec('netsh', ['winhttp', 'show', 'proxy']);
+    return this.parseWindowsWinHttpProxy(stdout);
+  }
+
   async disableWindowsProxy() {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
@@ -366,6 +397,82 @@ export class SystemProxyManager {
 
   async resetWindowsWinHttpProxy() {
     await this.exec('netsh', ['winhttp', 'reset', 'proxy']);
+  }
+
+  async probeTcpEndpoint({ host, port, timeoutMs = 1500 }) {
+    const normalizedHost = trimValue(host);
+    const normalizedPort = Number(port);
+    if (!normalizedHost || !Number.isInteger(normalizedPort) || normalizedPort <= 0) {
+      return { ok: false, error: 'Invalid endpoint' };
+    }
+
+    return new Promise((resolve) => {
+      const socket = net.createConnection({ host: normalizedHost, port: normalizedPort });
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(result);
+      };
+
+      socket.setTimeout(timeoutMs);
+      socket.once('connect', () => finish({ ok: true }));
+      socket.once('timeout', () => finish({ ok: false, error: 'Connection timed out' }));
+      socket.once('error', (error) => finish({ ok: false, error: error.message }));
+    });
+  }
+
+  async diagnoseWindowsProxy({ host, httpPort }) {
+    const expected = {
+      host: normalizeWindowsSystemProxyHost(host),
+      port: Number(httpPort)
+    };
+    const checks = {
+      wininet: { ok: false, status: null, error: null },
+      winhttp: { ok: false, status: null, error: null },
+      localProxy: { ok: false, error: null }
+    };
+
+    try {
+      checks.wininet.status = await this.getWindowsStatus();
+      checks.wininet.ok = checks.wininet.status.enabled && sameEndpoint(checks.wininet.status.http, expected);
+    } catch (error) {
+      checks.wininet.error = error.message;
+    }
+
+    try {
+      checks.winhttp.status = await this.getWindowsWinHttpStatus();
+      checks.winhttp.ok = checks.winhttp.status.enabled && sameEndpoint(checks.winhttp.status.http, expected);
+    } catch (error) {
+      checks.winhttp.error = error.message;
+    }
+
+    const localProxy = await this.probeTcpEndpoint(expected);
+    checks.localProxy = localProxy.ok
+      ? { ok: true, error: null }
+      : { ok: false, error: localProxy.error || 'Local proxy is not reachable' };
+
+    return {
+      supported: true,
+      expected,
+      ok: checks.wininet.ok && checks.winhttp.ok && checks.localProxy.ok,
+      checks
+    };
+  }
+
+  async diagnose({ host, httpPort }) {
+    if (this.platform === 'win32') {
+      return this.diagnoseWindowsProxy({ host, httpPort });
+    }
+
+    return {
+      supported: false,
+      expected: null,
+      ok: false,
+      checks: {},
+      lastError: `System proxy diagnosis is not supported on ${this.platform}`
+    };
   }
 
   async notifyWindowsProxyChanged() {

@@ -47,12 +47,30 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
     }
   };
 
+  const getSystemProxyDiagnosis = async () => {
+    if (!coreManager || typeof coreManager.diagnoseSystemProxy !== 'function') {
+      return null;
+    }
+
+    try {
+      return await coreManager.diagnoseSystemProxy();
+    } catch (error) {
+      return {
+        supported: true,
+        ok: false,
+        lastError: error.message,
+        checks: {}
+      };
+    }
+  };
+
   return {
     'GET /api/system/status': async () => {
-      const [systemProxy, , uwpLoopback] = await Promise.all([
+      const [systemProxy, , uwpLoopback, systemProxyDiagnosis] = await Promise.all([
         coreManager.refreshSystemProxyState(),
         refreshAutoStartState(),
-        getUwpLoopbackStatus()
+        getUwpLoopbackStatus(),
+        getSystemProxyDiagnosis()
       ]);
       return {
         status: 200,
@@ -69,6 +87,7 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
           geoIp: coreManager.getGeoIpStatus(),
           rulesetDatabase: coreManager.getRulesetDatabaseStatus(),
           systemProxy,
+          systemProxyDiagnosis,
           uwpLoopback
         }
       };
@@ -101,13 +120,14 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
           body: {
             ok: true,
             uwpLoopback: await uwpLoopbackManager.addMicrosoftStoreExemptions(),
+            systemProxyDiagnosis: await getSystemProxyDiagnosis(),
             core: coreManager.getStatus()
           }
         };
       } catch (error) {
         return {
           status: error.status || 500,
-          body: { ok: false, error: error.message, uwpLoopback: error.uwpLoopback || await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
+          body: { ok: false, error: error.message, uwpLoopback: error.uwpLoopback || await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), systemProxyDiagnosis: await getSystemProxyDiagnosis(), core: coreManager.getStatus() }
         };
       }
     },

@@ -263,12 +263,12 @@ export const bindSystemEvents = ({
       const payload = await requestJson(path, { method: 'POST' });
       if (payload.core) updateCoreStatus(payload.core);
       if (typeof renderUwpLoopbackStatus === 'function') {
-        renderUwpLoopbackStatus(payload.uwpLoopback || null);
+        renderUwpLoopbackStatus(payload.uwpLoopback || null, payload.systemProxyDiagnosis || null);
       }
       showToast(successText, 'success');
     } catch (error) {
       if (error.body?.uwpLoopback && typeof renderUwpLoopbackStatus === 'function') {
-        renderUwpLoopbackStatus(error.body.uwpLoopback);
+        renderUwpLoopbackStatus(error.body.uwpLoopback, error.body.systemProxyDiagnosis || null);
       }
       showToast(error.message, 'error');
     } finally {

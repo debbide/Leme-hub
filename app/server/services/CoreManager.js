@@ -1798,6 +1798,19 @@ export class CoreManager {
     return this.state.systemProxy;
   }
 
+  async diagnoseSystemProxy() {
+    const settings = this.getSettingsSnapshot();
+    if (!settings.systemProxyEnabled || !settings.systemProxyCaptureEnabled || typeof this.systemProxyManager.diagnose !== 'function') {
+      return null;
+    }
+
+    return this.systemProxyManager.diagnose({
+      host: settings.proxyListenHost,
+      httpPort: settings.systemProxyHttpPort,
+      socksPort: settings.systemProxySocksPort
+    });
+  }
+
   getRuntimeOptions(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
     const snapshot = this.getSettingsSnapshot();
     return {

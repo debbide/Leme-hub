@@ -157,6 +157,7 @@ test('system routes expose Microsoft Store UWP loopback status and actions', asy
       refreshAutoStartState: async () => ({ enabled: false, desiredEnabled: false }),
       getSettingsSnapshot: () => ({ autoStart: false }),
       getStatus: () => ({ status: 'running' }),
+      diagnoseSystemProxy: async () => ({ ok: true, checks: { wininet: { ok: true }, winhttp: { ok: true }, localProxy: { ok: true } } }),
       getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
       getRulesetDatabaseStatus: () => ({ ready: true, pending: false, lastError: null })
     },
@@ -179,8 +180,10 @@ test('system routes expose Microsoft Store UWP loopback status and actions', asy
   const disableResponse = await routes['POST /api/system/uwp-loopback/store/disable']({});
 
   assert.equal(statusResponse.body.uwpLoopback.supported, true);
+  assert.equal(statusResponse.body.systemProxyDiagnosis.ok, true);
   assert.equal(detailResponse.body.uwpLoopback.exempted, false);
   assert.equal(enableResponse.body.uwpLoopback.exempted, true);
+  assert.equal(enableResponse.body.systemProxyDiagnosis.ok, true);
   assert.equal(disableResponse.body.uwpLoopback.exempted, false);
   assert.deepEqual(calls, [
     ['add-store-login'],

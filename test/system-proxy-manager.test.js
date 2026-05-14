@@ -48,6 +48,51 @@ test('windows status parses single proxy endpoint as http proxy', async () => {
   assert.equal(status.socks, null);
 });
 
+test('windows WinHTTP status parses netsh proxy output', () => {
+  const manager = new SystemProxyManager({ platform: 'win32' });
+
+  assert.deepEqual(
+    manager.parseWindowsWinHttpProxy('Current WinHTTP proxy settings:\r\n    Proxy Server(s) : 127.0.0.1:18999\r\n    Bypass List     : localhost;127.*'),
+    {
+      enabled: true,
+      http: { host: '127.0.0.1', port: 18999 },
+      raw: 'Current WinHTTP proxy settings:\r\n    Proxy Server(s) : 127.0.0.1:18999\r\n    Bypass List     : localhost;127.*'
+    }
+  );
+});
+
+test('windows WinHTTP status treats direct access as disabled', () => {
+  const manager = new SystemProxyManager({ platform: 'win32' });
+  const status = manager.parseWindowsWinHttpProxy('Current WinHTTP proxy settings:\r\n    Direct access (no proxy server).');
+
+  assert.equal(status.enabled, false);
+  assert.equal(status.http, null);
+});
+
+test('windows diagnosis checks WinINET, WinHTTP, and local proxy endpoint', async () => {
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      if (command === 'netsh' && args.includes('show')) {
+        return { stdout: 'Proxy Server(s) : 127.0.0.1:18999' };
+      }
+      const name = args[args.length - 1];
+      if (name === 'ProxyEnable') {
+        return { stdout: 'ProxyEnable    REG_DWORD    0x1' };
+      }
+      return { stdout: 'ProxyServer    REG_SZ    127.0.0.1:18999' };
+    }
+  });
+  manager.probeTcpEndpoint = async () => ({ ok: true });
+
+  const diagnosis = await manager.diagnose({ host: '0.0.0.0', httpPort: 18999 });
+
+  assert.equal(diagnosis.ok, true);
+  assert.equal(diagnosis.checks.wininet.ok, true);
+  assert.equal(diagnosis.checks.winhttp.ok, true);
+  assert.equal(diagnosis.checks.localProxy.ok, true);
+});
+
 test('linux disabled status clears proxy endpoints', async (t) => {
   const configHome = createTempConfigHome();
   t.after(() => fs.rmSync(configHome, { recursive: true, force: true }));
