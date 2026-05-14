@@ -26,6 +26,8 @@ const parseLoopbackExemptions = (stdout) => {
   return [...result];
 };
 
+const samePackageFamilyName = (left, right) => String(left || '').toLowerCase() === String(right || '').toLowerCase();
+
 const normalizeCommandError = (command, error) => {
   const detail = [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
   if (/access is denied|elevat|administrator|拒绝访问|管理员/iu.test(detail)) {
@@ -107,7 +109,14 @@ export class UwpLoopbackManager {
 
     const value = this.validatePackageFamilyName(packageFamilyName);
     await this.exec('CheckNetIsolation.exe', ['LoopbackExempt', '-a', `-n=${value}`]);
-    return this.getMicrosoftStoreStatus(value);
+    const status = await this.getMicrosoftStoreStatus(value);
+    if (!status.exempted) {
+      const error = new Error('修复命令已执行，但系统复查后仍未放行微软商店回环');
+      error.status = 409;
+      error.uwpLoopback = status;
+      throw error;
+    }
+    return status;
   }
 
   async removeExemption(packageFamilyName) {
@@ -117,7 +126,14 @@ export class UwpLoopbackManager {
 
     const value = this.validatePackageFamilyName(packageFamilyName);
     await this.exec('CheckNetIsolation.exe', ['LoopbackExempt', '-d', `-n=${value}`]);
-    return this.getMicrosoftStoreStatus(value);
+    const status = await this.getMicrosoftStoreStatus(value);
+    if (status.exempted) {
+      const error = new Error('撤销命令已执行，但系统复查后微软商店仍在回环放行列表中');
+      error.status = 409;
+      error.uwpLoopback = status;
+      throw error;
+    }
+    return status;
   }
 
   async getMicrosoftStoreStatus(packageFamilyNameOverride = null) {
@@ -125,7 +141,9 @@ export class UwpLoopbackManager {
       ? (packageFamilyNameOverride || await this.resolveMicrosoftStorePackageFamilyName())
       : MICROSOFT_STORE_PACKAGE_FAMILY;
     const exemptions = this.supported ? await this.listExemptions() : [];
-    const exempted = packageFamilyName ? exemptions.includes(packageFamilyName) : false;
+    const exempted = packageFamilyName
+      ? exemptions.some((exemption) => samePackageFamilyName(exemption, packageFamilyName))
+      : false;
 
     return {
       supported: this.supported,
@@ -138,5 +156,6 @@ export class UwpLoopbackManager {
 
 export const internals = {
   parseLoopbackExemptions,
-  parsePackageFamilyNames
+  parsePackageFamilyNames,
+  samePackageFamilyName
 };

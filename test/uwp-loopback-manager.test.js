@@ -24,6 +24,24 @@ List Loopback Exempted AppContainers
   ]);
 });
 
+test('loopback parser handles localized lowercase package names', () => {
+  const output = `
+列出环回免除的 AppContainer
+
+[1] -----------------------------------------------------------------
+    名称: microsoft.windowsstore_8wekyb3d8bbwe
+    SID:  S-1-15-2-1609473798-1231923017
+`;
+
+  assert.deepEqual(internals.parseLoopbackExemptions(output), [
+    'microsoft.windowsstore_8wekyb3d8bbwe'
+  ]);
+  assert.equal(internals.samePackageFamilyName(
+    'microsoft.windowsstore_8wekyb3d8bbwe',
+    MICROSOFT_STORE_PACKAGE_FAMILY
+  ), true);
+});
+
 test('package parser accepts raw PowerShell package family output', () => {
   assert.deepEqual(
     internals.parsePackageFamilyNames('Microsoft.WindowsStore_8wekyb3d8bbwe\r\n'),
@@ -52,6 +70,7 @@ test('manager resolves Microsoft Store package family through PowerShell', async
 
 test('add and remove exemptions call CheckNetIsolation with argument arrays', async () => {
   const calls = [];
+  let exempted = false;
   const manager = new UwpLoopbackManager({
     platform: 'win32',
     execFile: async (command, args) => {
@@ -59,8 +78,14 @@ test('add and remove exemptions call CheckNetIsolation with argument arrays', as
       if (command === 'powershell.exe') {
         return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
       }
+      if (args.includes('-a')) {
+        exempted = true;
+      }
+      if (args.includes('-d')) {
+        exempted = false;
+      }
       if (args.includes('-s')) {
-        return { stdout: `Name: ${MICROSOFT_STORE_PACKAGE_FAMILY}` };
+        return { stdout: exempted ? `Name: ${MICROSOFT_STORE_PACKAGE_FAMILY}` : '' };
       }
       return { stdout: '' };
     }
@@ -71,6 +96,41 @@ test('add and remove exemptions call CheckNetIsolation with argument arrays', as
 
   assert.deepEqual(calls[0], ['CheckNetIsolation.exe', 'LoopbackExempt', '-a', `-n=${MICROSOFT_STORE_PACKAGE_FAMILY}`]);
   assert.deepEqual(calls[2], ['CheckNetIsolation.exe', 'LoopbackExempt', '-d', `-n=${MICROSOFT_STORE_PACKAGE_FAMILY}`]);
+});
+
+test('status treats CheckNetIsolation package names case-insensitively', async () => {
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    microsoftStorePackageFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
+    execFile: async (_command, args) => {
+      if (args.includes('-s')) {
+        return { stdout: '名称: microsoft.windowsstore_8wekyb3d8bbwe' };
+      }
+      return { stdout: '' };
+    }
+  });
+
+  const status = await manager.getMicrosoftStoreStatus();
+
+  assert.equal(status.exempted, true);
+});
+
+test('add exemption fails when post-check still reports not exempted', async () => {
+  const manager = new UwpLoopbackManager({
+    platform: 'win32',
+    microsoftStorePackageFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
+    execFile: async (_command, args) => {
+      if (args.includes('-s')) {
+        return { stdout: '' };
+      }
+      return { stdout: '' };
+    }
+  });
+
+  await assert.rejects(
+    () => manager.addExemption(MICROSOFT_STORE_PACKAGE_FAMILY),
+    /复查后仍未放行/u
+  );
 });
 
 test('manager rejects invalid package family names', async () => {

@@ -111,7 +111,7 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
       } catch (error) {
         return {
           status: error.status || 500,
-          body: { ok: false, error: error.message, uwpLoopback: await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
+          body: { ok: false, error: error.message, uwpLoopback: error.uwpLoopback || await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
         };
       }
     },
@@ -133,7 +133,7 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
       } catch (error) {
         return {
           status: error.status || 500,
-          body: { ok: false, error: error.message, uwpLoopback: await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
+          body: { ok: false, error: error.message, uwpLoopback: error.uwpLoopback || await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
         };
       }
     },

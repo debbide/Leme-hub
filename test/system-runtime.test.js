@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { renderUwpLoopbackStatus } from '../public/lib/system-runtime.js';
+import { requestJson } from '../public/lib/utils.js';
 
 const createClassList = (owner) => ({
   add(value) {
@@ -80,4 +81,29 @@ test('renderUwpLoopbackStatus shows detection errors without enabling repair', (
   assert.equal(desc.textContent, '需要管理员权限');
   assert.equal(enableBtn.hidden, false);
   assert.equal(enableBtn.disabled, true);
+});
+
+test('requestJson exposes error response body to callers', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({
+      ok: false,
+      error: '修复命令已执行，但系统复查后仍未放行微软商店回环',
+      uwpLoopback: { exempted: false }
+    })
+  });
+
+  await assert.rejects(
+    async () => requestJson('/api/system/uwp-loopback/store/enable', { method: 'POST' }),
+    (error) => {
+      assert.equal(error.status, 409);
+      assert.equal(error.body.uwpLoopback.exempted, false);
+      return true;
+    }
+  );
 });

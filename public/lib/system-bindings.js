@@ -267,7 +267,10 @@ export const bindSystemEvents = ({
       }
       showToast(successText, 'success');
     } catch (error) {
-      showToast(`UWP 回环修复失败: ${error.message}`, 'error');
+      if (error.body?.uwpLoopback && typeof renderUwpLoopbackStatus === 'function') {
+        renderUwpLoopbackStatus(error.body.uwpLoopback);
+      }
+      showToast(error.message, 'error');
     } finally {
       button.textContent = originalText;
       await loadSystemStatus();

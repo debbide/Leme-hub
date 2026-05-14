@@ -216,6 +216,36 @@ test('system status keeps loading when UWP loopback detection fails', async () =
   assert.equal(statusResponse.body.uwpLoopback.lastError, '需要管理员权限');
 });
 
+test('system UWP loopback action returns post-check failure status', async () => {
+  const routes = createSystemRoutes({
+    store: {},
+    paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
+    coreManager: {
+      getStatus: () => ({ status: 'running' }),
+      getSettingsSnapshot: () => ({ autoStart: false }),
+      getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
+      getRulesetDatabaseStatus: () => ({ ready: true, pending: false, lastError: null })
+    },
+    uwpLoopbackManager: {
+      getMicrosoftStoreStatus: async () => ({ supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] }),
+      resolveMicrosoftStorePackageFamilyName: async () => 'Microsoft.WindowsStore_8wekyb3d8bbwe',
+      addExemption: async () => {
+        const error = new Error('修复命令已执行，但系统复查后仍未放行微软商店回环');
+        error.status = 409;
+        error.uwpLoopback = { supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] };
+        throw error;
+      }
+    }
+  });
+
+  const response = await routes['POST /api/system/uwp-loopback/store/enable']({});
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.uwpLoopback.exempted, false);
+  assert.match(response.body.error, /复查后仍未放行/u);
+});
+
 test('system routes expose ruleset database status and refresh endpoint', async () => {
   let autoStartRefreshes = 0;
   const routes = createSystemRoutes({
