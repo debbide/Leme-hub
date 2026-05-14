@@ -65,6 +65,38 @@ PackageFamilyName : Microsoft.StorePurchaseApp_8wekyb3d8bbwe
   ]);
 });
 
+test('package full name parser reads AppxAllUserStore application keys', () => {
+  const packages = internals.parsePackageFullNames(`
+Microsoft.StorePurchaseApp_22508.1401.2.0_neutral_~_8wekyb3d8bbwe
+MicrosoftWindows.Client.WebExperience_525.24401.50.0_neutral_~_cw5n1h2txyewy
+windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
+`);
+
+  assert.deepEqual(packages, [
+    { name: 'Microsoft.StorePurchaseApp', packageFamilyName: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe' },
+    { name: 'MicrosoftWindows.Client.WebExperience', packageFamilyName: 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy' },
+    { name: 'windows.immersivecontrolpanel', packageFamilyName: 'windows.immersivecontrolpanel_cw5n1h2txyewy' }
+  ]);
+});
+
+test('default Microsoft Store targets include v2rayN-aligned account components', () => {
+  assert.deepEqual(
+    MICROSOFT_STORE_LOOPBACK_TARGETS.map((target) => target.id),
+    [
+      'windows-store',
+      'store-experience-host',
+      'microsoft-account',
+      'accounts-control',
+      'xbox-identity',
+      'web-experience',
+      'email-and-accounts',
+      'people-experience',
+      'cloud-experience',
+      'store-engagement'
+    ]
+  );
+});
+
 test('manager resolves Microsoft Store package family through PowerShell', async () => {
   const calls = [];
   const manager = new UwpLoopbackManager({
@@ -87,7 +119,7 @@ test('manager resolves Microsoft Store package family through PowerShell', async
 test('manager resolves Microsoft Store loopback target package family names', async () => {
   const manager = new UwpLoopbackManager({
     platform: 'win32',
-    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 3),
+    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 7),
     execFile: async (_command, args) => {
       const script = args[args.length - 1];
       if (String(script).includes('Get-AppxPackage | Select-Object')) {
@@ -101,6 +133,18 @@ PackageFamilyName : Microsoft.StorePurchaseApp_8wekyb3d8bbwe
 
 Name              : Microsoft.AAD.BrokerPlugin
 PackageFamilyName : Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy
+
+Name              : Microsoft.AccountsControl
+PackageFamilyName : Microsoft.AccountsControl_cw5n1h2txyewy
+`
+        };
+      }
+      if (String(script).includes('AppxAllUserStore')) {
+        return {
+          stdout: `
+Microsoft.XboxIdentityProvider_12.115.1001.0_neutral_~_8wekyb3d8bbwe
+MicrosoftWindows.Client.WebExperience_525.24401.50.0_neutral_~_cw5n1h2txyewy
+windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
 `
         };
       }
@@ -119,11 +163,15 @@ PackageFamilyName : Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy
   assert.deepEqual(targets.map((target) => target.packageFamilyName), [
     MICROSOFT_STORE_PACKAGE_FAMILY,
     'Microsoft.StorePurchaseApp_8wekyb3d8bbwe',
-    'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy'
+    'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy',
+    'Microsoft.AccountsControl_cw5n1h2txyewy',
+    'Microsoft.XboxIdentityProvider_8wekyb3d8bbwe',
+    'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy',
+    'windows.immersivecontrolpanel_cw5n1h2txyewy'
   ]);
 });
 
-test('manager only falls back for required Store packages when package list is unavailable', async () => {
+test('manager falls back for core Microsoft Store account packages when package list is unavailable', async () => {
   const manager = new UwpLoopbackManager({
     platform: 'win32',
     execFile: async (_command, args) => {
@@ -131,21 +179,28 @@ test('manager only falls back for required Store packages when package list is u
       if (String(script).includes('Get-AppxPackage | Select-Object')) {
         throw new Error('Access is denied');
       }
-      if (String(script).includes('Microsoft.WindowsStore')) {
-        return { stdout: `${MICROSOFT_STORE_PACKAGE_FAMILY}\n` };
+      if (String(script).includes('AppxAllUserStore')) {
+        return { stdout: '' };
       }
-      if (String(script).includes('Microsoft.StorePurchaseApp')) {
-        return { stdout: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe\n' };
-      }
-      return { stdout: '' };
+      throw new Error('Access is denied');
     }
   });
 
   const targets = await manager.resolveMicrosoftStoreLoopbackTargets();
 
-  assert.equal(targets.some((target) => target.id === 'windows-store'), true);
-  assert.equal(targets.some((target) => target.id === 'store-experience-host'), true);
-  assert.equal(targets.some((target) => target.id === 'microsoft-account'), false);
+  assert.deepEqual(
+    targets.map((target) => target.id),
+    [
+      'windows-store',
+      'store-experience-host',
+      'microsoft-account',
+      'accounts-control',
+      'xbox-identity',
+      'web-experience',
+      'email-and-accounts'
+    ]
+  );
+  assert.equal(targets.some((target) => target.id === 'store-engagement'), false);
 });
 
 test('add and remove exemptions call CheckNetIsolation with argument arrays', async () => {

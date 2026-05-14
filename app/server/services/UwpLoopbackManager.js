@@ -9,6 +9,7 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     label: 'Microsoft Store',
     packageName: 'Microsoft.WindowsStore',
     fallbackFamilyName: MICROSOFT_STORE_PACKAGE_FAMILY,
+    fallbackWhenUnresolved: true,
     required: true
   },
   {
@@ -16,37 +17,55 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     label: 'Store Experience Host',
     packageName: 'Microsoft.StorePurchaseApp',
     fallbackFamilyName: 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe',
+    fallbackWhenUnresolved: true,
     required: true
   },
   {
     id: 'microsoft-account',
-    label: 'Microsoft Account',
+    label: 'Work or School Account',
     packageName: 'Microsoft.AAD.BrokerPlugin',
-    fallbackFamilyName: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy'
+    fallbackFamilyName: 'Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
   },
   {
     id: 'accounts-control',
-    label: 'Accounts Control',
+    label: 'Your Account',
     packageName: 'Microsoft.AccountsControl',
-    fallbackFamilyName: 'Microsoft.AccountsControl_cw5n1h2txyewy'
+    fallbackFamilyName: 'Microsoft.AccountsControl_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'xbox-identity',
+    label: 'Xbox Identity Provider',
+    packageName: 'Microsoft.XboxIdentityProvider',
+    fallbackFamilyName: 'Microsoft.XboxIdentityProvider_8wekyb3d8bbwe',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'web-experience',
+    label: 'Windows Web Experience Pack',
+    packageName: 'MicrosoftWindows.Client.WebExperience',
+    fallbackFamilyName: 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'email-and-accounts',
+    label: 'Email and Accounts',
+    packageName: 'windows.immersivecontrolpanel',
+    fallbackFamilyName: 'windows.immersivecontrolpanel_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'people-experience',
+    label: 'People Experience Host',
+    packageName: 'Microsoft.Windows.PeopleExperienceHost',
+    fallbackFamilyName: 'Microsoft.Windows.PeopleExperienceHost_cw5n1h2txyewy'
   },
   {
     id: 'cloud-experience',
     label: 'Cloud Experience Host',
     packageName: 'Microsoft.Windows.CloudExperienceHost',
     fallbackFamilyName: 'Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy'
-  },
-  {
-    id: 'xbox-identity',
-    label: 'Xbox Identity Provider',
-    packageName: 'Microsoft.XboxIdentityProvider',
-    fallbackFamilyName: 'Microsoft.XboxIdentityProvider_8wekyb3d8bbwe'
-  },
-  {
-    id: 'web-experience',
-    label: 'Windows Web Experience Pack',
-    packageName: 'MicrosoftWindows.Client.WebExperience',
-    fallbackFamilyName: 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy'
   },
   {
     id: 'store-engagement',
@@ -99,6 +118,40 @@ const parseAppxPackages = (stdout) => {
 
   pushCurrent();
   return packages.filter((item) => PACKAGE_NAME_RE.test(item.name) && PACKAGE_FAMILY_RE.test(item.packageFamilyName));
+};
+
+const parsePackageFullNames = (stdout) => String(stdout || '')
+  .split(/\r?\n/u)
+  .map((line) => line.trim())
+  .filter(Boolean)
+  .flatMap((line) => {
+    const firstSeparator = line.indexOf('_');
+    const lastSeparator = line.lastIndexOf('_');
+    if (firstSeparator <= 0 || lastSeparator <= firstSeparator) {
+      return [];
+    }
+
+    const name = line.slice(0, firstSeparator);
+    const publisherId = line.slice(lastSeparator + 1);
+    const packageFamilyName = `${name}_${publisherId}`;
+    if (!PACKAGE_NAME_RE.test(name) || !PACKAGE_FAMILY_RE.test(packageFamilyName)) {
+      return [];
+    }
+
+    return [{ name, packageFamilyName }];
+  });
+
+const uniqueInstalledPackages = (packages) => {
+  const result = [];
+  const seen = new Set();
+  for (const item of packages) {
+    const key = `${String(item.name || '').toLowerCase()}\n${String(item.packageFamilyName || '').toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(item);
+    }
+  }
+  return result;
 };
 
 const parseLoopbackExemptions = (stdout) => {
@@ -185,6 +238,7 @@ export class UwpLoopbackManager {
       return this.installedPackageCache;
     }
 
+    const packages = [];
     try {
       const { stdout } = await this.exec('powershell.exe', [
         '-NoProfile',
@@ -194,11 +248,24 @@ export class UwpLoopbackManager {
         '-Command',
         'Get-AppxPackage | Select-Object Name,PackageFamilyName | Format-List'
       ]);
-      this.installedPackageCache = parseAppxPackages(stdout);
+      packages.push(...parseAppxPackages(stdout));
     } catch {
-      this.installedPackageCache = [];
     }
 
+    try {
+      const { stdout } = await this.exec('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        'Get-ChildItem -Path "Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Appx\\AppxAllUserStore\\Applications" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName'
+      ]);
+      packages.push(...parsePackageFullNames(stdout));
+    } catch {
+    }
+
+    this.installedPackageCache = uniqueInstalledPackages(packages);
     return this.installedPackageCache;
   }
 
@@ -256,8 +323,9 @@ export class UwpLoopbackManager {
     const installedPackages = await this.listInstalledPackages();
     for (const target of this.loopbackTargets) {
       const installedPackage = installedPackages.find((item) => samePackageName(item.name, target.packageName));
+      const fallbackFamilyName = target.required || target.fallbackWhenUnresolved ? target.fallbackFamilyName : null;
       const packageFamilyName = installedPackage?.packageFamilyName
-        || await this.resolvePackageFamilyName(target.packageName, target.required ? target.fallbackFamilyName : null);
+        || await this.resolvePackageFamilyName(target.packageName, fallbackFamilyName);
       if (packageFamilyName) {
         resolvedTargets.push({
           ...target,
@@ -383,6 +451,7 @@ export class UwpLoopbackManager {
 export const internals = {
   parseLoopbackExemptions,
   parseAppxPackages,
+  parsePackageFullNames,
   parsePackageFamilyNames,
   hasPackageFamilyName,
   samePackageName,
