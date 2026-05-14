@@ -8,7 +8,7 @@ import { bindNodeEditEvents } from './lib/node-edit-bindings.js';
 import { showInlineMessage } from './lib/nodes-ui.js';
 import { bindRoutingEvents } from './lib/routing-bindings.js';
 import { bindSystemEvents } from './lib/system-bindings.js';
-import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
+import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, renderUwpLoopbackStatus as renderUwpLoopbackStatusView, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
 import { bindAppMiscEvents, bindWindowChromeFallbacks, runInitialAppBootstrap } from './lib/app-init.js';
 import { bindViewLifecycle } from './lib/view-lifecycle.js';
 import { debounce, escapeHtml, escapeRegExp, flagFromCountryCode, requestJson } from './lib/utils.js';
@@ -51,6 +51,11 @@ const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
 const routingGeoIpNote = document.querySelector('#routing-geoip-note');
 const geoIpRefreshBtn = document.querySelector('#geoip-refresh-btn');
 const autoStartToggle = document.querySelector('#auto-start-toggle');
+const uwpLoopbackStatusEl = document.querySelector('#uwp-loopback-status');
+const uwpLoopbackDesc = document.querySelector('#uwp-loopback-desc');
+const uwpLoopbackRefreshBtn = document.querySelector('#uwp-loopback-refresh-btn');
+const uwpLoopbackEnableBtn = document.querySelector('#uwp-loopback-enable-btn');
+const uwpLoopbackDisableBtn = document.querySelector('#uwp-loopback-disable-btn');
 const dnsRemoteServerInput = document.querySelector('#dns-remote-server');
 const dnsDirectServerInput = document.querySelector('#dns-direct-server');
 const dnsBootstrapServerInput = document.querySelector('#dns-bootstrap-server');
@@ -529,6 +534,7 @@ const loadSystemStatus = () => loadSystemRuntimeStatus({
   requestJson,
   renderGeoIpStatus,
   renderRulesetDatabaseStatus,
+  renderUwpLoopbackStatus,
   updateCoreStatus,
   applySettingsSnapshot: (settings) => applySystemSettingsSnapshot({
     settings,
@@ -563,6 +569,15 @@ const refreshRulesetDatabase = () => refreshRulesetDatabaseState({
   getRulesetDatabaseStatus: () => rulesetDatabaseStatus,
   loadSystemStatus,
   showToast,
+});
+
+const renderUwpLoopbackStatus = (status) => renderUwpLoopbackStatusView({
+  status,
+  uwpLoopbackStatusEl,
+  uwpLoopbackDesc,
+  uwpLoopbackRefreshBtn,
+  uwpLoopbackEnableBtn,
+  uwpLoopbackDisableBtn,
 });
 
 
@@ -680,6 +695,10 @@ bindSystemEvents({
   dnsFinalSelect,
   dnsStrategySelect,
   renderRoutingModeBanner: () => routingController.renderRoutingModeBanner(),
+  uwpLoopbackRefreshBtn,
+  uwpLoopbackEnableBtn,
+  uwpLoopbackDisableBtn,
+  renderUwpLoopbackStatus,
 });
 
 bindRoutingEvents({

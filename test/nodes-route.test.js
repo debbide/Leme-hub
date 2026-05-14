@@ -147,6 +147,75 @@ test('system routes expose geo ip status and refresh endpoint', async () => {
   assert.equal(statusResponse.body.core.autoStart.enabled, true);
 });
 
+test('system routes expose Microsoft Store UWP loopback status and actions', async () => {
+  const calls = [];
+  const routes = createSystemRoutes({
+    store: {},
+    paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
+    coreManager: {
+      refreshSystemProxyState: async () => ({ enabled: true }),
+      refreshAutoStartState: async () => ({ enabled: false, desiredEnabled: false }),
+      getSettingsSnapshot: () => ({ autoStart: false }),
+      getStatus: () => ({ status: 'running' }),
+      getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
+      getRulesetDatabaseStatus: () => ({ ready: true, pending: false, lastError: null })
+    },
+    uwpLoopbackManager: {
+      getMicrosoftStoreStatus: async () => ({ supported: true, packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe', exempted: false, exemptions: [] }),
+      resolveMicrosoftStorePackageFamilyName: async () => 'Microsoft.WindowsStore_8wekyb3d8bbwe',
+      addExemption: async (packageFamilyName) => {
+        calls.push(['add', packageFamilyName]);
+        return { supported: true, packageFamilyName, exempted: true, exemptions: [packageFamilyName] };
+      },
+      removeExemption: async (packageFamilyName) => {
+        calls.push(['remove', packageFamilyName]);
+        return { supported: true, packageFamilyName, exempted: false, exemptions: [] };
+      }
+    }
+  });
+
+  const statusResponse = await routes['GET /api/system/status']();
+  const detailResponse = await routes['GET /api/system/uwp-loopback']();
+  const enableResponse = await routes['POST /api/system/uwp-loopback/store/enable']({ body: { packageFamilyName: 'Bad.Package_123' } });
+  const disableResponse = await routes['POST /api/system/uwp-loopback/store/disable']({});
+
+  assert.equal(statusResponse.body.uwpLoopback.supported, true);
+  assert.equal(detailResponse.body.uwpLoopback.exempted, false);
+  assert.equal(enableResponse.body.uwpLoopback.exempted, true);
+  assert.equal(disableResponse.body.uwpLoopback.exempted, false);
+  assert.deepEqual(calls, [
+    ['add', 'Microsoft.WindowsStore_8wekyb3d8bbwe'],
+    ['remove', 'Microsoft.WindowsStore_8wekyb3d8bbwe']
+  ]);
+});
+
+test('system status keeps loading when UWP loopback detection fails', async () => {
+  const routes = createSystemRoutes({
+    store: {},
+    paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
+    coreManager: {
+      refreshSystemProxyState: async () => ({ enabled: true }),
+      refreshAutoStartState: async () => ({ enabled: false, desiredEnabled: false }),
+      getSettingsSnapshot: () => ({ autoStart: false }),
+      getStatus: () => ({ status: 'running' }),
+      getGeoIpStatus: () => ({ ready: true, pending: false, lastError: null }),
+      getRulesetDatabaseStatus: () => ({ ready: true, pending: false, lastError: null })
+    },
+    uwpLoopbackManager: {
+      getMicrosoftStoreStatus: async () => {
+        throw new Error('需要管理员权限');
+      }
+    }
+  });
+
+  const statusResponse = await routes['GET /api/system/status']();
+
+  assert.equal(statusResponse.body.ok, true);
+  assert.equal(statusResponse.body.core.status, 'running');
+  assert.equal(statusResponse.body.uwpLoopback.supported, true);
+  assert.equal(statusResponse.body.uwpLoopback.lastError, '需要管理员权限');
+});
+
 test('system routes expose ruleset database status and refresh endpoint', async () => {
   let autoStartRefreshes = 0;
   const routes = createSystemRoutes({

@@ -1,4 +1,12 @@
-export function createSystemRoutes({ store, coreManager, paths }) {
+const unsupportedUwpLoopback = {
+  supported: false,
+  packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe',
+  exempted: false,
+  exemptions: [],
+  lastError: null
+};
+
+export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManager }) {
   const getNodeGroups = async () => {
     if (typeof coreManager.getNodeGroupsResolved === 'function') {
       return coreManager.getNodeGroupsResolved();
@@ -18,11 +26,36 @@ export function createSystemRoutes({ store, coreManager, paths }) {
     }
   };
 
+  const getUwpLoopbackStatus = async () => {
+    if (!uwpLoopbackManager || typeof uwpLoopbackManager.getMicrosoftStoreStatus !== 'function') {
+      return unsupportedUwpLoopback;
+    }
+
+    try {
+      return await uwpLoopbackManager.getMicrosoftStoreStatus();
+    } catch (error) {
+      return {
+        ...unsupportedUwpLoopback,
+        supported: true,
+        lastError: error.message
+      };
+    }
+  };
+
+  const getMicrosoftStorePackageFamilyName = async () => {
+    if (!uwpLoopbackManager || typeof uwpLoopbackManager.resolveMicrosoftStorePackageFamilyName !== 'function') {
+      return unsupportedUwpLoopback.packageFamilyName;
+    }
+
+    return uwpLoopbackManager.resolveMicrosoftStorePackageFamilyName();
+  };
+
   return {
     'GET /api/system/status': async () => {
-      const [systemProxy] = await Promise.all([
+      const [systemProxy, , uwpLoopback] = await Promise.all([
         coreManager.refreshSystemProxyState(),
-        refreshAutoStartState()
+        refreshAutoStartState(),
+        getUwpLoopbackStatus()
       ]);
       return {
         status: 200,
@@ -38,9 +71,71 @@ export function createSystemRoutes({ store, coreManager, paths }) {
           core: coreManager.getStatus(),
           geoIp: coreManager.getGeoIpStatus(),
           rulesetDatabase: coreManager.getRulesetDatabaseStatus(),
-          systemProxy
+          systemProxy,
+          uwpLoopback
         }
       };
+    },
+    'GET /api/system/uwp-loopback': async () => {
+      try {
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            uwpLoopback: await getUwpLoopbackStatus(),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, core: coreManager.getStatus() }
+        };
+      }
+    },
+    'POST /api/system/uwp-loopback/store/enable': async () => {
+      try {
+        if (!uwpLoopbackManager || typeof uwpLoopbackManager.addExemption !== 'function') {
+          throw new Error('UWP loopback exemption is not available');
+        }
+
+        const packageFamilyName = await getMicrosoftStorePackageFamilyName();
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            uwpLoopback: await uwpLoopbackManager.addExemption(packageFamilyName),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, uwpLoopback: await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
+        };
+      }
+    },
+    'POST /api/system/uwp-loopback/store/disable': async () => {
+      try {
+        if (!uwpLoopbackManager || typeof uwpLoopbackManager.removeExemption !== 'function') {
+          throw new Error('UWP loopback exemption is not available');
+        }
+
+        const packageFamilyName = await getMicrosoftStorePackageFamilyName();
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            uwpLoopback: await uwpLoopbackManager.removeExemption(packageFamilyName),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, uwpLoopback: await getUwpLoopbackStatus().catch(() => unsupportedUwpLoopback), core: coreManager.getStatus() }
+        };
+      }
     },
     'POST /api/system/geoip/refresh': async () => {
       try {

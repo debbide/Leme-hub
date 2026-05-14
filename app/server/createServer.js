@@ -4,6 +4,7 @@ import path from 'path';
 
 import { ConfigStore } from './services/ConfigStore.js';
 import { CoreManager } from './services/CoreManager.js';
+import { UwpLoopbackManager } from './services/UwpLoopbackManager.js';
 import { createCoreRoutes } from './routes/core.js';
 import { createNodeGroupRoutes } from './routes/node-groups.js';
 import { createNodeRoutes } from './routes/nodes.js';
@@ -76,9 +77,10 @@ export function createAppServer(paths, env = process.env) {
     env,
     autoStartExecutablePath: env.LEME_AUTOSTART_EXECUTABLE
   });
+  const uwpLoopbackManager = new UwpLoopbackManager();
   const runtime = resolveServerRuntime(store.getSettings(), env);
   const routes = {
-    ...createSystemRoutes({ store, coreManager, paths }),
+    ...createSystemRoutes({ store, coreManager, paths, uwpLoopbackManager }),
     ...createCoreRoutes({ coreManager }),
     ...createNodeGroupRoutes({ coreManager }),
     ...createNodeRoutes({ store, coreManager })

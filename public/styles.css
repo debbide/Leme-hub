@@ -1398,6 +1398,45 @@ input[type="checkbox"] {
   width: min(420px, 100%);
 }
 
+.uwp-loopback-item {
+  gap: 1rem;
+}
+
+.uwp-loopback-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.uwp-loopback-status {
+  min-width: 4.75rem;
+  padding: 0.32rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.uwp-loopback-status.is-ok {
+  border-color: rgba(16, 185, 129, 0.36);
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--pill-green-text);
+}
+
+.uwp-loopback-status.is-warn {
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.uwp-loopback-status.is-muted {
+  color: var(--text-muted);
+}
+
 .routing-toolbar {
   flex-direction: column;
   align-items: stretch;
@@ -2681,6 +2720,17 @@ input[type="checkbox"] {
   border-color: var(--accent-base);
   color: var(--text-main);
   background: var(--accent-soft);
+}
+
+.btn-outline.is-danger {
+  color: var(--btn-red-text);
+  border-color: rgba(244, 63, 94, 0.28);
+}
+
+.btn-outline.is-danger:hover {
+  border-color: rgba(244, 63, 94, 0.48);
+  background: var(--btn-danger-bg);
+  color: var(--btn-red-text);
 }
 
 @media (max-width: 1080px) {

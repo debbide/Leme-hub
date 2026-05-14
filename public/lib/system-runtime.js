@@ -1,4 +1,82 @@
-export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, renderRulesetDatabaseStatus, updateCoreStatus, setRoutingNodeOptions, extractRoutingObservability, renderRoutingObservability, loadRoutingHits, showToast, applySettingsSnapshot }) => {
+export const renderUwpLoopbackStatus = ({
+  status,
+  uwpLoopbackStatusEl,
+  uwpLoopbackDesc,
+  uwpLoopbackRefreshBtn,
+  uwpLoopbackEnableBtn,
+  uwpLoopbackDisableBtn
+}) => {
+  const supported = status?.supported !== false;
+  const exempted = !!status?.exempted;
+  const pending = !status;
+  const lastError = status?.lastError || '';
+
+  if (uwpLoopbackStatusEl) {
+    uwpLoopbackStatusEl.className = 'uwp-loopback-status';
+    if (pending) {
+      uwpLoopbackStatusEl.classList.add('is-muted');
+      uwpLoopbackStatusEl.textContent = '检测中';
+    } else if (!supported) {
+      uwpLoopbackStatusEl.classList.add('is-muted');
+      uwpLoopbackStatusEl.textContent = '不可用';
+    } else if (lastError) {
+      uwpLoopbackStatusEl.classList.add('is-warn');
+      uwpLoopbackStatusEl.textContent = '检测失败';
+    } else if (exempted) {
+      uwpLoopbackStatusEl.classList.add('is-ok');
+      uwpLoopbackStatusEl.textContent = '已修复';
+    } else {
+      uwpLoopbackStatusEl.classList.add('is-warn');
+      uwpLoopbackStatusEl.textContent = '未修复';
+    }
+  }
+
+  if (uwpLoopbackDesc) {
+    if (pending) {
+      uwpLoopbackDesc.textContent = '检测微软商店是否允许访问本地代理';
+    } else if (!supported) {
+      uwpLoopbackDesc.textContent = '仅 Windows 的微软商店需要处理 UWP 回环限制';
+    } else if (lastError) {
+      uwpLoopbackDesc.textContent = lastError;
+    } else if (exempted) {
+      uwpLoopbackDesc.textContent = '微软商店已允许访问 127.0.0.1 本地代理';
+    } else {
+      uwpLoopbackDesc.textContent = '微软商店默认不能访问 127.0.0.1，本地代理可能无效';
+    }
+  }
+
+  if (uwpLoopbackRefreshBtn) {
+    uwpLoopbackRefreshBtn.disabled = pending || !supported;
+  }
+  if (uwpLoopbackEnableBtn) {
+    uwpLoopbackEnableBtn.hidden = !supported || exempted;
+    uwpLoopbackEnableBtn.disabled = pending || !supported || exempted || !!lastError;
+  }
+  if (uwpLoopbackDisableBtn) {
+    uwpLoopbackDisableBtn.hidden = !supported || !exempted;
+    uwpLoopbackDisableBtn.disabled = pending || !supported || !exempted;
+  }
+};
+
+export const loadUwpLoopbackStatus = async ({
+  requestJson,
+  renderUwpLoopbackStatus,
+  updateCoreStatus,
+  showToast
+}) => {
+  try {
+    const payload = await requestJson('/api/system/uwp-loopback');
+    renderUwpLoopbackStatus(payload.uwpLoopback || null);
+    if (payload.core) updateCoreStatus(payload.core);
+    return payload.uwpLoopback || null;
+  } catch (error) {
+    renderUwpLoopbackStatus(null);
+    showToast(`UWP 回环状态检测失败: ${error.message}`, 'error');
+    return null;
+  }
+};
+
+export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, renderRulesetDatabaseStatus, renderUwpLoopbackStatus, updateCoreStatus, setRoutingNodeOptions, extractRoutingObservability, renderRoutingObservability, loadRoutingHits, showToast, applySettingsSnapshot }) => {
   try {
     const payload = await requestJson('/api/system/status');
     const runtimePaths = payload.core?.paths;
@@ -7,6 +85,9 @@ export const loadSystemRuntimeStatus = async ({ requestJson, renderGeoIpStatus, 
     }
     renderGeoIpStatus(payload.geoIp || payload.core?.geoIp || null);
     renderRulesetDatabaseStatus(payload.rulesetDatabase || payload.core?.rulesetDatabase || null);
+    if (typeof renderUwpLoopbackStatus === 'function') {
+      renderUwpLoopbackStatus(payload.uwpLoopback || null);
+    }
     updateCoreStatus(payload.core);
     if (typeof applySettingsSnapshot === 'function') {
       applySettingsSnapshot(payload.settings || payload.core?.settings || null);

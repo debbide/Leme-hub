@@ -24,6 +24,10 @@ export const bindSystemEvents = ({
   dnsFinalSelect,
   dnsStrategySelect,
   renderRoutingModeBanner,
+  uwpLoopbackRefreshBtn,
+  uwpLoopbackEnableBtn,
+  uwpLoopbackDisableBtn,
+  renderUwpLoopbackStatus,
 }) => {
   if (masterSwitch) {
     masterSwitch.addEventListener('click', async () => {
@@ -249,4 +253,57 @@ export const bindSystemEvents = ({
   bindSettingsInput(speedtestUrlInput, (value) => ({ speedtestUrl: String(value || '').trim() }), '测速设置');
   bindSettingsInput(dnsFinalSelect, (value) => ({ dnsFinal: value }), 'DNS 设置');
   bindSettingsInput(dnsStrategySelect, (value) => ({ dnsStrategy: value }), 'DNS 设置');
+
+  const runUwpLoopbackAction = async (button, path, loadingText, successText) => {
+    if (!button) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = loadingText;
+    try {
+      const payload = await requestJson(path, { method: 'POST' });
+      if (payload.core) updateCoreStatus(payload.core);
+      if (typeof renderUwpLoopbackStatus === 'function') {
+        renderUwpLoopbackStatus(payload.uwpLoopback || null);
+      }
+      showToast(successText, 'success');
+    } catch (error) {
+      showToast(`UWP 回环修复失败: ${error.message}`, 'error');
+    } finally {
+      button.textContent = originalText;
+      await loadSystemStatus();
+    }
+  };
+
+  if (uwpLoopbackRefreshBtn) {
+    uwpLoopbackRefreshBtn.addEventListener('click', async () => {
+      const originalText = uwpLoopbackRefreshBtn.textContent;
+      uwpLoopbackRefreshBtn.disabled = true;
+      uwpLoopbackRefreshBtn.textContent = '检测中';
+      try {
+        await loadSystemStatus();
+      } catch (error) {
+        showToast(`UWP 回环状态检测失败: ${error.message}`, 'error');
+      } finally {
+        uwpLoopbackRefreshBtn.textContent = originalText;
+      }
+    });
+  }
+
+  if (uwpLoopbackEnableBtn) {
+    uwpLoopbackEnableBtn.addEventListener('click', () => runUwpLoopbackAction(
+      uwpLoopbackEnableBtn,
+      '/api/system/uwp-loopback/store/enable',
+      '修复中',
+      '微软商店回环限制已修复'
+    ));
+  }
+
+  if (uwpLoopbackDisableBtn) {
+    uwpLoopbackDisableBtn.addEventListener('click', () => runUwpLoopbackAction(
+      uwpLoopbackDisableBtn,
+      '/api/system/uwp-loopback/store/disable',
+      '撤销中',
+      '微软商店回环修复已撤销'
+    ));
+  }
 };
