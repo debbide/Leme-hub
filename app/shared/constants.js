@@ -249,18 +249,26 @@ export const BUILTIN_RULESETS = [
     ]
   },
   {
-    id: 'microsoft',
-    name: 'Microsoft 服务',
-    remoteRuleSetIds: ['geosite-microsoft'],
+    id: 'microsoft-store-signin',
+    name: 'Microsoft Store 登录',
+    remoteRuleSetIds: [],
     entries: [
-      { type: 'domain_keyword', value: 'microsoft' },
-      { type: 'domain_suffix', value: 'microsoft.com' },
       { type: 'domain_suffix', value: 'live.com' },
       { type: 'domain_suffix', value: 'microsoftonline.com' },
       { type: 'domain_suffix', value: 'msauth.net' },
       { type: 'domain_suffix', value: 'msftauth.net' },
       { type: 'domain_suffix', value: 'msauthimages.net' },
       { type: 'domain_suffix', value: 'msftauthimages.net' }
+    ]
+  },
+  {
+    id: 'microsoft',
+    name: 'Microsoft 服务',
+    remoteRuleSetIds: ['geosite-microsoft'],
+    entries: [
+      { type: 'domain_keyword', value: 'microsoft' },
+      { type: 'domain_suffix', value: 'microsoft.com' },
+      { type: 'domain_suffix', value: 'live.com' }
     ]
   },
   {

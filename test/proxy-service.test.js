@@ -693,7 +693,7 @@ test('generates inline route rule sets mapped to target nodes in rule mode', () 
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-work' && rule.outbound === 'direct'), true);
 });
 
-test('Microsoft builtin ruleset covers Store sign-in domains inline', () => {
+test('Microsoft Store sign-in builtin ruleset covers auth domains without remote geosite', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([
     { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
@@ -707,17 +707,18 @@ test('Microsoft builtin ruleset covers Store sign-in domains inline', () => {
     systemProxyHttpPort: 20101,
     systemProxySocksPort: 20100,
     rulesets: [
-      { id: 'rs-ms', kind: 'builtin', presetId: 'microsoft', enabled: true, target: 'node', nodeId: 'n2' }
+      { id: 'rs-ms-login', kind: 'builtin', presetId: 'microsoft-store-signin', enabled: true, target: 'node', nodeId: 'n2' }
     ]
   });
 
-  const ruleset = config.route.rule_set.find((item) => item.tag === 'usr-rs-rs-ms');
+  const ruleset = config.route.rule_set.find((item) => item.tag === 'usr-rs-rs-ms-login');
   const suffixes = ruleset.rules.flatMap((rule) => rule.domain_suffix || []);
 
+  assert.equal(config.route.rules.some((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-microsoft')), false);
   assert.equal(suffixes.includes('microsoftonline.com'), true);
   assert.equal(suffixes.includes('msauth.net'), true);
   assert.equal(suffixes.includes('msftauth.net'), true);
-  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-ms' && rule.outbound === 'out-n2'), true);
+  assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-ms-login' && rule.outbound === 'out-n2'), true);
 });
 
 test('resolves routing hits for builtin remote ruleset tags', () => {
