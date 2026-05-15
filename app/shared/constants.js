@@ -255,7 +255,12 @@ export const BUILTIN_RULESETS = [
     entries: [
       { type: 'domain_keyword', value: 'microsoft' },
       { type: 'domain_suffix', value: 'microsoft.com' },
-      { type: 'domain_suffix', value: 'live.com' }
+      { type: 'domain_suffix', value: 'live.com' },
+      { type: 'domain_suffix', value: 'microsoftonline.com' },
+      { type: 'domain_suffix', value: 'msauth.net' },
+      { type: 'domain_suffix', value: 'msftauth.net' },
+      { type: 'domain_suffix', value: 'msauthimages.net' },
+      { type: 'domain_suffix', value: 'msftauthimages.net' }
     ]
   },
   {
