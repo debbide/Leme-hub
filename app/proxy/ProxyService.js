@@ -23,6 +23,8 @@ import { formatHostForUrl, formatHostPort, isIpLiteralHost, normalizeHost, resol
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
 const LOCAL_DIRECT_RULESET_TAG = 'builtin-local-bypass';
+const SYSTEM_STORE_SIGNIN_RULESET_TAG = 'builtin-microsoft-store-signin';
+const SYSTEM_STORE_SIGNIN_PRESET_ID = 'microsoft-store-signin';
 const LOCAL_DIRECT_IP_CIDRS = [
   '127.0.0.0/8',
   '10.0.0.0/8',
@@ -912,6 +914,25 @@ export class ProxyService {
       ]
     });
 
+    const storeSigninBuiltin = BUILTIN_RULESET_MAP.get(SYSTEM_STORE_SIGNIN_PRESET_ID);
+    const storeSigninRules = Array.isArray(storeSigninBuiltin?.entries)
+      ? storeSigninBuiltin.entries.map((entry) => ({ [entry.type]: [entry.value] }))
+      : [];
+    if (storeSigninRules.length) {
+      registerRoutingHit(SYSTEM_STORE_SIGNIN_RULESET_TAG, {
+        kind: 'builtin',
+        name: storeSigninBuiltin.name || 'Microsoft Store 登录',
+        target: systemDefaultOutbound,
+        descriptor: storeSigninBuiltin.name || 'Microsoft Store 登录',
+        rulesetPresetId: SYSTEM_STORE_SIGNIN_PRESET_ID
+      });
+      orderedInlineRuleSets.push({
+        type: 'inline',
+        tag: SYSTEM_STORE_SIGNIN_RULESET_TAG,
+        rules: storeSigninRules
+      });
+    }
+
     normalizedRoutingItems.forEach((item, index) => {
       if (!item || item.enabled === false) return;
 
@@ -1055,6 +1076,16 @@ export class ProxyService {
           outbound: systemOutbound
         });
       } else if (systemInbounds.length && proxyMode === 'rule') {
+        if (storeSigninRules.length) {
+          routeRules.push({
+            inbound: systemInbounds,
+            rule_set: SYSTEM_STORE_SIGNIN_RULESET_TAG,
+            outbound: systemDefaultOutbound
+          });
+        }
+
+        orderedRouteRules.forEach((rule) => routeRules.push(rule));
+
         if (builtInCnDirectRuleSetTags.length) {
           routeRules.push({
             inbound: systemInbounds,
@@ -1062,8 +1093,6 @@ export class ProxyService {
             outbound: 'direct'
           });
         }
-
-        orderedRouteRules.forEach((rule) => routeRules.push(rule));
 
         routeRules.push({
           inbound: systemInbounds,
@@ -1145,6 +1174,16 @@ export class ProxyService {
           server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG
         });
       } else if (proxyMode === 'rule') {
+        if (storeSigninRules.length) {
+          dnsRules.push({
+            inbound: systemInbounds,
+            rule_set: SYSTEM_STORE_SIGNIN_RULESET_TAG,
+            server: resolveDnsServerForOutbound(systemDefaultOutbound)
+          });
+        }
+
+        orderedDnsRules.forEach((rule) => dnsRules.push(rule));
+
         if (builtInCnDirectRuleSetTags.length) {
           dnsRules.push({
             inbound: systemInbounds,
@@ -1152,8 +1191,6 @@ export class ProxyService {
             server: 'dns-local'
           });
         }
-
-        orderedDnsRules.forEach((rule) => dnsRules.push(rule));
         dnsRules.push({
           inbound: systemInbounds,
           server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG

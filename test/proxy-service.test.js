@@ -693,6 +693,35 @@ test('generates inline route rule sets mapped to target nodes in rule mode', () 
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-work' && rule.outbound === 'direct'), true);
 });
 
+test('system proxy prioritizes built-in Microsoft Store sign-in before CN direct rules', () => {
+  const tempDir = createTempDir();
+  fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geosite-cn.srs'), 'stub');
+  fs.writeFileSync(path.join(tempDir, 'rules', 'geoip-cn.srs'), 'stub');
+
+  const service = new ProxyService({ configDir: tempDir, projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    rulesets: []
+  });
+
+  const storeRuleIndex = config.route.rules.findIndex((rule) => rule.rule_set === 'builtin-microsoft-store-signin');
+  const cnDirectIndex = config.route.rules.findIndex((rule) => Array.isArray(rule.rule_set) && rule.rule_set.includes('geosite-cn'));
+  const storeRuleset = config.route.rule_set.find((item) => item.tag === 'builtin-microsoft-store-signin');
+
+  assert.equal(storeRuleIndex > -1, true);
+  assert.equal(cnDirectIndex > -1, true);
+  assert.equal(storeRuleIndex < cnDirectIndex, true);
+  assert.equal(storeRuleset.rules.some((rule) => rule.domain_suffix?.includes('mp.microsoft.com')), true);
+  assert.equal(storeRuleset.rules.some((rule) => rule.domain_suffix?.includes('microsoft.com')), true);
+});
+
 test('Microsoft Store sign-in builtin ruleset covers auth domains without remote geosite', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([

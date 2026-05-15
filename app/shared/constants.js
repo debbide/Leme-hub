@@ -254,6 +254,8 @@ export const BUILTIN_RULESETS = [
     remoteRuleSetIds: [],
     entries: [
       { type: 'domain_suffix', value: 'live.com' },
+      { type: 'domain_suffix', value: 'microsoft.com' },
+      { type: 'domain_suffix', value: 'mp.microsoft.com' },
       { type: 'domain_suffix', value: 'microsoftonline.com' },
       { type: 'domain_suffix', value: 'msauth.net' },
       { type: 'domain_suffix', value: 'msftauth.net' },
