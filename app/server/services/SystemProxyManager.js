@@ -172,12 +172,6 @@ try {
 const WINDOWS_PROXY_OVERRIDE = [
   'localhost',
   '127.*',
-  '::1',
-  '[::1]',
-  '<local>',
-  '*.local',
-  '*.lan',
-  '*.home.arpa',
   '10.*',
   '172.16.*',
   '172.17.*',
@@ -195,17 +189,7 @@ const WINDOWS_PROXY_OVERRIDE = [
   '172.29.*',
   '172.30.*',
   '172.31.*',
-  '192.168.*',
-  '169.254.*',
-  'fc*',
-  'fd*',
-  'fe80:*'
-].join(';');
-const WINDOWS_WINHTTP_BYPASS = [
-  'localhost',
-  '127.*',
-  '::1',
-  '<local>'
+  '192.168.*'
 ].join(';');
 const LINUX_PROXY_IGNORE_HOSTS = [
   'localhost',
@@ -253,10 +237,6 @@ const formatWindowsProxyServer = (host, port) => {
   const normalizedHost = normalizeWindowsSystemProxyHost(host);
   const displayHost = normalizedHost.includes(':') ? `[${normalizedHost}]` : normalizedHost;
   return `${displayHost}:${port}`;
-};
-const formatWinHttpProxyServer = (host, port) => {
-  const normalizedHost = normalizeWindowsSystemProxyHost(host);
-  return `${normalizedHost}:${port}`;
 };
 const normalizeLinuxSystemProxyHost = (value) => {
   const normalized = trimValue(value).replace(/^\[(.*)\]$/, '$1');
@@ -524,7 +504,6 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', proxyServer, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', WINDOWS_PROXY_OVERRIDE, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
-    await this.setWindowsWinHttpProxy({ host, httpPort });
     await this.applyWindowsWinInetProxy({ proxyServer, exceptions: WINDOWS_PROXY_OVERRIDE, type: 2 });
   }
 
@@ -538,17 +517,7 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
-    await this.resetWindowsWinHttpProxy();
     await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 });
-  }
-
-  async setWindowsWinHttpProxy({ host, httpPort }) {
-    const proxyServer = formatWinHttpProxyServer(host, httpPort);
-    await this.exec('netsh', ['winhttp', 'set', 'proxy', proxyServer, `bypass-list=${WINDOWS_WINHTTP_BYPASS}`]);
-  }
-
-  async resetWindowsWinHttpProxy() {
-    await this.exec('netsh', ['winhttp', 'reset', 'proxy']);
   }
 
   async probeTcpEndpoint({ host, port, timeoutMs = 1500 }) {
@@ -582,7 +551,7 @@ export class SystemProxyManager {
     };
     const checks = {
       wininet: { ok: false, status: null, error: null },
-      winhttp: { ok: false, status: null, error: null },
+      winhttp: { ok: true, skipped: true, status: null, error: null },
       localProxy: { ok: false, error: null }
     };
 
@@ -595,7 +564,6 @@ export class SystemProxyManager {
 
     try {
       checks.winhttp.status = await this.getWindowsWinHttpStatus();
-      checks.winhttp.ok = checks.winhttp.status.enabled && sameEndpoint(checks.winhttp.status.http, expected);
     } catch (error) {
       checks.winhttp.error = error.message;
     }
@@ -608,7 +576,7 @@ export class SystemProxyManager {
     return {
       supported: true,
       expected,
-      ok: checks.wininet.ok && checks.winhttp.ok && checks.localProxy.ok,
+      ok: checks.wininet.ok && checks.localProxy.ok,
       checks
     };
   }

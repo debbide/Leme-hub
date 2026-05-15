@@ -82,12 +82,12 @@ test('windows WinHTTP status treats direct access as disabled', () => {
   assert.equal(status.http, null);
 });
 
-test('windows diagnosis checks WinINET, WinHTTP, and local proxy endpoint', async () => {
+test('windows diagnosis checks WinINET and local proxy endpoint while reporting WinHTTP status', async () => {
   const manager = new SystemProxyManager({
     platform: 'win32',
     execFile: async (command, args) => {
       if (command === 'netsh' && args.includes('show')) {
-        return { stdout: 'Proxy Server(s) : 127.0.0.1:18999' };
+        return { stdout: 'Direct access (no proxy server).' };
       }
       const name = args[args.length - 1];
       if (name === 'ProxyEnable') {
@@ -103,6 +103,8 @@ test('windows diagnosis checks WinINET, WinHTTP, and local proxy endpoint', asyn
   assert.equal(diagnosis.ok, true);
   assert.equal(diagnosis.checks.wininet.ok, true);
   assert.equal(diagnosis.checks.winhttp.ok, true);
+  assert.equal(diagnosis.checks.winhttp.skipped, true);
+  assert.equal(diagnosis.checks.winhttp.status.enabled, false);
   assert.equal(diagnosis.checks.localProxy.ok, true);
 });
 
@@ -147,20 +149,18 @@ test('windows apply writes manual proxy, clears pac, and applies wininet per-con
 
   assert.equal(calls[1][8], '127.0.0.1:20101');
   assert.equal(calls[2][4], 'ProxyOverride');
-  assert.match(calls[2][8], /localhost/);
-  assert.match(calls[2][8], /\*\.local/);
-  assert.match(calls[2][8], /192\.168\.\*/);
+  assert.equal(calls[2][8], 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*');
   assert.equal(calls[3][4], 'AutoConfigURL');
   assert.equal(calls[3][8], '');
-  assert.deepEqual(calls[4], ['netsh', 'winhttp', 'set', 'proxy', '127.0.0.1:20101', 'bypass-list=localhost;127.*;::1;<local>']);
-  assert.equal(calls[5][0], 'powershell.exe');
-  assert.equal(calls[5][1], '-NoProfile');
-  assert.equal(calls[5][5], '-Command');
-  assert.match(calls[5][6], /\$proxyServer = "127\.0\.0\.1:20101";/);
-  assert.match(calls[5][6], /\$exceptions = "localhost;127\.\*;/);
-  assert.match(calls[5][6], /\$type = 2;/);
-  assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
-  assert.equal(calls[5].length, 7);
+  assert.equal(calls[4][0], 'powershell.exe');
+  assert.equal(calls[4][1], '-NoProfile');
+  assert.equal(calls[4][5], '-Command');
+  assert.match(calls[4][6], /\$proxyServer = "127\.0\.0\.1:20101";/);
+  assert.match(calls[4][6], /\$exceptions = "localhost;127\.\*;10\.\*;/);
+  assert.match(calls[4][6], /\$type = 2;/);
+  assert.match(calls[4][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
+  assert.equal(calls[4].length, 7);
+  assert.equal(calls.some(([command]) => command === 'netsh'), false);
 });
 
 test('windows apply passes bypass list inside the command script', async () => {
@@ -175,9 +175,9 @@ test('windows apply passes bypass list inside the command script', async () => {
 
   await manager.setWindowsProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
 
-  assert.equal(calls[5].length, 7);
-  assert.match(calls[5][6], /localhost;127\.\*;::1;\[::1\];<local>/);
-  assert.equal(calls[5].includes('localhost;127.*;::1;[::1];<local>'), false);
+  assert.equal(calls[4].length, 7);
+  assert.match(calls[4][6], /localhost;127\.\*;10\.\*;172\.16\.\*/);
+  assert.equal(calls[4].includes('localhost;127.*;10.*;172.16.*'), false);
 });
 
 test('windows apply normalizes wildcard host to loopback', async () => {
@@ -215,13 +215,13 @@ test('windows disable clears proxy values and applies direct wininet settings', 
   assert.equal(calls[2][8], '');
   assert.equal(calls[3][4], 'AutoConfigURL');
   assert.equal(calls[3][8], '');
-  assert.deepEqual(calls[4], ['netsh', 'winhttp', 'reset', 'proxy']);
-  assert.equal(calls[5][0], 'powershell.exe');
-  assert.match(calls[5][6], /\$proxyServer = "";/);
-  assert.match(calls[5][6], /\$exceptions = "";/);
-  assert.match(calls[5][6], /\$type = 1;/);
-  assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
-  assert.equal(calls[5].length, 7);
+  assert.equal(calls[4][0], 'powershell.exe');
+  assert.match(calls[4][6], /\$proxyServer = "";/);
+  assert.match(calls[4][6], /\$exceptions = "";/);
+  assert.match(calls[4][6], /\$type = 1;/);
+  assert.match(calls[4][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
+  assert.equal(calls[4].length, 7);
+  assert.equal(calls.some(([command]) => command === 'netsh'), false);
 });
 
 test('linux apply sets http and socks endpoints together', async (t) => {
