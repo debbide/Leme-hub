@@ -96,8 +96,7 @@ test('default Microsoft Store targets include Store account and host components'
       'people-experience',
       'cloud-experience',
       'store-engagement',
-      'windows-client-cbs',
-      'windows-accounts-service'
+      'windows-client-cbs'
     ]
   );
 });
@@ -162,9 +161,6 @@ PackageFamilyName : Microsoft.Services.Store.Engagement_8wekyb3d8bbwe
 
 Name              : MicrosoftWindows.Client.CBS
 PackageFamilyName : MicrosoftWindows.Client.CBS_cw5n1h2txyewy
-
-Name              : MicrosoftWindows.LKG.AccountsService
-PackageFamilyName : MicrosoftWindows.LKG.AccountsService_cw5n1h2txyewy
 `
         };
       }
@@ -203,8 +199,7 @@ windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
     'Microsoft.Windows.PeopleExperienceHost_cw5n1h2txyewy',
     'Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy',
     'Microsoft.Services.Store.Engagement_8wekyb3d8bbwe',
-    'MicrosoftWindows.Client.CBS_cw5n1h2txyewy',
-    'MicrosoftWindows.LKG.AccountsService_cw5n1h2txyewy'
+    'MicrosoftWindows.Client.CBS_cw5n1h2txyewy'
   ]);
 });
 
