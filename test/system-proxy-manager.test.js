@@ -156,10 +156,28 @@ test('windows apply writes manual proxy, clears pac, and applies wininet per-con
   assert.equal(calls[5][0], 'powershell.exe');
   assert.equal(calls[5][1], '-NoProfile');
   assert.equal(calls[5][5], '-Command');
+  assert.match(calls[5][6], /\$proxyServer = "127\.0\.0\.1:20101";/);
+  assert.match(calls[5][6], /\$exceptions = "localhost;127\.\*;/);
+  assert.match(calls[5][6], /\$type = 2;/);
   assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
-  assert.equal(calls[5][7], '127.0.0.1:20101');
-  assert.match(calls[5][8], /localhost/);
-  assert.equal(calls[5][9], '2');
+  assert.equal(calls[5].length, 7);
+});
+
+test('windows apply passes bypass list inside the command script', async () => {
+  const calls = [];
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    }
+  });
+
+  await manager.setWindowsProxy({ host: '127.0.0.1', httpPort: 20101, socksPort: 20100 });
+
+  assert.equal(calls[5].length, 7);
+  assert.match(calls[5][6], /localhost;127\.\*;::1;\[::1\];<local>/);
+  assert.equal(calls[5].includes('localhost;127.*;::1;[::1];<local>'), false);
 });
 
 test('windows apply normalizes wildcard host to loopback', async () => {
@@ -199,10 +217,11 @@ test('windows disable clears proxy values and applies direct wininet settings', 
   assert.equal(calls[3][8], '');
   assert.deepEqual(calls[4], ['netsh', 'winhttp', 'reset', 'proxy']);
   assert.equal(calls[5][0], 'powershell.exe');
+  assert.match(calls[5][6], /\$proxyServer = "";/);
+  assert.match(calls[5][6], /\$exceptions = "";/);
+  assert.match(calls[5][6], /\$type = 1;/);
   assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
-  assert.equal(calls[5][7], '');
-  assert.equal(calls[5][8], '');
-  assert.equal(calls[5][9], '1');
+  assert.equal(calls[5].length, 7);
 });
 
 test('linux apply sets http and socks endpoints together', async (t) => {

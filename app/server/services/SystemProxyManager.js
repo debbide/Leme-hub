@@ -8,9 +8,6 @@ import { execFile } from 'child_process';
 const execFileAsync = promisify(execFile);
 const WINDOWS_PROXY_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
 const WINDOWS_PROXY_APPLY_SCRIPT = `
-$proxyServer = [string]$args[0];
-$exceptions = [string]$args[1];
-$type = [int]$args[2];
 $signature = @"
 using System;
 using System.Collections.Generic;
@@ -326,6 +323,13 @@ const parseSimpleEnv = (raw) => raw
     }
     return result;
   }, {});
+const buildPowerShellStringLiteral = (value) => JSON.stringify(String(value || ''));
+const buildWindowsProxyApplyScript = ({ proxyServer, exceptions, type }) => [
+  `$proxyServer = ${buildPowerShellStringLiteral(proxyServer)};`,
+  `$exceptions = ${buildPowerShellStringLiteral(exceptions)};`,
+  `$type = ${Number(type)};`,
+  WINDOWS_PROXY_APPLY_SCRIPT
+].join('\n');
 const buildLinuxEnvironmentFile = (entries) => [
   '# Managed by Leme Hub',
   ...Object.entries(entries).map(([key, value]) => `${key}=${value}`)
@@ -630,10 +634,7 @@ export class SystemProxyManager {
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      WINDOWS_PROXY_APPLY_SCRIPT,
-      proxyServer,
-      exceptions,
-      String(type)
+      buildWindowsProxyApplyScript({ proxyServer, exceptions, type })
     ]);
   }
 
