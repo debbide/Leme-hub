@@ -7,20 +7,170 @@ import { execFile } from 'child_process';
 
 const execFileAsync = promisify(execFile);
 const WINDOWS_PROXY_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
-const WINDOWS_INTERNET_OPTION_REFRESH = 37;
-const WINDOWS_INTERNET_OPTION_SETTINGS_CHANGED = 39;
-const WINDOWS_PROXY_REFRESH_SCRIPT = `
+const WINDOWS_PROXY_APPLY_SCRIPT = `
+$proxyServer = [string]$args[0];
+$exceptions = [string]$args[1];
+$type = [int]$args[2];
 $signature = @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
-public static class WinInetProxyRefresh {
-  [DllImport("wininet.dll", SetLastError=true)]
-  public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+
+public static class WinInetProxyApply {
+  const int INTERNET_OPTION_PER_CONNECTION_OPTION = 75;
+  const int INTERNET_OPTION_SETTINGS_CHANGED = 39;
+  const int INTERNET_OPTION_REFRESH = 37;
+  const int INTERNET_PER_CONN_FLAGS = 1;
+  const int INTERNET_PER_CONN_PROXY_SERVER = 2;
+  const int INTERNET_PER_CONN_PROXY_BYPASS = 3;
+  const int INTERNET_PER_CONN_AUTOCONFIG_URL = 4;
+  const int PROXY_TYPE_DIRECT = 1;
+  const int PROXY_TYPE_PROXY = 2;
+  const int PROXY_TYPE_AUTO_PROXY_URL = 4;
+  const int ERROR_BUFFER_TOO_SMALL = 603;
+  const int RAS_MAX_ENTRY_NAME = 256;
+  const int MAX_PATH = 260;
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+  struct INTERNET_PER_CONN_OPTION_LIST {
+    public int dwSize;
+    public IntPtr pszConnection;
+    public int dwOptionCount;
+    public int dwOptionError;
+    public IntPtr pOptions;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  struct INTERNET_PER_CONN_OPTION {
+    public int dwOption;
+    public INTERNET_PER_CONN_OPTION_VALUE Value;
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  struct INTERNET_PER_CONN_OPTION_VALUE {
+    [FieldOffset(0)] public int dwValue;
+    [FieldOffset(0)] public IntPtr pszValue;
+  }
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+  struct RASENTRYNAME {
+    public int dwSize;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = RAS_MAX_ENTRY_NAME + 1)] public string szEntryName;
+    public int dwFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH + 1)] public string szPhonebookPath;
+  }
+
+  [DllImport("wininet.dll", SetLastError = true, CharSet = CharSet.Auto)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+
+  [DllImport("rasapi32.dll", CharSet = CharSet.Auto)]
+  static extern uint RasEnumEntries(string reserved, string phonebook, [In, Out] RASENTRYNAME[] entries, ref int bufferSize, ref int entryCount);
+
+  public static void Apply(string proxyServer, string exceptions, int type) {
+    bool applied = SetConnectionProxy(null, proxyServer, exceptions, type);
+    foreach (string connection in EnumerateRasEntries()) {
+      applied = SetConnectionProxy(connection, proxyServer, exceptions, type) || applied;
+    }
+    if (!applied) {
+      throw new InvalidOperationException("No WinINET connection accepted proxy settings");
+    }
+  }
+
+  public static void Refresh() {
+    InternetSetOption(IntPtr.Zero, INTERNET_OPTION_SETTINGS_CHANGED, IntPtr.Zero, 0);
+    InternetSetOption(IntPtr.Zero, INTERNET_OPTION_REFRESH, IntPtr.Zero, 0);
+  }
+
+  static bool SetConnectionProxy(string connectionName, string proxyServer, string exceptions, int type) {
+    int optionCount = 1;
+    if (type == PROXY_TYPE_PROXY || type == PROXY_TYPE_AUTO_PROXY_URL) {
+      optionCount = String.IsNullOrEmpty(exceptions) ? 2 : 3;
+    }
+
+    int flags = PROXY_TYPE_DIRECT;
+    int valueOption = INTERNET_PER_CONN_PROXY_SERVER;
+    if (type == PROXY_TYPE_PROXY) {
+      flags = PROXY_TYPE_DIRECT | PROXY_TYPE_PROXY;
+      valueOption = INTERNET_PER_CONN_PROXY_SERVER;
+    } else if (type == PROXY_TYPE_AUTO_PROXY_URL) {
+      flags = PROXY_TYPE_DIRECT | PROXY_TYPE_AUTO_PROXY_URL;
+      valueOption = INTERNET_PER_CONN_AUTOCONFIG_URL;
+    }
+
+    INTERNET_PER_CONN_OPTION[] options = new INTERNET_PER_CONN_OPTION[optionCount];
+    options[0].dwOption = INTERNET_PER_CONN_FLAGS;
+    options[0].Value.dwValue = flags;
+    if (optionCount > 1) {
+      options[1].dwOption = valueOption;
+      options[1].Value.pszValue = Marshal.StringToHGlobalAuto(proxyServer ?? String.Empty);
+      if (optionCount > 2) {
+        options[2].dwOption = INTERNET_PER_CONN_PROXY_BYPASS;
+        options[2].Value.pszValue = Marshal.StringToHGlobalAuto(exceptions ?? String.Empty);
+      }
+    }
+
+    INTERNET_PER_CONN_OPTION_LIST list = new INTERNET_PER_CONN_OPTION_LIST();
+    list.dwSize = Marshal.SizeOf(typeof(INTERNET_PER_CONN_OPTION_LIST));
+    list.pszConnection = connectionName == null ? IntPtr.Zero : Marshal.StringToHGlobalAuto(connectionName);
+    list.dwOptionCount = optionCount;
+    list.dwOptionError = 0;
+
+    int optionSize = Marshal.SizeOf(typeof(INTERNET_PER_CONN_OPTION));
+    IntPtr optionsPtr = Marshal.AllocCoTaskMem(optionSize * optionCount);
+    IntPtr listPtr = IntPtr.Zero;
+    try {
+      for (int i = 0; i < optionCount; i++) {
+        Marshal.StructureToPtr(options[i], new IntPtr(optionsPtr.ToInt64() + (i * optionSize)), false);
+      }
+      list.pOptions = optionsPtr;
+      listPtr = Marshal.AllocCoTaskMem(list.dwSize);
+      Marshal.StructureToPtr(list, listPtr, false);
+      bool success = InternetSetOption(IntPtr.Zero, INTERNET_OPTION_PER_CONNECTION_OPTION, listPtr, list.dwSize);
+      if (success) {
+        Refresh();
+      }
+      return success;
+    } finally {
+      if (list.pszConnection != IntPtr.Zero) Marshal.FreeHGlobal(list.pszConnection);
+      if (optionCount > 1 && options[1].Value.pszValue != IntPtr.Zero) Marshal.FreeHGlobal(options[1].Value.pszValue);
+      if (optionCount > 2 && options[2].Value.pszValue != IntPtr.Zero) Marshal.FreeHGlobal(options[2].Value.pszValue);
+      Marshal.FreeCoTaskMem(optionsPtr);
+      if (listPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(listPtr);
+    }
+  }
+
+  static IEnumerable<string> EnumerateRasEntries() {
+    int entries = 0;
+    RASENTRYNAME[] names = new RASENTRYNAME[1];
+    int bufferSize = Marshal.SizeOf(typeof(RASENTRYNAME));
+    names[0].dwSize = Marshal.SizeOf(typeof(RASENTRYNAME));
+    uint result = RasEnumEntries(null, null, names, ref bufferSize, ref entries);
+    if (result == ERROR_BUFFER_TOO_SMALL) {
+      names = new RASENTRYNAME[bufferSize / Marshal.SizeOf(typeof(RASENTRYNAME))];
+      for (int i = 0; i < names.Length; i++) {
+        names[i].dwSize = Marshal.SizeOf(typeof(RASENTRYNAME));
+      }
+      result = RasEnumEntries(null, null, names, ref bufferSize, ref entries);
+    }
+    if (result != 0) {
+      yield break;
+    }
+    for (int i = 0; i < entries; i++) {
+      if (!String.IsNullOrEmpty(names[i].szEntryName)) {
+        yield return names[i].szEntryName;
+      }
+    }
+  }
 }
 "@;
 Add-Type -TypeDefinition $signature -ErrorAction SilentlyContinue | Out-Null;
-[void][WinInetProxyRefresh]::InternetSetOption([IntPtr]::Zero, ${WINDOWS_INTERNET_OPTION_SETTINGS_CHANGED}, [IntPtr]::Zero, 0);
-[void][WinInetProxyRefresh]::InternetSetOption([IntPtr]::Zero, ${WINDOWS_INTERNET_OPTION_REFRESH}, [IntPtr]::Zero, 0);
+try {
+  [WinInetProxyApply]::Apply($proxyServer, $exceptions, $type);
+} catch {
+  [WinInetProxyApply]::Refresh();
+  Write-Output "WinINET per-connection proxy apply failed: $($_.Exception.Message)";
+}
 `.trim();
 const WINDOWS_PROXY_OVERRIDE = [
   'localhost',
@@ -371,7 +521,7 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', WINDOWS_PROXY_OVERRIDE, '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.setWindowsWinHttpProxy({ host, httpPort });
-    await this.notifyWindowsProxyChanged();
+    await this.applyWindowsWinInetProxy({ proxyServer, exceptions: WINDOWS_PROXY_OVERRIDE, type: 2 });
   }
 
   async getWindowsWinHttpStatus() {
@@ -385,7 +535,7 @@ export class SystemProxyManager {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
     await this.resetWindowsWinHttpProxy();
-    await this.notifyWindowsProxyChanged();
+    await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 });
   }
 
   async setWindowsWinHttpProxy({ host, httpPort }) {
@@ -473,8 +623,18 @@ export class SystemProxyManager {
     };
   }
 
-  async notifyWindowsProxyChanged() {
-    await this.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_PROXY_REFRESH_SCRIPT]);
+  async applyWindowsWinInetProxy({ proxyServer, exceptions, type }) {
+    await this.exec('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      WINDOWS_PROXY_APPLY_SCRIPT,
+      proxyServer,
+      exceptions,
+      String(type)
+    ]);
   }
 
   async gsettingsGet(schema, key) {

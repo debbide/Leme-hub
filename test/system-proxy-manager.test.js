@@ -133,7 +133,7 @@ test('linux disabled status clears proxy endpoints', async (t) => {
   assert.equal(status.socks, null);
 });
 
-test('windows apply writes manual proxy, clears pac, and refreshes wininet', async () => {
+test('windows apply writes manual proxy, clears pac, and applies wininet per-connection settings', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
     platform: 'win32',
@@ -156,7 +156,10 @@ test('windows apply writes manual proxy, clears pac, and refreshes wininet', asy
   assert.equal(calls[5][0], 'powershell.exe');
   assert.equal(calls[5][1], '-NoProfile');
   assert.equal(calls[5][5], '-Command');
-  assert.match(calls[5][6], /InternetSetOption/);
+  assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
+  assert.equal(calls[5][7], '127.0.0.1:20101');
+  assert.match(calls[5][8], /localhost/);
+  assert.equal(calls[5][9], '2');
 });
 
 test('windows apply normalizes wildcard host to loopback', async () => {
@@ -174,7 +177,7 @@ test('windows apply normalizes wildcard host to loopback', async () => {
   assert.equal(calls[1][8], '127.0.0.1:20101');
 });
 
-test('windows disable clears proxy values and refreshes wininet', async () => {
+test('windows disable clears proxy values and applies direct wininet settings', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
     platform: 'win32',
@@ -196,6 +199,10 @@ test('windows disable clears proxy values and refreshes wininet', async () => {
   assert.equal(calls[3][8], '');
   assert.deepEqual(calls[4], ['netsh', 'winhttp', 'reset', 'proxy']);
   assert.equal(calls[5][0], 'powershell.exe');
+  assert.match(calls[5][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
+  assert.equal(calls[5][7], '');
+  assert.equal(calls[5][8], '');
+  assert.equal(calls[5][9], '1');
 });
 
 test('linux apply sets http and socks endpoints together', async (t) => {
