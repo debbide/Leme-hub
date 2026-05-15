@@ -79,7 +79,7 @@ windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
   ]);
 });
 
-test('default Microsoft Store targets include v2rayN-aligned account components', () => {
+test('default Microsoft Store targets include Store account and host components', () => {
   assert.deepEqual(
     MICROSOFT_STORE_LOOPBACK_TARGETS.map((target) => target.id),
     [
@@ -90,6 +90,9 @@ test('default Microsoft Store targets include v2rayN-aligned account components'
       'xbox-identity',
       'web-experience',
       'email-and-accounts',
+      'shell-experience',
+      'win32-webview-host',
+      'start-menu-experience',
       'people-experience',
       'cloud-experience',
       'store-engagement'
@@ -119,7 +122,7 @@ test('manager resolves Microsoft Store package family through PowerShell', async
 test('manager resolves Microsoft Store loopback target package family names', async () => {
   const manager = new UwpLoopbackManager({
     platform: 'win32',
-    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 7),
+    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 10),
     execFile: async (_command, args) => {
       const script = args[args.length - 1];
       if (String(script).includes('Get-AppxPackage | Select-Object')) {
@@ -136,6 +139,15 @@ PackageFamilyName : Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy
 
 Name              : Microsoft.AccountsControl
 PackageFamilyName : Microsoft.AccountsControl_cw5n1h2txyewy
+
+Name              : Microsoft.Windows.ShellExperienceHost
+PackageFamilyName : Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy
+
+Name              : Microsoft.Win32WebViewHost
+PackageFamilyName : Microsoft.Win32WebViewHost_cw5n1h2txyewy
+
+Name              : Microsoft.Windows.StartMenuExperienceHost
+PackageFamilyName : Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy
 `
         };
       }
@@ -167,7 +179,10 @@ windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
     'Microsoft.AccountsControl_cw5n1h2txyewy',
     'Microsoft.XboxIdentityProvider_8wekyb3d8bbwe',
     'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy',
-    'windows.immersivecontrolpanel_cw5n1h2txyewy'
+    'windows.immersivecontrolpanel_cw5n1h2txyewy',
+    'Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy',
+    'Microsoft.Win32WebViewHost_cw5n1h2txyewy',
+    'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy'
   ]);
 });
 
@@ -197,7 +212,10 @@ test('manager falls back for core Microsoft Store account packages when package 
       'accounts-control',
       'xbox-identity',
       'web-experience',
-      'email-and-accounts'
+      'email-and-accounts',
+      'shell-experience',
+      'win32-webview-host',
+      'start-menu-experience'
     ]
   );
   assert.equal(targets.some((target) => target.id === 'store-engagement'), false);

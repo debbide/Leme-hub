@@ -56,6 +56,27 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     fallbackWhenUnresolved: true
   },
   {
+    id: 'shell-experience',
+    label: 'Shell Experience Host',
+    packageName: 'Microsoft.Windows.ShellExperienceHost',
+    fallbackFamilyName: 'Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'win32-webview-host',
+    label: 'Win32 WebView Host',
+    packageName: 'Microsoft.Win32WebViewHost',
+    fallbackFamilyName: 'Microsoft.Win32WebViewHost_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
+    id: 'start-menu-experience',
+    label: 'Start Menu Experience Host',
+    packageName: 'Microsoft.Windows.StartMenuExperienceHost',
+    fallbackFamilyName: 'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy',
+    fallbackWhenUnresolved: true
+  },
+  {
     id: 'people-experience',
     label: 'People Experience Host',
     packageName: 'Microsoft.Windows.PeopleExperienceHost',
