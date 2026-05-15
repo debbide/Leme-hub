@@ -95,7 +95,9 @@ test('default Microsoft Store targets include Store account and host components'
       'start-menu-experience',
       'people-experience',
       'cloud-experience',
-      'store-engagement'
+      'store-engagement',
+      'windows-client-cbs',
+      'windows-accounts-service'
     ]
   );
 });
@@ -122,7 +124,7 @@ test('manager resolves Microsoft Store package family through PowerShell', async
 test('manager resolves Microsoft Store loopback target package family names', async () => {
   const manager = new UwpLoopbackManager({
     platform: 'win32',
-    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS.slice(0, 10),
+    loopbackTargets: MICROSOFT_STORE_LOOPBACK_TARGETS,
     execFile: async (_command, args) => {
       const script = args[args.length - 1];
       if (String(script).includes('Get-AppxPackage | Select-Object')) {
@@ -148,6 +150,21 @@ PackageFamilyName : Microsoft.Win32WebViewHost_cw5n1h2txyewy
 
 Name              : Microsoft.Windows.StartMenuExperienceHost
 PackageFamilyName : Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy
+
+Name              : Microsoft.Windows.PeopleExperienceHost
+PackageFamilyName : Microsoft.Windows.PeopleExperienceHost_cw5n1h2txyewy
+
+Name              : Microsoft.Windows.CloudExperienceHost
+PackageFamilyName : Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy
+
+Name              : Microsoft.Services.Store.Engagement
+PackageFamilyName : Microsoft.Services.Store.Engagement_8wekyb3d8bbwe
+
+Name              : MicrosoftWindows.Client.CBS
+PackageFamilyName : MicrosoftWindows.Client.CBS_cw5n1h2txyewy
+
+Name              : MicrosoftWindows.LKG.AccountsService
+PackageFamilyName : MicrosoftWindows.LKG.AccountsService_cw5n1h2txyewy
 `
         };
       }
@@ -182,7 +199,12 @@ windows.immersivecontrolpanel_10.0.8.1000_neutral_neutral_cw5n1h2txyewy
     'windows.immersivecontrolpanel_cw5n1h2txyewy',
     'Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy',
     'Microsoft.Win32WebViewHost_cw5n1h2txyewy',
-    'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy'
+    'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy',
+    'Microsoft.Windows.PeopleExperienceHost_cw5n1h2txyewy',
+    'Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy',
+    'Microsoft.Services.Store.Engagement_8wekyb3d8bbwe',
+    'MicrosoftWindows.Client.CBS_cw5n1h2txyewy',
+    'MicrosoftWindows.LKG.AccountsService_cw5n1h2txyewy'
   ]);
 });
 

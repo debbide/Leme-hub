@@ -93,6 +93,18 @@ export const MICROSOFT_STORE_LOOPBACK_TARGETS = [
     label: 'Microsoft Store Engagement',
     packageName: 'Microsoft.Services.Store.Engagement',
     fallbackFamilyName: 'Microsoft.Services.Store.Engagement_8wekyb3d8bbwe'
+  },
+  {
+    id: 'windows-client-cbs',
+    label: 'Windows Shell Experience',
+    packageName: 'MicrosoftWindows.Client.CBS',
+    fallbackFamilyName: 'MicrosoftWindows.Client.CBS_cw5n1h2txyewy'
+  },
+  {
+    id: 'windows-accounts-service',
+    label: 'Windows Accounts Service',
+    packageName: 'MicrosoftWindows.LKG.AccountsService',
+    fallbackFamilyName: 'MicrosoftWindows.LKG.AccountsService_cw5n1h2txyewy'
   }
 ];
 const PACKAGE_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*_[A-Za-z0-9]+$/u;
