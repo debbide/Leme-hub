@@ -414,6 +414,7 @@ export class ProxyService {
     this.runtimeOptions = {};
     this.nodePortMap = new Map();
     this.routingHitMap = new Map();
+    this.routingRuleIndexMap = new Map();
     this.connectionTraceMap = new Map();
     this.configDir = path.resolve(configDir || path.join(this.projectRoot, 'data'));
     this.rulesDir = path.join(this.configDir, 'rules');
@@ -826,6 +827,7 @@ export class ProxyService {
         ? (effectiveSystemNodeId === effectiveNodeId ? activeSelectorOutboundTag : `out-${effectiveSystemNodeId}`)
         : activeSelectorOutboundTag;
     this.routingHitMap = new Map();
+    this.routingRuleIndexMap = new Map();
     const registerRoutingHit = (tag, meta) => {
       this.routingHitMap.set(tag, meta);
       return tag;
@@ -1158,6 +1160,18 @@ export class ProxyService {
         });
       }
     }
+
+    this.routingRuleIndexMap = new Map();
+    routeRules.forEach((rule, index) => {
+      const ruleSetTags = Array.isArray(rule.rule_set) ? rule.rule_set : [rule.rule_set].filter(Boolean);
+      const matchedTag = ruleSetTags.find((tag) => this.routingHitMap.has(tag));
+      if (matchedTag) {
+        this.routingRuleIndexMap.set(String(index), {
+          ruleTag: matchedTag,
+          meta: this.routingHitMap.get(matchedTag)
+        });
+      }
+    });
 
     return {
       log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
@@ -1750,6 +1764,90 @@ export class ProxyService {
     return Math.min(...samples);
   }
 
+  handleProxyRuntimeLine(line, options = {}) {
+    const cleanLine = stripAnsi(line).replace(/^\[Proxy STDERR\]\s*/u, '');
+    const inboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/](?:http|mixed|socks)\[(system-http|system-socks)\]: inbound connection to (.+):(\d+)$/u);
+    if (inboundMatch) {
+      const [, connId, inboundTag, host, port] = inboundMatch;
+      const trace = this.connectionTraceMap.get(connId) || {};
+      this.connectionTraceMap.set(connId, {
+        ...trace,
+        inboundTag,
+        host,
+        port,
+        ruleTag: trace.ruleTag || null,
+        createdAt: trace.createdAt || Date.now()
+      });
+    }
+
+    const sniffMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*router: sniffed protocol: [^,]+, domain: (\S+)/u);
+    if (sniffMatch) {
+      const [, connId, host] = sniffMatch;
+      const trace = this.connectionTraceMap.get(connId) || { createdAt: Date.now(), ruleTag: null };
+      trace.sniffedHost = host;
+      this.connectionTraceMap.set(connId, trace);
+    }
+
+    const indexedRuleMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*router: match\[(\d+)\].*=>\s+route\(([^)]+)\)/u);
+    if (indexedRuleMatch) {
+      const [, connId, ruleIndex, outboundTag] = indexedRuleMatch;
+      const trace = this.connectionTraceMap.get(connId) || { createdAt: Date.now(), ruleTag: null };
+      const indexedRule = this.routingRuleIndexMap.get(ruleIndex);
+      if (indexedRule) trace.ruleTag = indexedRule.ruleTag;
+      trace.outboundTag = outboundTag;
+      this.connectionTraceMap.set(connId, trace);
+    }
+
+    const ruleMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*match(?:ed)?\s+rule(?:[_\s-]?set)?[^\[]*\[([^\]]+)\]/iu);
+    if (ruleMatch) {
+      const [, connId, ruleTag] = ruleMatch;
+      const trace = this.connectionTraceMap.get(connId);
+      if (trace) {
+        trace.ruleTag = String(ruleTag || '').trim();
+        this.connectionTraceMap.set(connId, trace);
+      }
+    }
+
+    const outboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*outbound[\\/][^\[]+\[(out-[^\]]+)\]: outbound connection to (.+):(\d+)$/u);
+    if (outboundMatch) {
+      const [, connId, outboundTag, host] = outboundMatch;
+      const trace = this.connectionTraceMap.get(connId);
+      if (trace && trace.inboundTag && ['system-http', 'system-socks'].includes(trace.inboundTag)) {
+        const resolvedOutboundTag = trace.outboundTag && trace.outboundTag.startsWith('out-') ? trace.outboundTag : outboundTag;
+        const hit = this.resolveRoutingHit(trace.ruleTag, trace.sniffedHost || trace.host || host, resolvedOutboundTag, { allowHeuristic: true });
+        if (hit) {
+          const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+          this.log.log(`[${ts}] [Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
+          if (this.onRoutingHit) {
+            try {
+              this.onRoutingHit({
+                timestamp: new Date().toISOString(),
+                host: trace.sniffedHost || trace.host || host || null,
+                port: trace.port ? Number(trace.port) : null,
+                outbound: resolvedOutboundTag,
+                kind: hit.kind,
+                name: hit.name,
+                target: hit.target,
+                descriptor: hit.descriptor,
+                matchedTag: hit.matchedTag || null,
+                matchedBy: hit.matchedBy || null,
+                matchType: hit.matchType || null,
+                matchValue: hit.matchValue || null
+              });
+            } catch {
+              // ignore hook failures to keep proxy runtime stable
+            }
+          }
+        }
+      }
+      this.connectionTraceMap.delete(connId);
+    }
+
+    if (options.logRaw !== false) {
+      this.log.log(`[Proxy Log] ${line}`);
+    }
+  }
+
   async start(options = {}) {
     if (this.nodes.length === 0) {
       throw new Error('No proxy nodes configured');
@@ -1769,69 +1867,15 @@ export class ProxyService {
     this.proxyProcess = spawn(execPath, ['run', '-c', this.configPath]);
 
     this.proxyProcess.stdout.on('data', (data) => {
-      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
-        const inboundMatch = line.match(/\[(\d+)\]\s+inbound\/(?:http|mixed|socks)\[(system-http|system-socks)\]: inbound connection to ([^:]+):(\d+)/);
-        if (inboundMatch) {
-          const [, connId, inboundTag, host, port] = inboundMatch;
-          this.connectionTraceMap.set(connId, {
-            inboundTag,
-            host,
-            port,
-            ruleTag: null,
-            createdAt: Date.now()
-          });
-        }
-
-        const ruleMatch = line.match(/\[(\d+)\].*match(?:ed)?\s+rule(?:[_\s-]?set)?[^\[]*\[([^\]]+)\]/iu);
-        if (ruleMatch) {
-          const [, connId, ruleTag] = ruleMatch;
-          const trace = this.connectionTraceMap.get(connId);
-          if (trace) {
-            trace.ruleTag = String(ruleTag || '').trim();
-            this.connectionTraceMap.set(connId, trace);
-          }
-        }
-
-        const outboundMatch = line.match(/\[(\d+)\].*outbound\/[^\[]+\[(out-[^\]]+)\]: outbound connection to ([^:]+):(\d+)/);
-        if (outboundMatch) {
-          const [, connId, outboundTag, host] = outboundMatch;
-          const trace = this.connectionTraceMap.get(connId);
-          if (trace && trace.inboundTag && ['system-http', 'system-socks'].includes(trace.inboundTag)) {
-            const hit = this.resolveRoutingHit(trace.ruleTag, trace.host || host, outboundTag, { allowHeuristic: false });
-            if (hit) {
-              const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-              this.log.log(`[${ts}] [Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
-              if (this.onRoutingHit) {
-                try {
-                  this.onRoutingHit({
-                    timestamp: new Date().toISOString(),
-                    host: trace.host || host || null,
-                    port: trace.port ? Number(trace.port) : null,
-                    outbound: outboundTag,
-                    kind: hit.kind,
-                    name: hit.name,
-                    target: hit.target,
-                    descriptor: hit.descriptor,
-                    matchedTag: hit.matchedTag || null,
-                    matchedBy: hit.matchedBy || null,
-                    matchType: hit.matchType || null,
-                    matchValue: hit.matchValue || null
-                  });
-                } catch {
-                  // ignore hook failures to keep proxy runtime stable
-                }
-              }
-            }
-          }
-          this.connectionTraceMap.delete(connId);
-        }
-
-        this.log.log(`[Proxy Log] ${line}`);
-      });
+      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => this.handleProxyRuntimeLine(line));
     });
 
     this.proxyProcess.stderr.on('data', (data) => {
-      this.log.error(`[Proxy STDERR] ${data.toString().trim()}`);
+      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
+        const prefixedLine = `[Proxy STDERR] ${line}`;
+        this.log.error(prefixedLine);
+        this.handleProxyRuntimeLine(prefixedLine, { logRaw: false });
+      });
     });
 
     this.proxyProcess.on('error', (error) => {

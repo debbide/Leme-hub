@@ -721,6 +721,43 @@ test('Microsoft Store sign-in builtin ruleset covers auth domains without remote
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rs-rs-ms-login' && rule.outbound === 'out-n2'), true);
 });
 
+test('records routing hits from sing-box indexed rule logs', () => {
+  const hits = [];
+  const service = new ProxyService({
+    configDir: createTempDir(),
+    projectRoot: process.cwd(),
+    log: { log() {}, error() {} },
+    onRoutingHit: (hit) => hits.push(hit)
+  });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }
+  ]);
+
+  service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    rulesets: [
+      { id: 'rs-ms-login', kind: 'builtin', presetId: 'microsoft-store-signin', enabled: true, target: 'default' }
+    ]
+  });
+
+  const ruleIndex = [...service.routingRuleIndexMap.entries()]
+    .find(([, item]) => item.ruleTag === 'usr-rs-rs-ms-login')?.[0];
+
+  service.handleProxyRuntimeLine('[1665984344 0ms] inbound/http[system-http]: inbound connection to [2603:1063:2001:1c20::365:ff1]:443', { logRaw: false });
+  service.handleProxyRuntimeLine('[1665984344 0ms] router: sniffed protocol: tls, domain: mrodevicemgr.officeapps.live.com', { logRaw: false });
+  service.handleProxyRuntimeLine(`[1665984344 1ms] router: match[${ruleIndex}] inbound=[system-socks system-http] => route(selector-active)`, { logRaw: false });
+  service.handleProxyRuntimeLine('[1665984344 1ms] outbound/vless[out-n1]: outbound connection to [2603:1063:2001:1c20::365:ff1]:443', { logRaw: false });
+
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].name, 'Microsoft Store 登录');
+  assert.equal(hits[0].host, 'mrodevicemgr.officeapps.live.com');
+  assert.equal(hits[0].matchedTag, 'usr-rs-rs-ms-login');
+});
+
 test('resolves routing hits for builtin remote ruleset tags', () => {
   const tempDir = createTempDir();
   fs.mkdirSync(path.join(tempDir, 'rules'), { recursive: true });
