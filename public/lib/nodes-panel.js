@@ -271,10 +271,60 @@ export const createNodesPanelController = ({
         ${detail ? `<div class="subscription-detail-note">${detail}</div>` : ''}
       </div>
       <div class="subscription-detail-actions">
+        <button type="button" class="btn-outline subscription-edit-btn" data-id="${escapeHtml(subscription.id)}" ${isRefreshing ? 'disabled' : ''} title="编辑订阅链接"><i class="ph ph-pencil-simple"></i><span>编辑</span></button>
         <button type="button" class="btn-outline subscription-refresh-btn" data-id="${escapeHtml(subscription.id)}" ${isRefreshing ? 'disabled' : ''} title="重新拉取该订阅"><i class="ph ph-arrows-clockwise"></i><span>${isRefreshing ? '刷新中...' : '刷新'}</span></button>
         <button type="button" class="btn-outline subscription-delete-btn is-danger" data-id="${escapeHtml(subscription.id)}" ${isRefreshing ? 'disabled' : ''} title="删除订阅和导入节点"><i class="ph ph-trash"></i><span>删除</span></button>
       </div>
     `;
+
+    subscriptionDetailPanel.querySelector('.subscription-edit-btn')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      const id = button.dataset.id;
+      const target = subscriptionsData.find((item) => item.id === id);
+      if (!target) return;
+
+      const nextUrlInput = await showInputModal('编辑订阅链接', target.url);
+      if (nextUrlInput === null) return;
+      const nextUrl = nextUrlInput.trim();
+      if (!nextUrl) return;
+
+      const nextNameInput = await showInputModal('编辑订阅名称（可选）', target.name || '');
+      if (nextNameInput === null) return;
+      const nextName = nextNameInput.trim();
+      if (nextUrl === target.url && nextName === (target.name || '')) return;
+
+      button.disabled = true;
+      const label = button.querySelector('span');
+      if (label) {
+        label.textContent = '保存中...';
+      } else {
+        button.textContent = '保存中...';
+      }
+      try {
+        await refreshSubscriptionNodes({
+          subscriptionId: id,
+          url: nextUrl,
+          name: nextName,
+          requestJson,
+          setNodesData,
+          setGroupsData,
+          setSubscriptionsData,
+          renderSubscriptions: renderSubscriptionDetail,
+          renderGroupTabs,
+          renderNodesElement,
+          syncNodeMutationFeedback,
+          showToast,
+          successMessage: '订阅已更新'
+        });
+      } catch (error) {
+        showToast(`订阅更新失败: ${error.message}`, 'error');
+        await loadNodes();
+      } finally {
+        button.disabled = false;
+        renderGroupTabs();
+        renderSubscriptionDetail();
+      }
+    });
 
     subscriptionDetailPanel.querySelector('.subscription-refresh-btn')?.addEventListener('click', async (event) => {
       const id = event.currentTarget.dataset.id;
@@ -293,6 +343,7 @@ export const createNodesPanelController = ({
           renderNodesElement,
           syncNodeMutationFeedback,
           showToast,
+          successMessage: '订阅已刷新'
         });
       } catch (error) {
         showToast(`订阅刷新失败: ${error.message}`, 'error');
@@ -305,7 +356,8 @@ export const createNodesPanelController = ({
     });
 
     subscriptionDetailPanel.querySelector('.subscription-delete-btn')?.addEventListener('click', async (event) => {
-      const id = event.currentTarget.dataset.id;
+      const button = event.currentTarget;
+      const id = button.dataset.id;
       const target = subscriptionsData.find((item) => item.id === id);
       if (!target) return;
 
@@ -315,12 +367,12 @@ export const createNodesPanelController = ({
       );
       if (!confirmed) return;
 
-      event.currentTarget.disabled = true;
-      const label = event.currentTarget.querySelector('span');
+      button.disabled = true;
+      const label = button.querySelector('span');
       if (label) {
         label.textContent = '删除中...';
       } else {
-        event.currentTarget.textContent = '删除中...';
+        button.textContent = '删除中...';
       }
       try {
         await deleteSubscriptionRecord({

@@ -134,6 +134,8 @@ export const syncSubscriptionNodes = async ({
 
 export const refreshSubscriptionNodes = async ({
   subscriptionId,
+  url,
+  name,
   requestJson,
   setNodesData,
   setGroupsData,
@@ -143,10 +145,16 @@ export const refreshSubscriptionNodes = async ({
   renderNodesElement,
   syncNodeMutationFeedback,
   showToast,
+  successMessage,
 }) => {
+  const body = {
+    id: subscriptionId,
+    ...(url ? { url } : {}),
+    ...(name ? { name } : {})
+  };
   const payload = await requestJson('/api/subscriptions/sync', {
     method: 'POST',
-    body: JSON.stringify({ id: subscriptionId })
+    body: JSON.stringify(body)
   });
   setNodesData(payload.nodes || []);
   setGroupsData(payload.groups || []);
@@ -155,7 +163,7 @@ export const refreshSubscriptionNodes = async ({
   renderSubscriptions();
   renderNodesElement();
   syncNodeMutationFeedback(payload);
-  showToast(`订阅已刷新，导入 ${payload.importedCount} 个节点`, 'success');
+  showToast(`${successMessage || '订阅已刷新'}，导入 ${payload.importedCount} 个节点`, 'success');
 };
 
 export const deleteSubscriptionRecord = async ({

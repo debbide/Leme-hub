@@ -3249,7 +3249,8 @@ export class CoreManager {
     settings = this.ensureStoredGroup(settings, groupName);
     this.store.saveSettings(settings);
 
-    const existingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== url);
+    const urlsToReplace = new Set([url, existingRecord?.url].filter(Boolean));
+    const existingNodes = this.store.getNodes().filter((node) => !urlsToReplace.has(node.subscriptionUrl));
     const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, validNodes.map((node) => ({
       ...node,
       source: 'subscription',

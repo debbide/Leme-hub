@@ -651,6 +651,39 @@ test('syncSubscription auto-creates a dedicated group and refresh by id keeps th
   assert.equal(refreshed.nodes.some((node) => node.server === 'second.example' && node.group === 'My Feed'), true);
 });
 
+test('syncSubscription updates the subscription url and removes old subscription nodes', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'old-node', type: 'socks', server: 'old.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://old.example/sub', group: 'Old Feed' },
+    { id: 'manual', type: 'socks', server: 'manual.example', port: 1081 }
+  ]));
+
+  manager.proxyService = {
+    syncSubscription: async () => ([{ type: 'socks', server: 'new.example', port: 1082 }]),
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    enrichNodes: async (nodes) => nodes,
+    getStatus: () => ({ ready: false, pending: false, lastError: null })
+  };
+  manager.store.saveSettings({
+    ...manager.store.getSettings(),
+    subscriptions: [{ id: 'sub-1', url: 'https://old.example/sub', name: 'Old Feed', groupName: 'Old Feed' }],
+    groups: ['Old Feed']
+  });
+
+  const result = await manager.syncSubscription({ id: 'sub-1', url: 'https://new.example/sub', name: 'New Feed' });
+
+  assert.equal(result.subscription.url, 'https://new.example/sub');
+  assert.equal(result.subscription.name, 'New Feed');
+  assert.equal(result.nodes.some((node) => node.server === 'old.example'), false);
+  assert.equal(result.nodes.some((node) => node.server === 'manual.example'), true);
+  assert.equal(result.nodes.some((node) => node.server === 'new.example'), true);
+  assert.equal(result.subscriptions.some((item) => item.id === 'sub-1' && item.url === 'https://new.example/sub'), true);
+});
+
 test('renameGroup updates the bound subscription group name', async () => {
   const store = createStore([
     { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' }
