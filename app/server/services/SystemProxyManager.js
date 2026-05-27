@@ -512,10 +512,10 @@ export class SystemProxyManager {
 
   async disableWindowsProxy() {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f']);
-    await this.deleteWindowsRegistryValue('ProxyServer');
-    await this.deleteWindowsRegistryValue('ProxyOverride');
-    await this.deleteWindowsRegistryValue('AutoConfigURL');
-    await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 }).catch(() => null);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 });
   }
 
   async probeTcpEndpoint({ host, port, timeoutMs = 1500 }) {
