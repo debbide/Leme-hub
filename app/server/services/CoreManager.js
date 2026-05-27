@@ -2050,6 +2050,8 @@ export class CoreManager {
         : await this.autoStartManager.disable();
     }
 
+    const systemProxyCaptureWasEnabled = !!current.systemProxyCaptureEnabled;
+    const systemProxyCaptureWillBeDisabled = systemProxyCaptureWasEnabled && !next.systemProxyCaptureEnabled;
     const saved = this.store.saveSettings({
       ...next,
       proxyListenHost: next.proxyListenHost,
@@ -2072,6 +2074,10 @@ export class CoreManager {
       systemProxyAutoSwitchIntervalSec: systemProxyAutoSwitch.intervalSec,
       systemProxyAutoSwitchLastAt: systemProxyAutoSwitchLastAt
     });
+    if (systemProxyCaptureWillBeDisabled) {
+      const disabledProxy = await this.systemProxyManager.disable();
+      this.state.systemProxy = this.buildSystemProxyState(disabledProxy);
+    }
     this.state.autoStart = this.buildAutoStartState(autoStart);
     this.refreshConnectionsServiceBaseUrl(saved);
     this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);

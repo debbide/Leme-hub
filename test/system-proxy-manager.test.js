@@ -209,12 +209,9 @@ test('windows disable clears proxy values and applies direct wininet settings', 
 
   assert.equal(calls[0][4], 'ProxyEnable');
   assert.equal(calls[0][8], '0');
-  assert.equal(calls[1][4], 'ProxyServer');
-  assert.equal(calls[1][8], '');
-  assert.equal(calls[2][4], 'ProxyOverride');
-  assert.equal(calls[2][8], '');
-  assert.equal(calls[3][4], 'AutoConfigURL');
-  assert.equal(calls[3][8], '');
+  assert.deepEqual(calls[1], ['reg', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxyServer', '/f']);
+  assert.deepEqual(calls[2], ['reg', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxyOverride', '/f']);
+  assert.deepEqual(calls[3], ['reg', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'AutoConfigURL', '/f']);
   assert.equal(calls[4][0], 'powershell.exe');
   assert.match(calls[4][6], /\$proxyServer = "";/);
   assert.match(calls[4][6], /\$exceptions = "";/);

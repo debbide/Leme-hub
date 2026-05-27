@@ -512,11 +512,15 @@ export class SystemProxyManager {
     return this.parseWindowsWinHttpProxy(stdout);
   }
 
+  async deleteWindowsRegistryValue(name) {
+    await this.exec('reg', ['delete', WINDOWS_PROXY_REG_PATH, '/v', name, '/f']).catch(() => null);
+  }
+
   async disableWindowsProxy() {
     await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f']);
-    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyServer', '/t', 'REG_SZ', '/d', '', '/f']);
-    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
-    await this.exec('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
+    await this.deleteWindowsRegistryValue('ProxyServer');
+    await this.deleteWindowsRegistryValue('ProxyOverride');
+    await this.deleteWindowsRegistryValue('AutoConfigURL');
     await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 });
   }
 
