@@ -1563,6 +1563,46 @@ test('unexpected process exit disables system proxy when desired', async () => {
   assert.equal(manager.getStatus().systemProxy.enabled, false);
 });
 
+test('stop clears managed proxy leftovers even when capture preference is off', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  await manager.updateSettings({
+    systemProxyEnabled: true,
+    systemProxyCaptureEnabled: false
+  });
+  manager.state.status = 'running';
+  manager.proxyService = { stop: async () => {} };
+  let disableCalls = 0;
+  manager.systemProxyManager = {
+    getStatus: async () => ({
+      enabled: true,
+      mode: 'manual',
+      provider: 'mock',
+      http: { host: '127.0.0.1', port: 18999 },
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    disable: async () => {
+      disableCalls += 1;
+      return {
+        enabled: false,
+        mode: 'off',
+        provider: 'mock',
+        http: null,
+        socks: null,
+        supported: true,
+        lastError: null
+      };
+    },
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  const status = await manager.stop();
+
+  assert.equal(disableCalls, 1);
+  assert.equal(status.systemProxy.enabled, false);
+});
+
 test('updateSettings hot switches the active node without restarting when core is running', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

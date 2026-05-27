@@ -1805,6 +1805,16 @@ export class CoreManager {
     return this.state.systemProxy;
   }
 
+  isManagedSystemProxyStatus(status, settings = this.getSettingsSnapshot()) {
+    if (!status?.enabled) {
+      return false;
+    }
+
+    const expectedHttpPort = Number(settings.systemProxyHttpPort);
+    const expectedSocksPort = Number(settings.systemProxySocksPort);
+    return Number(status.http?.port) === expectedHttpPort || Number(status.socks?.port) === expectedSocksPort;
+  }
+
   async disableSystemProxy() {
     const status = await this.systemProxyManager.disable();
     if (this.getSettingsSnapshot().systemProxyCaptureEnabled) {
@@ -3352,14 +3362,19 @@ export class CoreManager {
         binPath: binary.executablePath,
         runtime: this.getRuntimeOptions(settings, nodes)
       });
-      const systemProxy = settings.systemProxyEnabled
-        && settings.systemProxyCaptureEnabled
-        ? await this.systemProxyManager.apply({
-            host: settings.proxyListenHost,
-            httpPort: settings.systemProxyHttpPort,
-            socksPort: settings.systemProxySocksPort
-          })
-        : await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+      let systemProxy = null;
+      if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled) {
+        systemProxy = await this.systemProxyManager.apply({
+          host: settings.proxyListenHost,
+          httpPort: settings.systemProxyHttpPort,
+          socksPort: settings.systemProxySocksPort
+        });
+      } else {
+        systemProxy = await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+        if (this.isManagedSystemProxyStatus(systemProxy, settings)) {
+          systemProxy = await this.systemProxyManager.disable();
+        }
+      }
       this.state = {
         ...this.state,
         status: 'running',
@@ -3419,13 +3434,24 @@ export class CoreManager {
   async stop() {
     this._restartAttempts = 0;
     await this.proxyService.stop();
-    const systemProxy = this.getSettingsSnapshot().systemProxyCaptureEnabled
-      ? await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
+    const settings = this.getSettingsSnapshot();
+    let systemProxy = null;
+    if (settings.systemProxyCaptureEnabled) {
+      systemProxy = await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
+        ...this.state.systemProxy,
+        lastError: error.message,
+        mode: 'error'
+      }));
+    } else {
+      systemProxy = await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+      if (this.isManagedSystemProxyStatus(systemProxy, settings)) {
+        systemProxy = await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
           ...this.state.systemProxy,
           lastError: error.message,
           mode: 'error'
-        }))
-      : await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
+        }));
+      }
+    }
     this.state = {
       ...this.state,
       status: 'stopped',
