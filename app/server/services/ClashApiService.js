@@ -29,7 +29,7 @@ export class ClashApiService {
     const response = await axios.put(`${this.baseUrl}/proxies/${encodeURIComponent(groupTag)}`, {
       name: outboundTag
     }, {
-      timeout: 5000,
+      timeout: 1500,
       headers: this.getHeaders()
     });
     return response.data || {};

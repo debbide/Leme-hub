@@ -1340,6 +1340,21 @@ export class CoreManager {
     };
   }
 
+  async closeRunningConnections(reason = 'selector switch') {
+    if (typeof this.connectionsService?.closeAllConnections !== 'function') {
+      return false;
+    }
+
+    try {
+      await this.connectionsService.closeAllConnections();
+      this.store.appendLog(`[CoreManager] Closed existing connections after ${reason}`);
+      return true;
+    } catch (error) {
+      this.store.appendLog(`[CoreManager] Failed to close existing connections after ${reason}: ${error.message}`);
+      return false;
+    }
+  }
+
   async applyRunningActiveNodeSelector(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
     const target = this.getActiveNodeSelectorTarget(settings, nodes);
     if (!target) {
@@ -1347,6 +1362,7 @@ export class CoreManager {
     }
 
     await this.clashApiService.setSelector(target.groupTag, target.outboundTag);
+    await this.closeRunningConnections('active node switch');
     this.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
     return true;
   }
@@ -2062,7 +2078,6 @@ export class CoreManager {
     let core = this.getStatus();
     if (shouldHotSwitchActiveNode) {
       try {
-        await this.clashApiService.waitUntilReady();
         await this.applyRunningActiveNodeSelector(saved, nodes);
         hotSwitchedActiveNode = true;
       } catch (error) {

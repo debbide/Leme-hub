@@ -1575,6 +1575,10 @@ test('updateSettings hot switches the active node without restarting when core i
     setSelector: async (groupTag, outboundTag) => calls.push(['setSelector', groupTag, outboundTag]),
     setListenHost() {}
   };
+  manager.connectionsService = {
+    closeAllConnections: async () => calls.push('closeAllConnections'),
+    setListenHost() {}
+  };
   let restarted = false;
   manager.restart = async () => {
     restarted = true;
@@ -1585,8 +1589,9 @@ test('updateSettings hot switches the active node without restarting when core i
   const result = await manager.updateSettings({ activeNodeId: 'n2' });
 
   assert.equal(restarted, false);
-  assert.equal(calls.some((entry) => entry === 'waitUntilReady'), true);
+  assert.equal(calls.some((entry) => entry === 'waitUntilReady'), false);
   assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === ACTIVE_NODE_SELECTOR_TAG && entry[2] === 'out-n2'), true);
+  assert.equal(calls.some((entry) => entry === 'closeAllConnections'), true);
   assert.equal(result.autoRestarted, false);
   assert.equal(result.restartRequired, false);
   assert.equal(result.proxy.activeNodeId, 'n2');
