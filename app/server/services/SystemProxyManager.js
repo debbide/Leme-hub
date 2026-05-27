@@ -80,10 +80,7 @@ public static class WinInetProxyApply {
   }
 
   static bool SetConnectionProxy(string connectionName, string proxyServer, string exceptions, int type) {
-    int optionCount = 1;
-    if (type == PROXY_TYPE_PROXY || type == PROXY_TYPE_AUTO_PROXY_URL) {
-      optionCount = String.IsNullOrEmpty(exceptions) ? 2 : 3;
-    }
+    int optionCount = 3;
 
     int flags = PROXY_TYPE_DIRECT;
     int valueOption = INTERNET_PER_CONN_PROXY_SERVER;
@@ -98,14 +95,10 @@ public static class WinInetProxyApply {
     INTERNET_PER_CONN_OPTION[] options = new INTERNET_PER_CONN_OPTION[optionCount];
     options[0].dwOption = INTERNET_PER_CONN_FLAGS;
     options[0].Value.dwValue = flags;
-    if (optionCount > 1) {
-      options[1].dwOption = valueOption;
-      options[1].Value.pszValue = Marshal.StringToHGlobalAuto(proxyServer ?? String.Empty);
-      if (optionCount > 2) {
-        options[2].dwOption = INTERNET_PER_CONN_PROXY_BYPASS;
-        options[2].Value.pszValue = Marshal.StringToHGlobalAuto(exceptions ?? String.Empty);
-      }
-    }
+    options[1].dwOption = valueOption;
+    options[1].Value.pszValue = Marshal.StringToHGlobalAuto(proxyServer ?? String.Empty);
+    options[2].dwOption = INTERNET_PER_CONN_PROXY_BYPASS;
+    options[2].Value.pszValue = Marshal.StringToHGlobalAuto(exceptions ?? String.Empty);
 
     INTERNET_PER_CONN_OPTION_LIST list = new INTERNET_PER_CONN_OPTION_LIST();
     list.dwSize = Marshal.SizeOf(typeof(INTERNET_PER_CONN_OPTION_LIST));
@@ -166,7 +159,8 @@ try {
   [WinInetProxyApply]::Apply($proxyServer, $exceptions, $type);
 } catch {
   [WinInetProxyApply]::Refresh();
-  Write-Output "WinINET per-connection proxy apply failed: $($_.Exception.Message)";
+  Write-Error "WinINET per-connection proxy apply failed: $($_.Exception.Message)";
+  exit 1;
 }
 `.trim();
 const WINDOWS_PROXY_OVERRIDE = [
@@ -521,7 +515,7 @@ export class SystemProxyManager {
     await this.deleteWindowsRegistryValue('ProxyServer');
     await this.deleteWindowsRegistryValue('ProxyOverride');
     await this.deleteWindowsRegistryValue('AutoConfigURL');
-    await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 });
+    await this.applyWindowsWinInetProxy({ proxyServer: '', exceptions: '', type: 1 }).catch(() => null);
   }
 
   async probeTcpEndpoint({ host, port, timeoutMs = 1500 }) {
