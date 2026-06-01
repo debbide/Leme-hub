@@ -3085,7 +3085,10 @@ export class CoreManager {
       return indexA - indexB;
     });
 
-    await this.configStore.mergeSettings({ nodeGroups: nextGroups });
+    await this.updateSettings({ 
+      nodeGroups: nextGroups,
+      groupSortOrder: orderedNames 
+    });
     return { nodeGroups: this.getNodeGroups() };
   }
 
