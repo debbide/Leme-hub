@@ -89,6 +89,9 @@ export const loadNodeGroupsData = async ({ nodeGroupsList, requestJson, nodeGrou
   const payload = await requestJson('/api/node-groups');
   const nextNodeGroups = payload.nodeGroups || [];
   setNodeGroups(nextNodeGroups);
+  if (typeof setGroupSortOrder === 'function') {
+    setGroupSortOrder(payload.groupSortOrder || []);
+  }
   setNodeGroupExpandedIds(new Set(Array.from(nodeGroupExpandedIds).filter((id) => nextNodeGroups.some((group) => group.id === id))));
   setNodeGroupAutoSwitchState(new Map(Array.from(nodeGroupAutoSwitchState.entries()).filter(([id]) => nextNodeGroups.some((group) => group.id === id))));
   setRoutingNodeOptions(payload.nodes || routingNodeOptions);

@@ -185,11 +185,14 @@ export const createNodeGroupsController = ({
     },
   });
 
+  let groupSortOrder = [];
+
   const loadNodeGroups = () => loadNodeGroupsData({
     nodeGroupsList,
     requestJson,
     nodeGroupExpandedIds,
     setNodeGroups: (value) => { nodeGroups = value || []; },
+    setGroupSortOrder: (value) => { groupSortOrder = value || []; },
     setNodeGroupExpandedIds: (value) => { nodeGroupExpandedIds = value; },
     nodeGroupAutoSwitchState: new Map(),
     setNodeGroupAutoSwitchState: () => {},
@@ -303,6 +306,7 @@ export const createNodeGroupsController = ({
     showNodeGroupConfigModal,
     getNodeGroups: () => nodeGroups,
     setNodeGroups: (value) => { nodeGroups = value || []; },
+    getGroupSortOrder: () => groupSortOrder,
     getNodeGroupDisplayName,
   };
 };

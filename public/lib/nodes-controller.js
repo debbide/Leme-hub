@@ -5,6 +5,7 @@ export const renderGroupTabs = ({
   nodesData,
   groupsData,
   subscriptionsData,
+  groupSortOrder = [],
   activeGroupTab,
   setActiveGroupTab,
   setCurrentGroup,
@@ -21,6 +22,18 @@ export const renderGroupTabs = ({
 
   const nodeGroups = nodesData.map((node) => node.group).filter(Boolean);
   const allGroups = [...new Set([...groupsData, ...nodeGroups])];
+
+  if (groupSortOrder && groupSortOrder.length > 0) {
+    allGroups.sort((a, b) => {
+      const indexA = groupSortOrder.indexOf(a);
+      const indexB = groupSortOrder.indexOf(b);
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+  }
+
   const subscriptionGroups = new Set((subscriptionsData || []).map((item) => item.groupName).filter(Boolean));
   const hasUngrouped = nodesData.some((node) => !node.group);
 
@@ -110,7 +123,7 @@ export const renderGroupTabs = ({
     groupTabsEl._sortable = window.Sortable.create(groupTabsEl, {
       animation: 150,
       ghostClass: 'group-tab-ghost',
-      filter: '.is-subscription, [data-key=""], [data-key="__ungrouped__"]',
+      filter: '[data-key=""], [data-key="__ungrouped__"]',
       preventOnFilter: false,
       onEnd: async () => {
         const newOrder = Array.from(groupTabsEl.children)

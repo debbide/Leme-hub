@@ -448,6 +448,7 @@ const nodesPanel = createNodesPanelController({
   showSyncBtn,
   manualAddBtn,
   testAllBtn,
+  getGroupSortOrder: () => nodeGroupsController.getGroupSortOrder(),
   closePanelBtn,
   importForm,
   syncForm,
