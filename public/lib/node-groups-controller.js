@@ -106,6 +106,7 @@ export const createNodeGroupsController = ({
   const renderNodeGroups = () => renderNodeGroupsView({
     nodeGroupsList,
     nodeGroups,
+    groupSortOrder,
     routingNodeOptions: getRoutingNodeOptions(),
     nodeGroupSortByLatency,
     nodeGroupSearchQuery,

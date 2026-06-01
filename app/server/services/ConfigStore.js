@@ -54,6 +54,7 @@ const defaultSettings = (paths, options = {}) => {
     customRules: [],
     rulesets: [],
     nodeGroups: [],
+    groupSortOrder: [],
     subscriptions: [],
     groups: [],
     nodeGroupAutoTestIntervalSec: 300,
@@ -103,6 +104,10 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
   if (!normalized.systemProxyEnabled) {
     normalized.systemProxyCaptureEnabled = false;
   }
+
+  normalized.groupSortOrder = Array.isArray(normalized.groupSortOrder)
+    ? [...new Set(normalized.groupSortOrder.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
 
   if (normalized.systemProxySocksPort === 20100 && normalized.systemProxyHttpPort === 20101) {
     normalized.systemProxySocksPort = DEFAULT_SYSTEM_PROXY_SOCKS_PORT;

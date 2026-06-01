@@ -84,7 +84,7 @@ export const formatNodeGroupLatencyBadge = ({ nodeId, nodeGroupTestingNodeIds, n
   return { text: `${latency} ms`, cls, title: '' };
 };
 
-export const loadNodeGroupsData = async ({ nodeGroupsList, requestJson, nodeGroupExpandedIds, setNodeGroups, setNodeGroupExpandedIds, nodeGroupAutoSwitchState, setNodeGroupAutoSwitchState, routingNodeOptions, setRoutingNodeOptions, nodeGroupAutoIntervalSelect, setNodeGroupAutoTestIntervalMs, setNodeGroupLatencyMap, setNodeGroupLastTestAt, renderNodeGroupTestMeta, renderNodeGroups }) => {
+export const loadNodeGroupsData = async ({ nodeGroupsList, requestJson, nodeGroupExpandedIds, setNodeGroups, setGroupSortOrder, setNodeGroupExpandedIds, nodeGroupAutoSwitchState, setNodeGroupAutoSwitchState, routingNodeOptions, setRoutingNodeOptions, nodeGroupAutoIntervalSelect, setNodeGroupAutoTestIntervalMs, setNodeGroupLatencyMap, setNodeGroupLastTestAt, renderNodeGroupTestMeta, renderNodeGroups }) => {
   if (!nodeGroupsList) return;
   const payload = await requestJson('/api/node-groups');
   const nextNodeGroups = payload.nodeGroups || [];

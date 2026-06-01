@@ -1,6 +1,7 @@
 export const renderNodeGroups = ({
   nodeGroupsList,
   nodeGroups,
+  groupSortOrder = [],
   routingNodeOptions,
   nodeGroupSortByLatency,
   nodeGroupSearchQuery,
@@ -27,7 +28,17 @@ export const renderNodeGroups = ({
     return;
   }
 
-  const sortedGroups = [...nodeGroups].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'));
+  const groupOrder = Array.isArray(groupSortOrder) ? groupSortOrder : [];
+  const sortedGroups = [...nodeGroups].sort((a, b) => {
+    const indexA = groupOrder.indexOf(a.id);
+    const indexB = groupOrder.indexOf(b.id);
+    if (indexA !== -1 || indexB !== -1) {
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    }
+    return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
+  });
   const countryNameByCode = new Intl.DisplayNames(['zh-CN', 'en'], { type: 'region' });
   const parseCountryMeta = (group) => {
     const name = String(group?.name || '');
@@ -50,9 +61,9 @@ export const renderNodeGroups = ({
     return /^国家\/[A-Za-z]{2}$/u.test(name) || /^country-auto-[a-z]{2}$/u.test(id);
   };
 
-  const countryGroups = sortedGroups.filter(isCountryGroup);
-  const customGroups = sortedGroups.filter((group) => !isCountryGroup(group));
-  const orderedGroups = [...countryGroups, ...customGroups];
+  const orderedGroups = groupOrder.length
+    ? sortedGroups
+    : [...sortedGroups.filter(isCountryGroup), ...sortedGroups.filter((group) => !isCountryGroup(group))];
   const query = nodeGroupSearchQuery.trim().toLowerCase();
   const filteredGroups = orderedGroups.filter((group) => {
     if (!query) return true;

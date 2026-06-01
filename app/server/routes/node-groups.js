@@ -69,7 +69,7 @@ export function createNodeGroupRoutes({ coreManager }) {
     },
     'POST /api/node-groups/reorder': async ({ body }) => {
       try {
-        return json({ ok: true, ...await coreManager.reorderNodeGroups(body?.order || []), nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
+        return json({ ok: true, ...await coreManager.reorderNodeGroups(body?.order || []), nodeGroups: await getNodeGroups(), groupSortOrder: coreManager.getSettingsSnapshot().groupSortOrder || [], nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
       } catch (error) {
         return json({ ok: false, error: error.message, nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() }, error.status || 500);
       }

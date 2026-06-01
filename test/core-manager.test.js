@@ -987,6 +987,26 @@ test('updateSettings persists normalized node groups', async () => {
   assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n1');
 });
 
+test('reorderNodeGroups persists stable group id order', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [
+      { id: 'g1', name: 'JP Pool', nodeIds: ['n1'], selectedNodeId: 'n1' },
+      { id: 'g2', name: 'US Pool', nodeIds: ['n2'], selectedNodeId: 'n2' }
+    ]
+  });
+
+  const result = await manager.reorderNodeGroups(['g2', 'missing', 'g1', 'g2']);
+
+  assert.deepEqual(result.groupSortOrder, ['g2', 'g1']);
+  assert.deepEqual(result.nodeGroups.map((group) => group.id), ['g2', 'g1']);
+  assert.deepEqual(manager.getSettingsSnapshot().groupSortOrder, ['g2', 'g1']);
+});
+
 test('selectNodeGroupNode switches a running selector group without restarting', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

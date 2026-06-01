@@ -102,3 +102,18 @@ test('initializes system proxy auto switch settings with sane defaults', () => {
   assert.equal(settings.systemProxyAutoSwitchLastAt, null);
   assert.equal(settings.speedtestUrl, 'https://www.google.com/generate_204');
 });
+
+test('normalizes persisted group sort order ids', () => {
+  const paths = createPaths();
+  fs.writeFileSync(paths.settingsPath, JSON.stringify({
+    groupSortOrder: ['g2', '', 'g1', 'g2', null]
+  }, null, 2));
+  fs.writeFileSync(paths.nodesPath, '[]');
+  fs.writeFileSync(paths.logPath, '');
+  fs.writeFileSync(paths.configPath, 'null');
+
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+  const settings = store.getSettings();
+
+  assert.deepEqual(settings.groupSortOrder, ['g2', 'g1']);
+});

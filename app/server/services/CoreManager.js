@@ -3071,25 +3071,28 @@ export class CoreManager {
     return this.getNodeGroups();
   }
 
-  async reorderNodeGroups(orderedNames = []) {
+  async reorderNodeGroups(orderedIds = []) {
     const settings = this.getSettingsSnapshot();
     const currentGroups = settings.nodeGroups || [];
-    
-    // Sort groups based on the provided array of names
+    const validGroupIds = new Set(currentGroups.map((group) => group.id));
+    const normalizedOrder = [...new Set((Array.isArray(orderedIds) ? orderedIds : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => validGroupIds.has(id)))];
+
     const nextGroups = [...currentGroups].sort((a, b) => {
-      const indexA = orderedNames.indexOf(a.name);
-      const indexB = orderedNames.indexOf(b.name);
+      const indexA = normalizedOrder.indexOf(a.id);
+      const indexB = normalizedOrder.indexOf(b.id);
       if (indexA === -1 && indexB === -1) return 0;
       if (indexA === -1) return 1;
       if (indexB === -1) return -1;
       return indexA - indexB;
     });
 
-    await this.updateSettings({ 
+    await this.updateSettings({
       nodeGroups: nextGroups,
-      groupSortOrder: orderedNames 
+      groupSortOrder: normalizedOrder
     });
-    return { nodeGroups: this.getNodeGroups() };
+    return { nodeGroups: this.getNodeGroups(), groupSortOrder: this.getSettingsSnapshot().groupSortOrder || [] };
   }
 
   async createNodeGroup(payload = {}) {
@@ -3110,8 +3113,9 @@ export class CoreManager {
 
     const settings = this.getSettingsSnapshot();
     const currentGroups = settings.nodeGroups || [];
+    const groupId = createNodeId();
     const nextGroups = [...currentGroups, {
-      id: createNodeId(),
+      id: groupId,
       name,
       type,
       countryCode,
@@ -3121,7 +3125,8 @@ export class CoreManager {
       nodeIds,
       selectedNodeId
     }];
-    return this.updateSettings({ nodeGroups: nextGroups });
+    const nextSortOrder = [...(settings.groupSortOrder || []).filter((id) => currentGroups.some((group) => group.id === id)), groupId];
+    return this.updateSettings({ nodeGroups: nextGroups, groupSortOrder: nextSortOrder });
   }
 
   async updateNodeGroup(groupId, patch = {}) {
@@ -3156,6 +3161,7 @@ export class CoreManager {
     const nextGroups = (settings.nodeGroups || []).filter((group) => group.id !== groupId);
     return this.updateSettings({
       nodeGroups: nextGroups,
+      groupSortOrder: (settings.groupSortOrder || []).filter((id) => id !== groupId),
       customRules: (settings.customRules || []).map((rule) => rule.action === 'node_group' && rule.nodeGroupId === groupId ? { ...rule, action: 'default', nodeGroupId: null } : rule),
       rulesets: (settings.rulesets || []).map((ruleset) => ruleset.target === 'node_group' && ruleset.groupId === groupId ? { ...ruleset, target: 'default', groupId: null } : ruleset)
     });

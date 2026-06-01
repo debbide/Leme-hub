@@ -20,6 +20,7 @@ const renderTabsHtml = (overrides = {}) => {
     nodesData: overrides.nodesData || [],
     groupsData: overrides.groupsData || [],
     subscriptionsData: overrides.subscriptionsData || [],
+    groupSortOrder: overrides.groupSortOrder || [],
     activeGroupTab: state.activeGroupTab,
     setActiveGroupTab: (value) => { state.activeGroupTab = value; },
     setCurrentGroup: (value) => { state.currentGroup = value; },
@@ -69,6 +70,19 @@ test('renderGroupTabs resets removed active groups and escapes group labels', ()
   assert.match(html, />全部<span class="group-tab-count">1<\/span>/u);
   assert.match(html, /Feed &lt;A&gt;/u);
   assert.doesNotMatch(html, /Feed <A>/u);
+});
+
+test('renderGroupTabs applies persisted group sort order', () => {
+  const { html } = renderTabsHtml({
+    nodesData: [
+      { id: 'n1', group: 'Alpha' },
+      { id: 'n2', group: 'Beta' }
+    ],
+    groupsData: ['Alpha', 'Beta'],
+    groupSortOrder: ['Beta', 'Alpha']
+  });
+
+  assert.ok(html.indexOf('>Beta') < html.indexOf('>Alpha'));
 });
 
 test('renderGroupTabs marks refreshing subscriptions without expanding the tab content', () => {
