@@ -6,6 +6,7 @@ export const renderGroupTabs = ({
   groupsData,
   subscriptionsData,
   groupSortOrder = [],
+  setGroupSortOrder,
   activeGroupTab,
   setActiveGroupTab,
   setCurrentGroup,
@@ -132,6 +133,9 @@ export const renderGroupTabs = ({
           
         try {
           await requestJson('/api/node-groups/reorder', { method: 'POST', body: JSON.stringify({ order: newOrder }) });
+          if (setGroupSortOrder) {
+            setGroupSortOrder(newOrder);
+          }
         } catch (error) {
           showToast(`排序保存失败: ${error.message}`, 'error');
         }
