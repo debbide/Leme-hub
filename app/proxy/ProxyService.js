@@ -593,7 +593,8 @@ export class ProxyService {
         applyIfPresent(outbound, 'plugin_opts', node.plugin_opts);
       } else if (node.type === 'vless') {
         outbound.uuid = String(node.uuid || '').trim();
-        outbound.packet_encoding = node.packet_encoding || 'xudp';
+        const defaultEncoding = node.flow === 'xtls-rprx-vision' ? 'xudp' : undefined;
+        applyIfPresent(outbound, 'packet_encoding', node.packet_encoding || defaultEncoding);
       }
 
       applyIfPresent(outbound, 'network', node.network);
