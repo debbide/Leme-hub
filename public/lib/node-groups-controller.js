@@ -307,6 +307,7 @@ export const createNodeGroupsController = ({
     getNodeGroups: () => nodeGroups,
     setNodeGroups: (value) => { nodeGroups = value || []; },
     getGroupSortOrder: () => groupSortOrder,
+    setGroupSortOrder: (value) => { groupSortOrder = value || []; },
     getNodeGroupDisplayName,
   };
 };
