@@ -84,7 +84,7 @@ export const DEFAULT_NODE_FORM_STATE = {
   version: '5',
   alterId: '0',
   flow: '',
-  packet_encoding: 'xudp',
+  packet_encoding: '',
   sni: '',
   insecure: false,
   alpn: '',
@@ -243,7 +243,7 @@ export const normalizeNodeForForm = (node) => {
   const security = deriveSecurity(type, node);
   const transport = deriveTransport(type, node);
   const packetEncoding = cleanString(node?.packet_encoding)
-    || (type === 'vmess' ? 'packetaddr' : type === 'vless' ? 'xudp' : '');
+    || (type === 'vmess' ? 'packetaddr' : '');
   return {
     ...DEFAULT_NODE_FORM_STATE,
     type,
@@ -628,7 +628,7 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
 
   if (type === 'vless') {
     setIfPresent(node, 'flow', cleanOptionalString(formState?.flow));
-    node.packet_encoding = cleanOptionalString(formState?.packet_encoding) || 'xudp';
+    setIfPresent(node, 'packet_encoding', cleanOptionalString(formState?.packet_encoding));
   }
 
   if (TYPES_WITH_TRANSPORT.has(type)) {

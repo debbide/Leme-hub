@@ -78,11 +78,11 @@ test('ignores socks front proxy references that point to another socks node', ()
   assert.equal(socksOutbound.detour, undefined);
 });
 
-test('generates vless config with default xudp encoding', () => {
+test('does not force packet encoding for vless config', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'vless', server: '127.0.0.1', port: 1080, uuid: '00000000-0000-0000-0000-000000000000' }]);
   const config = service.generateConfig();
-  assert.equal(config.outbounds[0].packet_encoding, 'xudp');
+  assert.equal(config.outbounds[0].packet_encoding, undefined);
 });
 
 test('generates vmess config with default packetaddr encoding', () => {

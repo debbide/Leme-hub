@@ -15,7 +15,7 @@ test('creates manual draft defaults for vless nodes', () => {
 
   assert.equal(draft.type, 'vless');
   assert.equal(draft.transport, 'tcp');
-  assert.equal(draft.packet_encoding, 'xudp');
+  assert.equal(draft.packet_encoding, '');
   assert.equal(draft.group, '日本节点');
 });
 
@@ -108,6 +108,7 @@ test('persists a front proxy selection only for socks nodes', () => {
   });
 
   assert.equal(vlessPayload.frontProxyNodeId, undefined);
+  assert.equal(vlessPayload.packet_encoding, undefined);
 });
 
 test('normalizes front proxy selection for existing socks nodes', () => {
