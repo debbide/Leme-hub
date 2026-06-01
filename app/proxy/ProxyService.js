@@ -592,7 +592,8 @@ export class ProxyService {
         applyIfPresent(outbound, 'plugin', node.plugin);
         applyIfPresent(outbound, 'plugin_opts', node.plugin_opts);
       } else if (node.type === 'vless') {
-        applyIfPresent(outbound, 'packet_encoding', node.packet_encoding);
+        outbound.uuid = String(node.uuid || '').trim();
+        outbound.packet_encoding = node.packet_encoding || 'xudp';
       }
 
       applyIfPresent(outbound, 'network', node.network);
