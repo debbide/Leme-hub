@@ -92,6 +92,40 @@ export const renderGroupTabs = ({
     return `<button type="button" class="group-tab${isActive ? ' active' : ''}${tab.managedBySubscription ? ' is-subscription' : ''}" data-key="${safeKey}" title="${safeTitle}">${safeLabel}${badge}<span class="group-tab-count">${safeCount}</span>${actions}</button>`;
   }).join('');
 
+  if (groupTabsEl.dataset && !groupTabsEl.dataset.wheelBound) {
+    groupTabsEl.dataset.wheelBound = 'true';
+    groupTabsEl.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        groupTabsEl.scrollLeft += e.deltaY;
+      }
+    });
+  }
+
+  if (groupTabsEl._sortable) {
+    groupTabsEl._sortable.destroy();
+  }
+  
+  if (typeof window !== 'undefined' && window.Sortable && groupTabsEl.dataset) {
+    groupTabsEl._sortable = window.Sortable.create(groupTabsEl, {
+      animation: 150,
+      ghostClass: 'group-tab-ghost',
+      filter: '.is-subscription, [data-key=""], [data-key="__ungrouped__"]',
+      preventOnFilter: false,
+      onEnd: async () => {
+        const newOrder = Array.from(groupTabsEl.children)
+          .map(btn => btn.dataset.key)
+          .filter(k => k && k !== '__ungrouped__');
+          
+        try {
+          await requestJson('/api/node-groups/reorder', { method: 'POST', body: JSON.stringify({ order: newOrder }) });
+        } catch (error) {
+          showToast(`排序保存失败: ${error.message}`, 'error');
+        }
+      }
+    });
+  }
+
   groupTabsEl.querySelectorAll('.group-tab').forEach((button) => {
     button.addEventListener('click', (event) => {
       if (event.target.closest('.group-tab-actions')) return;

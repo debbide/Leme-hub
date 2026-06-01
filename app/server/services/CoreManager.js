@@ -3071,6 +3071,24 @@ export class CoreManager {
     return this.getNodeGroups();
   }
 
+  async reorderNodeGroups(orderedNames = []) {
+    const settings = this.getSettingsSnapshot();
+    const currentGroups = settings.nodeGroups || [];
+    
+    // Sort groups based on the provided array of names
+    const nextGroups = [...currentGroups].sort((a, b) => {
+      const indexA = orderedNames.indexOf(a.name);
+      const indexB = orderedNames.indexOf(b.name);
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
+    await this.configStore.mergeSettings({ nodeGroups: nextGroups });
+    return { nodeGroups: this.getNodeGroups() };
+  }
+
   async createNodeGroup(payload = {}) {
     const type = NODE_GROUP_TYPES.includes(String(payload.type || '').trim())
       ? String(payload.type || '').trim()
