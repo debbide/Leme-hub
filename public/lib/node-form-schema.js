@@ -1,8 +1,8 @@
-const SUPPORTED_NODE_TYPES = new Set(['vmess', 'vless', 'trojan', 'tuic', 'hysteria2', 'shadowsocks', 'socks', 'http']);
+const SUPPORTED_NODE_TYPES = new Set(['vmess', 'vless', 'trojan', 'tuic', 'hysteria2', 'anytls', 'shadowsocks', 'socks', 'http']);
 const TYPES_WITH_TRANSPORT = new Set(['vmess', 'vless', 'trojan']);
 const TYPES_WITH_SECURITY = new Set(['vmess', 'vless', 'trojan']);
-const TYPES_WITH_FIXED_TLS = new Set(['tuic', 'hysteria2']);
-const TYPES_WITH_FP = new Set(['vmess', 'vless', 'trojan']);
+const TYPES_WITH_FIXED_TLS = new Set(['tuic', 'hysteria2', 'anytls']);
+const TYPES_WITH_FP = new Set(['vmess', 'vless', 'trojan', 'anytls']);
 
 const FORM_EXCLUDED_KEYS = new Set([
   'id',
@@ -28,6 +28,9 @@ const FORM_EXCLUDED_KEYS = new Set([
   'down_mbps',
   'congestion_control',
   'udp_relay_mode',
+  'idle_session_check_interval',
+  'idle_session_timeout',
+  'min_idle_session',
   'heartbeat',
   'packet_encoding',
   'serviceName',
@@ -109,6 +112,9 @@ export const DEFAULT_NODE_FORM_STATE = {
   down_mbps: '',
   congestion_control: 'bbr',
   udp_relay_mode: 'quic-rfc',
+  idle_session_check_interval: '',
+  idle_session_timeout: '',
+  min_idle_session: '',
   heartbeat: '',
   udp_over_stream: false,
   zero_rtt_handshake: false,
@@ -143,7 +149,7 @@ const normalizeType = (value) => {
 };
 
 const normalizeSecurity = (type, value) => {
-  if (type === 'hysteria2' || type === 'tuic') {
+  if (TYPES_WITH_FIXED_TLS.has(type)) {
     return 'tls';
   }
   const security = cleanString(value).toLowerCase();
@@ -170,7 +176,7 @@ const normalizeTransport = (type, value) => {
 const usesTls = (type, security) => TYPES_WITH_FIXED_TLS.has(type) || ((type === 'vmess' || type === 'vless' || type === 'trojan') && security !== 'none');
 
 const deriveSecurity = (type, node) => {
-  if (type === 'hysteria2' || type === 'tuic') {
+  if (TYPES_WITH_FIXED_TLS.has(type)) {
     return 'tls';
   }
   if (type === 'trojan') {
@@ -286,6 +292,9 @@ export const normalizeNodeForForm = (node) => {
     down_mbps: toFormString(node?.down_mbps),
     congestion_control: toFormString(node?.congestion_control || (type === 'tuic' ? 'bbr' : '')),
     udp_relay_mode: toFormString(node?.udp_relay_mode || (type === 'tuic' ? 'quic-rfc' : '')),
+    idle_session_check_interval: toFormString(node?.idle_session_check_interval),
+    idle_session_timeout: toFormString(node?.idle_session_timeout),
+    min_idle_session: toFormString(node?.min_idle_session),
     heartbeat: toFormString(node?.heartbeat),
     udp_over_stream: !!node?.udp_over_stream,
     zero_rtt_handshake: !!node?.zero_rtt_handshake,
@@ -340,7 +349,7 @@ export const validateNodeFormState = (formState = {}, advancedText = '{}') => {
     setError('uuid', '该协议需要填写 UUID');
   }
 
-  if (['trojan', 'tuic', 'hysteria2'].includes(type) && !cleanString(formState?.password)) {
+  if (['trojan', 'tuic', 'hysteria2', 'anytls'].includes(type) && !cleanString(formState?.password)) {
     setError('password', '该协议需要填写密码');
   }
 
@@ -372,6 +381,10 @@ export const validateNodeFormState = (formState = {}, advancedText = '{}') => {
     if (!isOptionalNumberString(formState?.down_mbps)) {
       setError('down_mbps', '下行带宽格式不正确');
     }
+  }
+
+  if (type === 'anytls' && !isOptionalIntegerString(formState?.min_idle_session)) {
+    setError('min_idle_session', '最小空闲会话数必须是 0 或正整数');
   }
 
   try {
@@ -523,7 +536,7 @@ const pruneTypeSpecificFields = (node, type, security, transport) => {
   if (!['vmess', 'vless', 'tuic'].includes(type)) {
     drop('uuid');
   }
-  if (!['trojan', 'tuic', 'hysteria2', 'shadowsocks', 'socks', 'http'].includes(type)) {
+  if (!['trojan', 'tuic', 'hysteria2', 'anytls', 'shadowsocks', 'socks', 'http'].includes(type)) {
     drop('password');
   }
   if (type !== 'hysteria2') {
@@ -531,6 +544,9 @@ const pruneTypeSpecificFields = (node, type, security, transport) => {
   }
   if (type !== 'tuic') {
     drop('congestion_control', 'udp_relay_mode');
+  }
+  if (type !== 'anytls') {
+    drop('idle_session_check_interval', 'idle_session_timeout', 'min_idle_session');
   }
   if (!['hysteria2', 'tuic'].includes(type)) {
     drop('heartbeat', 'udp_over_stream', 'zero_rtt_handshake', 'ip');
@@ -589,7 +605,7 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
     node.uuid = uuid;
   }
 
-  if (type === 'trojan' || type === 'tuic' || type === 'hysteria2') {
+  if (type === 'trojan' || type === 'tuic' || type === 'hysteria2' || type === 'anytls') {
     const password = cleanString(formState?.password);
     if (!password) {
       throw new Error('该协议需要填写密码');
@@ -686,6 +702,13 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
     setIfPresent(node, 'ip', cleanOptionalString(formState?.ip));
   }
 
+  if (type === 'anytls') {
+    setIfPresent(node, 'idle_session_check_interval', cleanOptionalString(formState?.idle_session_check_interval));
+    setIfPresent(node, 'idle_session_timeout', cleanOptionalString(formState?.idle_session_timeout));
+    setIfPresent(node, 'min_idle_session', parseOptionalInteger(formState?.min_idle_session, '最小空闲会话数'));
+    setIfPresent(node, 'sni', cleanOptionalString(formState?.sni) || server);
+  }
+
   if (type === 'tuic') {
     node.congestion_control = cleanOptionalString(formState?.congestion_control) || 'bbr';
     node.udp_relay_mode = cleanOptionalString(formState?.udp_relay_mode) || 'quic-rfc';
@@ -712,7 +735,7 @@ export const getNodeFormVisibility = (formState) => {
     security: TYPES_WITH_SECURITY.has(type),
     transport: TYPES_WITH_TRANSPORT.has(type),
     uuid: ['vmess', 'vless', 'tuic'].includes(type),
-    password: ['trojan', 'tuic', 'hysteria2', 'shadowsocks', 'socks', 'http'].includes(type),
+    password: ['trojan', 'tuic', 'hysteria2', 'anytls', 'shadowsocks', 'socks', 'http'].includes(type),
     username: ['socks', 'http'].includes(type),
     method: type === 'shadowsocks',
     version: type === 'socks',
@@ -734,6 +757,7 @@ export const getNodeFormVisibility = (formState) => {
     shadowsocks: type === 'shadowsocks',
     hysteria2: type === 'hysteria2',
     tuic: type === 'tuic',
+    anytls: type === 'anytls',
     heartbeat: ['hysteria2', 'tuic'].includes(type),
     udpFlags: ['hysteria2', 'tuic'].includes(type),
     ip: ['hysteria2', 'tuic'].includes(type)

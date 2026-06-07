@@ -35,6 +35,7 @@ const FIELD_VISIBILITY_MAP = {
   shadowsocks: ['plugin', 'plugin_opts'],
   hysteria2: ['obfs', 'obfs_password', 'up_mbps', 'down_mbps'],
   tuic: ['congestion_control', 'udp_relay_mode'],
+  anytls: ['idle_session_check_interval', 'idle_session_timeout', 'min_idle_session'],
   heartbeat: ['heartbeat'],
   udpFlags: ['udp_over_stream', 'zero_rtt_handshake'],
   ip: ['ip'],
@@ -209,7 +210,7 @@ export const syncNodeFormRuntime = ({ nodeForm, editAdvancedInput, validate = fa
   const visibility = getNodeFormVisibility(state);
 
   if (!visibility.security && nodeForm.elements.security) {
-    nodeForm.elements.security.value = ['tuic', 'hysteria2'].includes(state.type) ? 'tls' : 'none';
+    nodeForm.elements.security.value = ['tuic', 'hysteria2', 'anytls'].includes(state.type) ? 'tls' : 'none';
   }
   if (!visibility.transport && nodeForm.elements.transport) {
     nodeForm.elements.transport.value = 'tcp';

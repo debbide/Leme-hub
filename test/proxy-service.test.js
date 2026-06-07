@@ -1065,6 +1065,25 @@ test('toShareLink serializes tuic nodes with default h3 alpn', () => {
   assert.equal(link, 'tuic://0478303c-d7d2-4156-afba-1ab7e14c47fd:secret@tuic.example:443?sni=edge.example&alpn=h3&allow_insecure=1#tuic%20edge');
 });
 
+test('toShareLink serializes anytls nodes with idle session fields', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const link = service.toShareLink({
+    type: 'anytls',
+    server: 'any.example',
+    port: 443,
+    password: 'secret',
+    sni: 'edge.example',
+    fp: 'chrome',
+    insecure: true,
+    idle_session_check_interval: '30s',
+    idle_session_timeout: '60s',
+    min_idle_session: 2,
+    name: 'any edge'
+  });
+
+  assert.equal(link, 'anytls://secret@any.example:443?sni=edge.example&fp=chrome&insecure=1&allowInsecure=1&idle_session_check_interval=30s&idle_session_timeout=60s&min_idle_session=2#any%20edge');
+});
+
 test('parses hysteria2 bandwidth and obfs password fields', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   const node = service.parseProxyLink('hy2://secret@example.com:443?obfs=salamander&obfs-password=mask&upmbps=20&downmbps=80&sni=edge.example#hy2');
@@ -1109,6 +1128,38 @@ test('parses tuic extended parameters', () => {
   assert.equal(node.heartbeat, '10s');
   assert.equal(node.zero_rtt_handshake, true);
   assert.equal(node.alpn, 'h3');
+});
+
+test('parses anytls links and generates sing-box outbound fields', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const node = service.parseProxyLink('anytls://secret@any.example?allowInsecure=1&sni=edge.example&fp=firefox&idle_session_check_interval=30s&idle_session_timeout=60s&min_idle_session=2#any');
+  service.setNodes([{ id: node.id, ...node }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds.find((item) => item.tag === `out-${node.id}`);
+
+  assert.equal(node.type, 'anytls');
+  assert.equal(node.port, 443);
+  assert.equal(node.password, 'secret');
+  assert.equal(node.tls, true);
+  assert.equal(node.security, 'tls');
+  assert.equal(node.sni, 'edge.example');
+  assert.equal(node.fp, 'firefox');
+  assert.equal(node.insecure, true);
+  assert.equal(node.idle_session_check_interval, '30s');
+  assert.equal(node.idle_session_timeout, '60s');
+  assert.equal(node.min_idle_session, 2);
+  assert.equal(outbound.type, 'anytls');
+  assert.equal(outbound.server, 'any.example');
+  assert.equal(outbound.server_port, 443);
+  assert.equal(outbound.password, 'secret');
+  assert.equal(outbound.idle_session_check_interval, '30s');
+  assert.equal(outbound.idle_session_timeout, '60s');
+  assert.equal(outbound.min_idle_session, 2);
+  assert.equal(outbound.tls.enabled, true);
+  assert.equal(outbound.tls.server_name, 'edge.example');
+  assert.equal(outbound.tls.insecure, true);
+  assert.equal(outbound.tls.utls.fingerprint, 'firefox');
 });
 
 test('parses ipv6 literal hosts without persisting square brackets', () => {
@@ -1477,6 +1528,52 @@ test('syncSubscription imports sing-box style json outbounds', async () => {
   assert.equal(nodes[0].security, 'reality');
 });
 
+test('syncSubscription imports sing-box anytls outbounds', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  axios.get = async () => ({
+    data: JSON.stringify({
+      outbounds: [
+        {
+          type: 'anytls',
+          tag: 'any-1',
+          server: 'any.example',
+          server_port: 443,
+          password: 'secret',
+          idle_session_check_interval: '30s',
+          idle_session_timeout: '60s',
+          min_idle_session: 2,
+          tls: {
+            enabled: true,
+            server_name: 'edge.example',
+            insecure: true,
+            utls: {
+              enabled: true,
+              fingerprint: 'chrome'
+            }
+          }
+        }
+      ]
+    })
+  });
+
+  const nodes = await service.syncSubscription('https://example.com/sub');
+
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].type, 'anytls');
+  assert.equal(nodes[0].name, 'any-1');
+  assert.equal(nodes[0].server, 'any.example');
+  assert.equal(nodes[0].port, 443);
+  assert.equal(nodes[0].password, 'secret');
+  assert.equal(nodes[0].tls, true);
+  assert.equal(nodes[0].security, 'tls');
+  assert.equal(nodes[0].sni, 'edge.example');
+  assert.equal(nodes[0].insecure, true);
+  assert.equal(nodes[0].fp, 'chrome');
+  assert.equal(nodes[0].idle_session_check_interval, '30s');
+  assert.equal(nodes[0].idle_session_timeout, '60s');
+  assert.equal(nodes[0].min_idle_session, 2);
+});
+
 test('syncSubscription sends user agent and basic auth headers', async () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   let capturedOptions = null;
@@ -1658,13 +1755,14 @@ test('parseProxyLinks splits multi-line share links into separate nodes', () => 
 
   const nodes = service.parseProxyLinks([
     'trojan://secret@example.com#trojan',
+    'anytls://secret@any.example:443?sni=edge.example#any',
     'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws#edge',
     'invalid-line',
     'ss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss'
   ].join('\n'));
 
-  assert.equal(nodes.length, 3);
-  assert.deepEqual(nodes.map((node) => node.type), ['trojan', 'vless', 'shadowsocks']);
+  assert.equal(nodes.length, 4);
+  assert.deepEqual(nodes.map((node) => node.type), ['trojan', 'anytls', 'vless', 'shadowsocks']);
 });
 
 test('parseProxyLinks accepts newline-separated encoded manual links', () => {

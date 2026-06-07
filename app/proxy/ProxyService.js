@@ -41,6 +41,7 @@ const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
 const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
 const SYSTEM_REMOTE_DNS_SERVER_TAG = 'dns-system-remote';
 const FRAGMENTABLE_TLS_OUTBOUND_TYPES = new Set(['vmess', 'vless', 'trojan']);
+const FIXED_TLS_OUTBOUND_TYPES = new Set(['tuic', 'hysteria2', 'anytls']);
 const NODE_GROUP_OUTBOUND_PREFIX = 'grp-';
 const SPEEDTEST_CONFIG_PREFIX = 'singbox_speedtest_';
 const SPEEDTEST_REQUEST_COUNT = 2;
@@ -166,6 +167,9 @@ const nodeUsesTls = (node = {}) => {
 
   const type = String(node?.type || '').trim().toLowerCase();
   const security = String(node?.security || '').trim().toLowerCase();
+  if (FIXED_TLS_OUTBOUND_TYPES.has(type)) {
+    return true;
+  }
   if (type !== 'vmess' && security === 'none') {
     return false;
   }
@@ -204,7 +208,7 @@ const SUBSCRIPTION_USER_AGENT = 'Leme-Hub/0.1';
 const SUBSCRIPTION_V2RAYN_USER_AGENT = 'v2rayN/7.20.0';
 const SUBSCRIPTION_BROWSER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 const SUBSCRIPTION_TIMEOUT_MS = 15000;
-const PROXY_LINK_SCHEME_RE = /^(vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2):\/\//u;
+const PROXY_LINK_SCHEME_RE = /^(vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2|anytls):\/\//u;
 
 const trimBase64Padding = (value) => value.replace(/=+$/u, '');
 
@@ -756,6 +760,21 @@ export class ProxyService {
 
         if (outbound.tls && outbound.tls.utls) {
           delete outbound.tls.utls;
+        }
+      }
+
+      if (node.type === 'anytls') {
+        outbound.password = node.password;
+        applyIfPresent(outbound, 'idle_session_check_interval', node.idle_session_check_interval);
+        applyIfPresent(outbound, 'idle_session_timeout', node.idle_session_timeout);
+        applyIfPresent(outbound, 'min_idle_session', toInt(node.min_idle_session));
+
+        if (!outbound.tls) {
+          outbound.tls = {
+            enabled: true,
+            server_name: normalizeHost(node.sni) || serverHost,
+            insecure: !!node.insecure
+          };
         }
       }
 
@@ -2049,6 +2068,12 @@ export class ProxyService {
       if (params.get('down')) config.down_mbps = toInt(params.get('down'), config.down_mbps);
       if (params.get('congestion_control')) config.congestion_control = params.get('congestion_control');
       if (params.get('udp_relay_mode')) config.udp_relay_mode = params.get('udp_relay_mode');
+      if (params.get('idle_session_check_interval')) config.idle_session_check_interval = params.get('idle_session_check_interval');
+      if (params.get('idle-session-check-interval')) config.idle_session_check_interval = params.get('idle-session-check-interval');
+      if (params.get('idle_session_timeout')) config.idle_session_timeout = params.get('idle_session_timeout');
+      if (params.get('idle-session-timeout')) config.idle_session_timeout = params.get('idle-session-timeout');
+      if (params.get('min_idle_session')) config.min_idle_session = toInt(params.get('min_idle_session'));
+      if (params.get('min-idle-session')) config.min_idle_session = toInt(params.get('min-idle-session'), config.min_idle_session);
       if (params.get('heartbeat')) config.heartbeat = params.get('heartbeat');
       if (params.get('udp_over_stream')) config.udp_over_stream = toBool(params.get('udp_over_stream'));
       if (params.get('zero_rtt_handshake')) config.zero_rtt_handshake = toBool(params.get('zero_rtt_handshake'));
@@ -2112,6 +2137,18 @@ export class ProxyService {
         if (hysteria2Obfs && (params.get('obfs-password') || params.get('obfs_password'))) {
           config.obfs_password = params.get('obfs-password') || params.get('obfs_password');
         }
+      } else if (protocol === 'anytls') {
+        config.password = rawUser && rawPass
+          ? `${rawUser}:${rawPass}`
+          : (rawUser || rawPass);
+        config.tls = true;
+        config.security = 'tls';
+        if (!config.sni) {
+          config.sni = config.server;
+        }
+        if (!url.port) {
+          config.port = 443;
+        }
       } else if (protocol === 'vmess') {
         config.uuid = rawUser || rawPass || params.get('uuid') || params.get('id');
       } else if (protocol === 'vless') {
@@ -2169,7 +2206,7 @@ export class ProxyService {
 
   parseProxyLinks(input) {
     return String(input || '')
-      .split(/\r?\n|\s+(?=(?:vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2):\/\/)/u)
+      .split(/\r?\n|\s+(?=(?:vmess|vless|trojan|ss|shadowsocks|socks|socks5|http|https|tuic|hy2|hysteria2|anytls):\/\/)/u)
       .map((item) => item.trim())
       .filter(Boolean)
       .map((item) => this.parseProxyLink(item))
@@ -2231,6 +2268,9 @@ export class ProxyService {
       down_mbps: node.down_mbps,
       congestion_control: node.congestion_control,
       udp_relay_mode: node.udp_relay_mode,
+      idle_session_check_interval: node.idle_session_check_interval,
+      idle_session_timeout: node.idle_session_timeout,
+      min_idle_session: node.min_idle_session,
       heartbeat: node.heartbeat,
       packet_encoding: node.packet_encoding,
       serviceName: node.transport?.service_name || node.serviceName || node.service_name,
@@ -2295,6 +2335,12 @@ export class ProxyService {
       normalized.security = normalized.security || 'tls';
       normalized.sni = normalized.sni || normalized.server;
       normalized.alpn = normalized.alpn || 'h3';
+    }
+
+    if (normalized.type === 'anytls') {
+      normalized.tls = true;
+      normalized.security = 'tls';
+      normalized.sni = normalized.sni || normalized.server;
     }
 
     if (normalized.type === 'trojan' && normalized.security !== 'none') {
@@ -2473,6 +2519,23 @@ export class ProxyService {
         allow_insecure: node.insecure ? '1' : undefined
       });
       return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
+    }
+
+    if (type === 'anytls') {
+      if (!node.password) {
+        return null;
+      }
+      const query = buildQuery({
+        sni: node.sni || undefined,
+        alpn: node.alpn || undefined,
+        fp: node.fp || undefined,
+        insecure: node.insecure ? '1' : undefined,
+        allowInsecure: node.insecure ? '1' : undefined,
+        idle_session_check_interval: node.idle_session_check_interval || undefined,
+        idle_session_timeout: node.idle_session_timeout || undefined,
+        min_idle_session: node.min_idle_session ?? undefined
+      });
+      return `anytls://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
     }
 
     if (type === 'socks' || type === 'http') {

@@ -510,6 +510,7 @@
                     <option value="trojan">Trojan</option>
                     <option value="tuic">TUIC</option>
                     <option value="hysteria2">Hysteria2</option>
+                    <option value="anytls">AnyTLS</option>
                     <option value="shadowsocks">Shadowsocks</option>
                     <option value="socks">SOCKS</option>
                     <option value="http">HTTP</option>
@@ -730,6 +731,18 @@
                 <div class="node-form-field-wrap" data-form-field="udp_relay_mode">
                   <label class="modal-field-label" for="edit-node-udp-relay-mode">UDP Relay Mode</label>
                   <input type="text" id="edit-node-udp-relay-mode" name="udp_relay_mode" class="modal-field-input" placeholder="例如 quic-rfc" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="idle_session_check_interval">
+                  <label class="modal-field-label" for="edit-node-idle-session-check-interval">AnyTLS Idle Check</label>
+                  <input type="text" id="edit-node-idle-session-check-interval" name="idle_session_check_interval" class="modal-field-input" placeholder="30s" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="idle_session_timeout">
+                  <label class="modal-field-label" for="edit-node-idle-session-timeout">AnyTLS Idle Timeout</label>
+                  <input type="text" id="edit-node-idle-session-timeout" name="idle_session_timeout" class="modal-field-input" placeholder="30s" autocomplete="off">
+                </div>
+                <div class="node-form-field-wrap" data-form-field="min_idle_session">
+                  <label class="modal-field-label" for="edit-node-min-idle-session">AnyTLS Min Idle</label>
+                  <input type="number" id="edit-node-min-idle-session" name="min_idle_session" class="modal-field-input" min="0" placeholder="0" autocomplete="off">
                 </div>
                 <div class="node-form-field-wrap" data-form-field="heartbeat">
                   <label class="modal-field-label" for="edit-node-heartbeat">Heartbeat</label>

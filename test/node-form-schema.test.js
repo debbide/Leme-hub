@@ -203,6 +203,51 @@ test('builds tuic payload with default h3 alpn when left blank', () => {
   assert.equal(payload.alpn, 'h3');
 });
 
+test('builds anytls payload with fixed tls and idle session fields', () => {
+  const formState = normalizeNodeForForm({
+    type: 'anytls',
+    name: 'AnyTLS Node',
+    server: 'any.example',
+    port: 443,
+    password: 'secret',
+    idle_session_check_interval: '30s',
+    idle_session_timeout: '60s',
+    min_idle_session: 2
+  });
+  const visibility = getNodeFormVisibility(formState);
+  const validation = validateNodeFormState(formState, '{}');
+  const payload = buildNodePayloadFromForm(formState);
+
+  assert.equal(formState.security, 'tls');
+  assert.equal(formState.sni, '');
+  assert.equal(visibility.security, false);
+  assert.equal(visibility.tlsSection, true);
+  assert.equal(visibility.anytls, true);
+  assert.equal(validation.valid, true);
+  assert.equal(payload.type, 'anytls');
+  assert.equal(payload.tls, true);
+  assert.equal(payload.password, 'secret');
+  assert.equal(payload.sni, 'any.example');
+  assert.equal(payload.fp, 'chrome');
+  assert.equal(payload.idle_session_check_interval, '30s');
+  assert.equal(payload.idle_session_timeout, '60s');
+  assert.equal(payload.min_idle_session, 2);
+});
+
+test('validates anytls password and min idle session', () => {
+  const validation = validateNodeFormState({
+    type: 'anytls',
+    server: 'any.example',
+    port: '443',
+    password: '',
+    min_idle_session: '-1'
+  }, '{}');
+
+  assert.equal(validation.valid, false);
+  assert.equal(typeof validation.errors.password, 'string');
+  assert.equal(typeof validation.errors.min_idle_session, 'string');
+});
+
 test('extracts advanced fields without duplicating form-managed keys', () => {
   const advanced = extractAdvancedNodeFields({
     type: 'vless',
