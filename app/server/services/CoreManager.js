@@ -2,871 +2,64 @@ import fs from 'fs';
 import path from 'path';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
-import { ACTIVE_NODE_SELECTOR_TAG, ProxyService, getNodeGroupOutboundTag } from '../../proxy/ProxyService.js';
-import { BUILTIN_RULESETS, CUSTOM_RULE_ACTIONS, CUSTOM_RULE_TYPES, DEFAULT_SPEEDTEST_URL, ROUTING_MODES, RULESET_KINDS, RULESET_TARGETS } from '../../shared/constants.js';
-import { formatHostPort, formatUrlWithHost, normalizeHost } from '../../shared/network.js';
+import { ProxyService } from '../../proxy/ProxyService.js';
 import { AutoStartManager } from './AutoStartManager.js';
 import { ClashApiService } from './ClashApiService.js';
 import { ConnectionsService } from './ConnectionsService.js';
-import { GeoIpService, geoFlagFromCountryCode } from './GeoIpService.js';
+import { GeoIpService } from './GeoIpService.js';
 import { RulesetDatabaseService } from './RulesetDatabaseService.js';
 import { SystemProxyManager } from './SystemProxyManager.js';
-
-const createHttpError = (message, status) => Object.assign(new Error(message), { status });
-
-const createNodeId = () => Math.random().toString(36).slice(2, 10);
-
-const getNodeSignature = (node) => [
-  node.type || '',
-  node.server || '',
-  node.port || '',
-  node.uuid || '',
-  node.password || '',
-  node.method || ''
-].join('|');
-
-const validatePort = (value, fieldName) => {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw createHttpError(`${fieldName} must be a valid TCP port`, 400);
-  }
-
-  return parsed;
-};
-
-const normalizeCountryCode = (value) => {
-  const normalized = String(value || '').trim().toUpperCase();
-  return /^[A-Z]{2}$/u.test(normalized) ? normalized : null;
-};
-
-const buildCountryGroupName = (countryCode) => `国家/${countryCode}`;
-const AUTO_COUNTRY_NODE_GROUP_PREFIX = 'country-auto-';
-const NODE_GROUP_TYPES = ['custom', 'country'];
-const NODE_GROUP_ICON_MODES = ['auto', 'emoji', 'none'];
-const NODE_GROUP_AUTO_TEST_MIN_SEC = 60;
-const NODE_GROUP_AUTO_TEST_MAX_SEC = 3600;
-const NODE_GROUP_AUTO_TEST_DEFAULT_SEC = 300;
-const NODE_GROUP_AUTO_TEST_TICK_MS = 15000;
-const NODE_GROUP_SWITCH_DELTA_MS = 120;
-const NODE_GROUP_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
-const NODE_GROUP_SWITCH_FAIL_THRESHOLD = 3;
-const SYSTEM_PROXY_AUTO_SWITCH_MIN_SEC = 60;
-const SYSTEM_PROXY_AUTO_SWITCH_MAX_SEC = 86400;
-const SYSTEM_PROXY_AUTO_SWITCH_DEFAULT_SEC = 600;
-const SYSTEM_PROXY_AUTO_SWITCH_TICK_MS = 15000;
-
-const normalizeIsoTimestamp = (value) => {
-  if (!value) {
-    return null;
-  }
-  const text = String(value).trim();
-  if (!text) {
-    return null;
-  }
-  const timestamp = Date.parse(text);
-  return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
-};
-
-const normalizeNodeGroupAutoTestIntervalSec = (value) => {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed)) {
-    return NODE_GROUP_AUTO_TEST_DEFAULT_SEC;
-  }
-  return Math.min(NODE_GROUP_AUTO_TEST_MAX_SEC, Math.max(NODE_GROUP_AUTO_TEST_MIN_SEC, parsed));
-};
-
-const normalizeSystemProxyAutoSwitchIntervalSec = (value) => {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed)) {
-    return SYSTEM_PROXY_AUTO_SWITCH_DEFAULT_SEC;
-  }
-
-  return Math.min(SYSTEM_PROXY_AUTO_SWITCH_MAX_SEC, Math.max(SYSTEM_PROXY_AUTO_SWITCH_MIN_SEC, parsed));
-};
-
-const getNodeGroupById = (nodeGroups = [], groupId = null) => {
-  const normalizedGroupId = groupId == null ? null : String(groupId).trim();
-  if (!normalizedGroupId) {
-    return null;
-  }
-
-  return nodeGroups.find((group) => group.id === normalizedGroupId) || null;
-};
-
-const getNodeGroupSelectedNodeId = (group) => {
-  const selectedNodeId = group?.selectedNodeId == null ? null : String(group.selectedNodeId).trim();
-  if (!selectedNodeId) {
-    return null;
-  }
-
-  return Array.isArray(group?.nodeIds) && group.nodeIds.includes(selectedNodeId) ? selectedNodeId : null;
-};
-
-const hasExistingNodeGroup = (nodeGroups = [], groupId = null) => Boolean(getNodeGroupById(nodeGroups, groupId));
-
-const getNodeDisplayName = (node, fallback = '') => (
-  node?.name
-  || node?.displayName
-  || node?.label
-  || node?.server
-  || fallback
-);
-
-const truncateText = (value, max = 120) => {
-  const text = String(value || '').trim();
-  if (!text || text.length <= max) {
-    return text;
-  }
-  return `${text.slice(0, Math.max(0, max - 3))}...`;
-};
-
-const buildInvalidNodeWarning = (invalidNodes = []) => {
-  if (!Array.isArray(invalidNodes) || !invalidNodes.length) {
-    return null;
-  }
-
-  const samples = invalidNodes
-    .slice(0, 2)
-    .map(({ node, error }) => `${truncateText(getNodeDisplayName(node, node?.id || node?.type || 'node'), 40)}: ${truncateText(error, 96)}`)
-    .filter(Boolean)
-    .join('; ');
-
-  return invalidNodes.length === 1
-    ? `已跳过 1 个无效节点：${samples}`
-    : `已跳过 ${invalidNodes.length} 个无效节点，例如：${samples}`;
-};
-
-const buildDeferredApplyWarning = (errorMessage) => `节点已保存，但未自动应用到当前核心：${truncateText(errorMessage, 180)}`;
-
-const NODE_RUNTIME_METADATA_KEYS = new Set([
-  'name',
-  'group',
-  'countryCodeOverride'
-]);
-
-const stableStringify = (value) => {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
-  }
-
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value)
-      .filter((key) => value[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-      .join(',')}}`;
-  }
-
-  return JSON.stringify(value);
-};
-
-const getNodeRuntimeComparable = (node) => {
-  if (!node || typeof node !== 'object') {
-    return node;
-  }
-
-  return Object.fromEntries(
-    Object.entries(node)
-      .filter(([key]) => !NODE_RUNTIME_METADATA_KEYS.has(key))
-      .map(([key, value]) => [key, getNodeRuntimeComparable(value)])
-  );
-};
-
-const getNodesRuntimeSignature = (nodes = []) => stableStringify(
-  (Array.isArray(nodes) ? nodes : []).map((node) => getNodeRuntimeComparable(node))
-);
-
-const normalizeSystemProxyAutoSwitchSettings = (settings = {}, nodeGroups = [], options = {}) => {
-  const { strict = false } = options;
-  const requestedEnabled = !!settings.systemProxyAutoSwitchEnabled;
-  const requestedGroupId = settings.systemProxyAutoSwitchGroupId == null
-    ? null
-    : String(settings.systemProxyAutoSwitchGroupId).trim() || null;
-  const group = getNodeGroupById(nodeGroups, requestedGroupId);
-  const selectedNodeId = getNodeGroupSelectedNodeId(group);
-
-  if (strict && requestedEnabled) {
-    if (!requestedGroupId) {
-      throw createHttpError('systemProxyAutoSwitchGroupId is required when auto switch is enabled', 400);
-    }
-    if (!group) {
-      throw createHttpError('systemProxyAutoSwitchGroupId must reference an existing node group', 400);
-    }
-    if (!selectedNodeId) {
-      throw createHttpError('systemProxyAutoSwitchGroupId must reference a node group with an active node', 400);
-    }
-  }
-
-  return {
-    enabled: requestedEnabled && Boolean(selectedNodeId),
-    groupId: group ? group.id : null,
-    intervalSec: normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec),
-    lastAt: normalizeIsoTimestamp(settings.systemProxyAutoSwitchLastAt),
-    group,
-    selectedNodeId
-  };
-};
-
-const normalizeNodeGroupLatencyCache = (value) => {
-  const input = value && typeof value === 'object' ? value : {};
-  const inputResults = input.results && typeof input.results === 'object' ? input.results : {};
-  const results = {};
-
-  Object.entries(inputResults).forEach(([nodeId, entry]) => {
-    const id = String(nodeId || '').trim();
-    if (!id || !entry || typeof entry !== 'object') {
-      return;
-    }
-
-    const ok = Boolean(entry.ok);
-    const normalized = {
-      ok,
-      latencyMs: null,
-      error: null,
-      updatedAt: normalizeIsoTimestamp(entry.updatedAt)
-    };
-
-    if (ok) {
-      const latencyMs = Number.parseInt(entry.latencyMs, 10);
-      if (!Number.isInteger(latencyMs) || latencyMs < 0) {
-        return;
-      }
-      normalized.latencyMs = latencyMs;
-    } else {
-      const error = String(entry.error || '').trim();
-      normalized.error = error ? error.slice(0, 160) : 'failed';
-    }
-
-    results[id] = normalized;
-  });
-
-  return {
-    updatedAt: normalizeIsoTimestamp(input.updatedAt),
-    results
-  };
-};
-
-const ROUTING_HIT_HISTORY_LIMIT = 2000;
-const ROUTING_HIT_READ_LIMIT = 300;
-
-const pickConnectionBytes = (connection, keys) => {
-  for (const key of keys) {
-    const value = connection?.[key] ?? connection?.metadata?.[key] ?? connection?.stats?.[key];
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      return parsed;
-    }
-  }
-  return 0;
-};
-
-const pickConnectionTimestamp = (connection) => {
-  const candidates = [
-    connection?.timestamp,
-    connection?.time,
-    connection?.start,
-    connection?.startAt,
-    connection?.startedAt,
-    connection?.createdAt,
-    connection?.metadata?.timestamp,
-    connection?.metadata?.time,
-    connection?.metadata?.start,
-    connection?.metadata?.createdAt
-  ];
-
-  for (const value of candidates) {
-    const normalized = normalizeIsoTimestamp(value);
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  return null;
-};
-
-const isValidIpv4Cidr = (value) => {
-  const match = String(value || '').trim().match(/^((?:\d{1,3}\.){3}\d{1,3})\/(\d|[12]\d|3[0-2])$/);
-  if (!match) {
-    return false;
-  }
-
-  return match[1].split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
-};
-
-const ROUTING_ITEM_KINDS = ['rule', 'builtin_ruleset', 'custom_entry'];
-
-const legacyRoutingItemsFromSettings = (settings = {}, nodeGroups = []) => {
-  const rules = Array.isArray(settings.customRules) ? normalizeCustomRules(settings.customRules, nodeGroups) : [];
-  const rulesets = Array.isArray(settings.rulesets) ? normalizeRulesets(settings.rulesets, nodeGroups) : [];
-
-  return [
-    ...rules.map((rule, index) => ({
-      id: String(rule.id || `routing-rule-${index + 1}`),
-      kind: 'rule',
-      type: rule.type,
-      value: rule.value,
-      action: rule.action,
-      nodeId: rule.nodeId,
-      nodeGroupId: rule.nodeGroupId,
-      note: rule.note || ''
-    })),
-    ...rulesets.flatMap((ruleset, index) => {
-      if (ruleset.kind === 'builtin') {
-        return [{
-          id: String(ruleset.id || `routing-builtin-${index + 1}`),
-          kind: 'builtin_ruleset',
-          presetId: ruleset.presetId,
-          name: ruleset.name || '',
-          target: ruleset.target,
-          nodeId: ruleset.nodeId,
-          groupId: ruleset.groupId,
-          enabled: ruleset.enabled !== false,
-          note: ruleset.note || ''
-        }];
-      }
-
-      return (ruleset.entries || []).map((entry, entryIndex) => ({
-        id: String(entry.id || `${ruleset.id}-entry-${entryIndex + 1}`),
-        kind: 'custom_entry',
-        rulesetId: String(ruleset.id || `routing-custom-${index + 1}`),
-        rulesetName: ruleset.name || '',
-        type: entry.type,
-        value: entry.value,
-        target: ruleset.target,
-        nodeId: ruleset.nodeId,
-        groupId: ruleset.groupId,
-        enabled: ruleset.enabled !== false,
-        note: entry.note || ruleset.note || ''
-      }));
-    })
-  ];
-};
-
-const normalizeRoutingItem = (item, index, nodeGroups = []) => {
-  if (!item || typeof item !== 'object') {
-    throw createHttpError(`routingItems[${index}] must be an object`, 400);
-  }
-
-  const kind = String(item.kind || '').trim();
-  if (!ROUTING_ITEM_KINDS.includes(kind)) {
-    throw createHttpError(`routingItems[${index}] has invalid kind`, 400);
-  }
-
-  if (kind === 'rule') {
-    const normalized = normalizeCustomRule(item, index, nodeGroups);
-    return {
-      id: String(item.id || normalized.id),
-      kind,
-      type: normalized.type,
-      value: normalized.value,
-      action: normalized.action,
-      nodeId: normalized.nodeId,
-      nodeGroupId: normalized.nodeGroupId,
-      note: normalized.note || ''
-    };
-  }
-
-  if (kind === 'builtin_ruleset') {
-    const normalized = normalizeRuleset({
-      id: item.id,
-      kind: 'builtin',
-      presetId: item.presetId,
-      name: item.name,
-      target: item.target,
-      nodeId: item.nodeId,
-      groupId: item.groupId,
-      enabled: item.enabled,
-      note: item.note
-    }, index, nodeGroups);
-
-    return {
-      id: String(item.id || normalized.id),
-      kind,
-      presetId: normalized.presetId,
-      name: normalized.name,
-      target: normalized.target,
-      nodeId: normalized.nodeId,
-      groupId: normalized.groupId,
-      enabled: normalized.enabled !== false,
-      note: normalized.note || ''
-    };
-  }
-
-  const entry = normalizeRulesetEntry(item, index, index);
-  const target = String(item.target || '').trim();
-  const nodeId = item.nodeId == null || item.nodeId === '' ? null : String(item.nodeId).trim();
-  const groupId = item.groupId == null || item.groupId === '' ? null : String(item.groupId).trim();
-
-  if (!RULESET_TARGETS.includes(target)) {
-    throw createHttpError(`routingItems[${index}] has invalid target`, 400);
-  }
-  if (target === 'node' && !nodeId) {
-    throw createHttpError(`routingItems[${index}] target=node requires nodeId`, 400);
-  }
-  if (target === 'node_group' && !groupId) {
-    throw createHttpError(`routingItems[${index}] target=node_group requires groupId`, 400);
-  }
-  if (target === 'node_group' && groupId && !hasExistingNodeGroup(nodeGroups, groupId)) {
-    throw createHttpError(`routingItems[${index}] target=node_group requires an existing node group`, 400);
-  }
-
-  return {
-    id: String(item.id || entry.id),
-    kind,
-    rulesetId: String(item.rulesetId || item.id || `custom-entry-${index + 1}`),
-    rulesetName: typeof item.rulesetName === 'string' ? item.rulesetName.trim() : '',
-    type: entry.type,
-    value: entry.value,
-    target,
-    nodeId,
-    groupId,
-    enabled: item.enabled !== false,
-    note: typeof item.note === 'string' ? item.note.trim() : ''
-  };
-};
-
-const normalizeRoutingItems = (items, nodeGroups = []) => {
-  const normalized = items.map((item, index) => normalizeRoutingItem(item, index, nodeGroups));
-  const seenIds = new Set();
-  const seenSignatures = new Set();
-
-  normalized.forEach((item, index) => {
-    if (seenIds.has(item.id)) {
-      throw createHttpError(`routingItems[${index}] duplicates another item id`, 400);
-    }
-    seenIds.add(item.id);
-
-    const signature = item.kind === 'rule'
-      ? `rule|${item.type}|${item.action}|${item.nodeId || ''}|${item.nodeGroupId || ''}|${String(item.value || '').toLowerCase()}`
-      : item.kind === 'builtin_ruleset'
-        ? `builtin_ruleset|${item.presetId}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}`
-        : `custom_entry|${item.rulesetId || ''}|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
-
-    if (seenSignatures.has(signature)) {
-      throw createHttpError(`routingItems[${index}] duplicates another routing item`, 400);
-    }
-    seenSignatures.add(signature);
-  });
-
-  return normalized;
-};
-
-const routingItemsToLegacySettings = (routingItems = []) => {
-  const customRules = [];
-  const builtinRulesets = [];
-  const customRulesetMap = new Map();
-
-  routingItems.forEach((item, index) => {
-    if (item.kind === 'rule') {
-      customRules.push({
-        id: item.id || `rule-${index + 1}`,
-        type: item.type,
-        value: item.value,
-        action: item.action,
-        nodeId: item.nodeId,
-        nodeGroupId: item.nodeGroupId,
-        note: item.note || ''
-      });
-      return;
-    }
-
-    if (item.kind === 'builtin_ruleset') {
-      builtinRulesets.push({
-        id: item.id || `ruleset-${index + 1}`,
-        kind: 'builtin',
-        presetId: item.presetId,
-        name: item.note || item.name || BUILTIN_RULESET_MAP.get(item.presetId)?.name || item.presetId,
-        enabled: item.enabled !== false,
-        target: item.target,
-        nodeId: item.nodeId,
-        groupId: item.groupId,
-        entries: [],
-        note: item.note || ''
-      });
-      return;
-    }
-
-    const rulesetId = String(item.rulesetId || item.id || `custom-entry-${index + 1}`);
-    if (!customRulesetMap.has(rulesetId)) {
-      customRulesetMap.set(rulesetId, {
-        id: rulesetId,
-        kind: 'custom',
-        name: item.rulesetName || item.note || `自定义规则 ${customRulesetMap.size + 1}`,
-        enabled: item.enabled !== false,
-        target: item.target,
-        nodeId: item.nodeId,
-        groupId: item.groupId,
-        entries: [],
-        note: item.note || ''
-      });
-    }
-
-    customRulesetMap.get(rulesetId).entries.push({
-      id: item.id || `${rulesetId}-entry-${customRulesetMap.get(rulesetId).entries.length + 1}`,
-      type: item.type,
-      value: item.value,
-      note: item.note || ''
-    });
-  });
-
-  return {
-    customRules,
-    rulesets: [...builtinRulesets, ...customRulesetMap.values()]
-  };
-};
-
-const normalizeCustomRule = (rule, index, nodeGroups = []) => {
-  if (!rule || typeof rule !== 'object') {
-    throw createHttpError(`customRules[${index}] must be an object`, 400);
-  }
-
-  const type = String(rule.type || '').trim();
-  const action = String(rule.action || '').trim();
-  const value = String(rule.value || '').trim();
-  const nodeId = rule.nodeId == null || rule.nodeId === '' ? null : String(rule.nodeId).trim();
-  const nodeGroupId = rule.nodeGroupId == null || rule.nodeGroupId === '' ? null : String(rule.nodeGroupId).trim();
-
-  if (!CUSTOM_RULE_TYPES.includes(type)) {
-    throw createHttpError(`customRules[${index}] has invalid type`, 400);
-  }
-
-  if (!CUSTOM_RULE_ACTIONS.includes(action)) {
-    throw createHttpError(`customRules[${index}] has invalid action`, 400);
-  }
-
-  if (action === 'node' && !nodeId) {
-    throw createHttpError(`customRules[${index}] target=node requires nodeId`, 400);
-  }
-  if (action === 'node_group' && !nodeGroupId) {
-    throw createHttpError(`customRules[${index}] target=node_group requires nodeGroupId`, 400);
-  }
-  if (action === 'node_group' && nodeGroupId && !hasExistingNodeGroup(nodeGroups, nodeGroupId)) {
-    throw createHttpError(`customRules[${index}] target=node_group requires an existing node group`, 400);
-  }
-
-  if (!value) {
-    throw createHttpError(`customRules[${index}] must include a value`, 400);
-  }
-
-  if (type === 'ip_cidr' && !isValidIpv4Cidr(value)) {
-    throw createHttpError(`customRules[${index}] must include a valid IPv4 CIDR`, 400);
-  }
-
-  return {
-    id: rule.id || `rule-${index + 1}`,
-    type,
-    action,
-    nodeId,
-    nodeGroupId,
-    value,
-    note: typeof rule.note === 'string' ? rule.note.trim() : ''
-  };
-};
-
-const normalizeCustomRules = (rules, nodeGroups = []) => {
-  const normalizedRules = rules.map((rule, index) => normalizeCustomRule(rule, index, nodeGroups));
-  const seen = new Map();
-
-  normalizedRules.forEach((rule, index) => {
-    const signature = `${rule.type}|${rule.action}|${rule.nodeId || ''}|${rule.nodeGroupId || ''}|${rule.value.toLowerCase()}`;
-    if (seen.has(signature)) {
-      throw createHttpError(`customRules[${index}] duplicates customRules[${seen.get(signature)}]`, 400);
-    }
-    seen.set(signature, index);
-  });
-
-  return normalizedRules;
-};
-
-const normalizeNodeGroup = (group, index, nodes) => {
-  if (!group || typeof group !== 'object') {
-    throw createHttpError(`nodeGroups[${index}] must be an object`, 400);
-  }
-
-  const id = String(group.id || `node-group-${index + 1}`).trim();
-  const type = NODE_GROUP_TYPES.includes(String(group.type || '').trim())
-    ? String(group.type || '').trim()
-    : 'custom';
-  const countryCode = normalizeCountryCode(group.countryCode);
-  const iconMode = NODE_GROUP_ICON_MODES.includes(String(group.iconMode || '').trim())
-    ? String(group.iconMode || '').trim()
-    : 'auto';
-  const iconEmoji = typeof group.iconEmoji === 'string' ? group.iconEmoji.trim().slice(0, 4) : '';
-  const note = typeof group.note === 'string' ? group.note.trim().slice(0, 200) : '';
-
-  const name = String(group.name || '').trim() || (type === 'country' && countryCode ? buildCountryGroupName(countryCode) : '');
-  if (!name) throw createHttpError(`nodeGroups[${index}] must include a name`, 400);
-
-  const validNodeIds = new Set(nodes.map((node) => node.id));
-  const nodeIds = Array.isArray(group.nodeIds)
-    ? [...new Set(group.nodeIds.map((value) => String(value || '').trim()).filter((id) => validNodeIds.has(id)))]
-    : [];
-
-  const selectedNodeId = group.selectedNodeId == null ? null : String(group.selectedNodeId).trim();
-  if (selectedNodeId && !nodeIds.includes(selectedNodeId)) {
-    throw createHttpError(`nodeGroups[${index}] selectedNodeId must belong to nodeIds`, 400);
-  }
-
-  return {
-    id,
-    name,
-    type,
-    countryCode,
-    iconMode,
-    iconEmoji,
-    note,
-    nodeIds,
-    selectedNodeId: selectedNodeId || nodeIds[0] || null
-  };
-};
-
-const normalizeNodeGroups = (nodeGroups, nodes) => {
-  const normalized = nodeGroups.map((group, index) => normalizeNodeGroup(group, index, nodes));
-  const seenIds = new Set();
-  const seenNames = new Set();
-  normalized.forEach((group, index) => {
-    if (seenIds.has(group.id)) throw createHttpError(`nodeGroups[${index}] duplicates another group id`, 400);
-    const lowerName = group.name.toLowerCase();
-    if (seenNames.has(lowerName)) throw createHttpError(`nodeGroups[${index}] duplicates another group name`, 400);
-    seenIds.add(group.id);
-    seenNames.add(lowerName);
-  });
-  return normalized;
-};
-
-const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
-
-const normalizeRulesetEntry = (entry, index, rulesetIndex) => {
-  if (!entry || typeof entry !== 'object') {
-    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must be an object`, 400);
-  }
-
-  const type = String(entry.type || '').trim();
-  const value = String(entry.value || '').trim();
-  if (!CUSTOM_RULE_TYPES.includes(type)) {
-    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] has invalid type`, 400);
-  }
-  if (!value) {
-    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must include a value`, 400);
-  }
-  if (type === 'ip_cidr' && !isValidIpv4Cidr(value)) {
-    throw createHttpError(`rulesets[${rulesetIndex}].entries[${index}] must include a valid IPv4 CIDR`, 400);
-  }
-
-  return {
-    id: entry.id || `entry-${index + 1}`,
-    type,
-    value,
-    note: typeof entry.note === 'string' ? entry.note.trim() : ''
-  };
-};
-
-const normalizeRuleset = (ruleset, index, nodeGroups = []) => {
-  if (!ruleset || typeof ruleset !== 'object') {
-    throw createHttpError(`rulesets[${index}] must be an object`, 400);
-  }
-
-  const kind = String(ruleset.kind || '').trim();
-  const target = String(ruleset.target || '').trim();
-  const id = String(ruleset.id || `ruleset-${index + 1}`).trim();
-  const presetId = ruleset.presetId == null ? null : String(ruleset.presetId).trim();
-  const nodeId = ruleset.nodeId == null || ruleset.nodeId === '' ? null : String(ruleset.nodeId).trim();
-  const groupId = ruleset.groupId == null || ruleset.groupId === '' ? null : String(ruleset.groupId).trim();
-
-  if (!RULESET_KINDS.includes(kind)) {
-    throw createHttpError(`rulesets[${index}] has invalid kind`, 400);
-  }
-  if (!RULESET_TARGETS.includes(target)) {
-    throw createHttpError(`rulesets[${index}] has invalid target`, 400);
-  }
-  if (target === 'node' && !nodeId) {
-    throw createHttpError(`rulesets[${index}] target=node requires nodeId`, 400);
-  }
-  if (target === 'node_group' && !groupId) {
-    throw createHttpError(`rulesets[${index}] target=node_group requires groupId`, 400);
-  }
-  if (target === 'node_group' && groupId && !hasExistingNodeGroup(nodeGroups, groupId)) {
-    throw createHttpError(`rulesets[${index}] target=node_group requires an existing node group`, 400);
-  }
-
-  if (kind === 'builtin') {
-    if (!presetId || !BUILTIN_RULESET_MAP.has(presetId)) {
-      throw createHttpError(`rulesets[${index}] has invalid presetId`, 400);
-    }
-
-    return {
-      id,
-      kind,
-      presetId,
-      name: String(ruleset.name || '').trim() || BUILTIN_RULESET_MAP.get(presetId).name,
-      enabled: ruleset.enabled !== false,
-      target,
-      nodeId,
-      groupId,
-      entries: [],
-      note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
-    };
-  }
-
-  if (!Array.isArray(ruleset.entries) || !ruleset.entries.length) {
-    throw createHttpError(`rulesets[${index}] custom entries must be a non-empty array`, 400);
-  }
-
-  const entries = ruleset.entries.map((entry, entryIndex) => normalizeRulesetEntry(entry, entryIndex, index));
-  const seenEntries = new Set();
-  entries.forEach((entry, entryIndex) => {
-    const signature = `${entry.type}|${entry.value.toLowerCase()}`;
-    if (seenEntries.has(signature)) {
-      throw createHttpError(`rulesets[${index}].entries[${entryIndex}] duplicates another entry`, 400);
-    }
-    seenEntries.add(signature);
-  });
-
-  return {
-    id,
-    kind,
-    presetId: null,
-    name: String(ruleset.name || '').trim() || `Custom Ruleset ${index + 1}`,
-    enabled: ruleset.enabled !== false,
-    target,
-    nodeId,
-    groupId,
-    entries,
-    note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
-  };
-};
-
-const normalizeRulesets = (rulesets, nodeGroups = []) => {
-  const normalized = rulesets.map((ruleset, index) => normalizeRuleset(ruleset, index, nodeGroups));
-  const seenIds = new Set();
-  normalized.forEach((ruleset, index) => {
-    if (seenIds.has(ruleset.id)) {
-      throw createHttpError(`rulesets[${index}] duplicates another ruleset id`, 400);
-    }
-    seenIds.add(ruleset.id);
-  });
-  return normalized;
-};
-
-const normalizeSubscriptionRecord = (record, index) => {
-  if (!record || typeof record !== 'object') {
-    return null;
-  }
-
-  const url = String(record.url || '').trim();
-  if (!url) {
-    return null;
-  }
-
-  return {
-    id: record.id || `subscription-${index + 1}`,
-    url,
-    name: String(record.name || '').trim() || url,
-    groupName: String(record.groupName || '').trim() || null,
-    importedCount: Number.parseInt(record.importedCount, 10) || 0,
-    lastSyncedAt: record.lastSyncedAt || null,
-    lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0,
-    lastStatus: String(record.lastStatus || '').trim() || 'idle',
-    lastError: String(record.lastError || '').trim() || null
-  };
-};
-
-const deriveSubscriptionDisplayName = (url, preferredName = '') => {
-  const normalizedName = String(preferredName || '').trim();
-  if (normalizedName) {
-    return normalizedName;
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname || url;
-  } catch {
-    return url;
-  }
-};
-
-const buildUniqueSubscriptionGroupName = (baseName, occupiedNames) => {
-  const normalizedBase = String(baseName || '').trim() || 'Subscription';
-  if (!occupiedNames.has(normalizedBase)) {
-    return normalizedBase;
-  }
-
-  let suffix = 2;
-  while (occupiedNames.has(`${normalizedBase} ${suffix}`)) {
-    suffix += 1;
-  }
-
-  return `${normalizedBase} ${suffix}`;
-};
-
-export const assignStableLocalPorts = (nodes, basePort) => {
-  const occupied = new Set();
-  const reservedPorts = new Set([18998, 18999]);
-  let nextPort = basePort;
-
-  reservedPorts.forEach((port) => occupied.add(port));
-
-  for (const node of nodes) {
-    const parsed = Number.parseInt(node.local_port, 10);
-    if (Number.isInteger(parsed) && parsed > 0 && !occupied.has(parsed)) {
-      occupied.add(parsed);
-    }
-  }
-
-  return nodes.map((node) => {
-    const parsed = Number.parseInt(node.local_port, 10);
-    if (Number.isInteger(parsed) && parsed > 0 && !occupied.has(parsed)) {
-      occupied.add(parsed);
-      return { ...node, local_port: parsed };
-    }
-
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return { ...node, local_port: parsed };
-    }
-
-    while (occupied.has(nextPort)) {
-      nextPort += 1;
-    }
-
-    const assigned = nextPort;
-    occupied.add(assigned);
-    nextPort += 1;
-    return { ...node, local_port: assigned };
-  });
-};
-
-const mergeUniqueNodes = (existingNodes, incomingNodes) => {
-  const seen = new Set(existingNodes.map((node) => node.id));
-  const seenSignatures = new Set(existingNodes.map(getNodeSignature));
-  const merged = [...existingNodes];
-
-  for (const node of incomingNodes) {
-    const withId = node.id ? node : { ...node, id: createNodeId() };
-    const signature = getNodeSignature(withId);
-    if (!seen.has(withId.id) && !seenSignatures.has(signature)) {
-      merged.push(withId);
-      seen.add(withId.id);
-      seenSignatures.add(signature);
-    }
-  }
-
-  return merged;
-};
-
-const appendNodes = (existingNodes, incomingNodes) => [...existingNodes, ...incomingNodes];
-
-const countPotentialDuplicateNodes = (existingNodes, incomingNodes) => {
-  const seenIds = new Set(existingNodes.map((node) => node.id));
-  const seenSignatures = new Set(existingNodes.map(getNodeSignature));
-  return incomingNodes.reduce((count, node) => {
-    const withId = node.id ? node : { ...node, id: createNodeId() };
-    const signature = getNodeSignature(withId);
-    if (seenIds.has(withId.id) || seenSignatures.has(signature)) {
-      return count + 1;
-    }
-    return count;
-  }, 0);
-};
+import * as latencyManager from './core-manager/latency-manager.js';
+import * as lifecycleManager from './core-manager/lifecycle-manager.js';
+import * as nodeManager from './core-manager/node-manager.js';
+import * as selectorManager from './core-manager/selector-manager.js';
+import * as settingsManager from './core-manager/settings-manager.js';
+import * as statusManager from './core-manager/status-manager.js';
+import {
+  appendRoutingHitHistory as appendRoutingHitHistoryEntry,
+  createRoutingHitDisplayContext as createRoutingHitContext,
+  decorateRoutingHitEntry as decorateRoutingHit,
+  getRoutingHitGroupDisplayName as getRoutingHitGroupName,
+  normalizeRoutingHitHistoryEntry as normalizeRoutingHitEntry,
+  readRoutingHitHistory as readRoutingHitHistoryEntries
+} from './core-manager/routing-hits.js';
+import {
+  allocateSubscriptionGroupName as allocateSubscriptionGroupNameForManager,
+  deleteSubscription as deleteSubscriptionForManager,
+  ensureStoredGroup as ensureSubscriptionStoredGroup,
+  findSubscriptionRecord as findSubscriptionRecordFromSettings,
+  getSubscriptions as getSubscriptionsForManager,
+  syncSubscription as syncSubscriptionForManager,
+  updateSubscriptionRecord as updateSubscriptionRecordForManager,
+  updateSubscriptionRecordError as updateSubscriptionRecordErrorForManager
+} from './core-manager/subscription-manager.js';
+import {
+  createGroup as createGroupForManager,
+  createNodeGroup as createNodeGroupForManager,
+  deleteGroup as deleteGroupForManager,
+  deleteNodeGroup as deleteNodeGroupForManager,
+  getGroups as getGroupsForManager,
+  getNodeGroups as getNodeGroupsForManager,
+  getNodeGroupsResolved as getNodeGroupsResolvedForManager,
+  groupNodesByCountry as groupNodesByCountryForManager,
+  renameGroup as renameGroupForManager,
+  reorderNodeGroups as reorderNodeGroupsForManager,
+  selectNodeGroupNode as selectNodeGroupNodeForManager,
+  setNodeCountryOverride as setNodeCountryOverrideForManager,
+  setNodeGroup as setNodeGroupForManager,
+  syncAutoCountryNodeGroups as syncAutoCountryNodeGroupsForManager,
+  updateNodeGroup as updateNodeGroupForManager,
+  updateNodeGroupNodes as updateNodeGroupNodesForManager
+} from './core-manager/node-group-manager.js';
+
+import {
+  NODE_GROUP_AUTO_TEST_TICK_MS,
+  ROUTING_HIT_READ_LIMIT,
+  SYSTEM_PROXY_AUTO_SWITCH_TICK_MS,
+  createHttpError
+} from './core-manager/state-utils.js';
+
+export { assignStableLocalPorts } from './core-manager/state-utils.js';
 
 export class CoreManager {
   constructor(paths, store, options = {}) {
@@ -976,664 +169,126 @@ export class CoreManager {
   }
 
   createRoutingHitDisplayContext(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    return {
-      settings,
-      nodes,
-      nodeMap: new Map(nodes.map((node) => [`out-${node.id}`, node])),
-      groupMap: new Map((settings.nodeGroups || []).map((group) => [getNodeGroupOutboundTag(group.id), group]))
-    };
+    return createRoutingHitContext(settings, nodes);
   }
 
   getRoutingHitGroupDisplayName(group) {
-    if (!group || typeof group !== 'object') {
-      return '';
-    }
-
-    const explicitCountryCode = normalizeCountryCode(group.countryCode);
-    if (explicitCountryCode) {
-      return this.resolveCountryName(explicitCountryCode) || explicitCountryCode;
-    }
-
-    const normalizedName = String(group.name || '').trim();
-    const nameCountryCode = normalizedName.match(/^国家\/([A-Za-z]{2})$/u)?.[1];
-    if (nameCountryCode) {
-      const normalized = normalizeCountryCode(nameCountryCode);
-      if (normalized) {
-        return this.resolveCountryName(normalized) || normalized;
-      }
-    }
-
-    const idCountryCode = String(group.id || '').trim().match(/^country-auto-([a-z]{2})$/u)?.[1];
-    if (idCountryCode) {
-      const normalized = normalizeCountryCode(idCountryCode);
-      if (normalized) {
-        return this.resolveCountryName(normalized) || normalized;
-      }
-    }
-
-    return normalizedName || String(group.id || '').trim();
+    return getRoutingHitGroupName(group, {
+      resolveCountryName: (countryCode) => this.resolveCountryName(countryCode)
+    });
   }
 
   decorateRoutingHitEntry(entry, context = this.createRoutingHitDisplayContext()) {
-    if (!entry || typeof entry !== 'object') {
-      return entry;
-    }
-
-    const outbound = String(entry.outbound || '').trim();
-    const target = String(entry.target || '').trim();
-    const outboundNode = context.nodeMap.get(outbound) || null;
-    const targetGroup = context.groupMap.get(target) || null;
-    const outboundGroup = context.groupMap.get(outbound) || null;
-    const activeGroup = targetGroup || outboundGroup || null;
-    const selectedNodeId = activeGroup ? getNodeGroupSelectedNodeId(activeGroup) : null;
-    const selectedNode = selectedNodeId
-      ? context.nodes.find((node) => node.id === selectedNodeId) || null
-      : null;
-    const effectiveNode = outboundNode || selectedNode;
-    const groupName = activeGroup ? this.getRoutingHitGroupDisplayName(activeGroup) : null;
-    const nodeName = effectiveNode ? getNodeDisplayName(effectiveNode, outbound || target) : null;
-    const outboundName = activeGroup && nodeName
-      ? `${groupName} -> ${nodeName}`
-      : activeGroup
-        ? groupName
-        : outboundNode
-          ? nodeName
-          : String(entry.outboundName || '').trim() || outbound || target;
-    const targetName = activeGroup
-      ? groupName
-      : target === 'direct'
-        ? 'direct'
-        : getNodeDisplayName(context.nodeMap.get(target), target) || target;
-
-    return {
-      ...entry,
-      outboundName,
-      targetName,
-      effectiveOutbound: effectiveNode ? `out-${effectiveNode.id}` : outbound || null,
-      effectiveNodeId: effectiveNode?.id || null,
-      effectiveNodeName: nodeName,
-      nodeGroupId: activeGroup?.id || null,
-      nodeGroupName: groupName
-    };
+    return decorateRoutingHit(entry, context, {
+      resolveCountryName: (countryCode) => this.resolveCountryName(countryCode)
+    });
   }
 
   normalizeRoutingHitHistoryEntry(entry) {
-    if (!entry || typeof entry !== 'object') {
-      return null;
-    }
-
-    const timestamp = normalizeIsoTimestamp(entry.timestamp) || new Date().toISOString();
-    const host = String(entry.host || '').trim();
-    const kind = String(entry.kind || '').trim();
-    const name = String(entry.name || '').trim();
-    const target = String(entry.target || '').trim();
-    const descriptor = String(entry.descriptor || '').trim();
-    if (!host || !kind || !name || !target) {
-      return null;
-    }
-
-    const outbound = String(entry.outbound || '').trim();
-    const portParsed = Number.parseInt(entry.port, 10);
-
-    return {
-      timestamp,
-      host,
-      port: Number.isInteger(portParsed) && portParsed > 0 ? portParsed : null,
-      outbound,
-      outboundName: entry.outboundName ? String(entry.outboundName).trim() : null,
-      kind,
-      name,
-      target,
-      targetName: entry.targetName ? String(entry.targetName).trim() : null,
-      descriptor,
-      matchedTag: entry.matchedTag ? String(entry.matchedTag).trim() : null,
-      matchedBy: entry.matchedBy ? String(entry.matchedBy).trim() : null,
-      matchType: entry.matchType ? String(entry.matchType).trim() : null,
-      matchValue: entry.matchValue ? String(entry.matchValue).trim() : null,
-      effectiveOutbound: entry.effectiveOutbound ? String(entry.effectiveOutbound).trim() : null,
-      effectiveNodeId: entry.effectiveNodeId ? String(entry.effectiveNodeId).trim() : null,
-      effectiveNodeName: entry.effectiveNodeName ? String(entry.effectiveNodeName).trim() : null,
-      nodeGroupId: entry.nodeGroupId ? String(entry.nodeGroupId).trim() : null,
-      nodeGroupName: entry.nodeGroupName ? String(entry.nodeGroupName).trim() : null,
-      persisted: true
-    };
+    return normalizeRoutingHitEntry(entry);
   }
 
   readRoutingHitHistory(limit = ROUTING_HIT_READ_LIMIT) {
-    const context = this.createRoutingHitDisplayContext();
-    try {
-      const lines = fs.readFileSync(this.routingHitHistoryPath, 'utf8').split(/\r?\n/).filter(Boolean);
-      const normalized = lines
-        .slice(-Math.max(1, limit))
-        .map((line) => {
-          try {
-            const parsed = this.normalizeRoutingHitHistoryEntry(JSON.parse(line));
-            return parsed ? this.decorateRoutingHitEntry(parsed, context) : null;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-      return normalized;
-    } catch {
-      return [];
-    }
+    return readRoutingHitHistoryEntries(this.routingHitHistoryPath, {
+      context: this.createRoutingHitDisplayContext(),
+      limit,
+      resolveCountryName: (countryCode) => this.resolveCountryName(countryCode)
+    });
   }
 
   appendRoutingHitHistory(entry) {
-    const normalized = this.normalizeRoutingHitHistoryEntry(this.decorateRoutingHitEntry(entry));
-    if (!normalized) {
-      return;
-    }
-
     try {
-      fs.appendFileSync(this.routingHitHistoryPath, `${JSON.stringify(normalized)}\n`);
-      const lines = fs.readFileSync(this.routingHitHistoryPath, 'utf8').split(/\r?\n/).filter(Boolean);
-      if (lines.length > ROUTING_HIT_HISTORY_LIMIT) {
-        fs.writeFileSync(this.routingHitHistoryPath, `${lines.slice(-ROUTING_HIT_HISTORY_LIMIT).join('\n')}\n`);
-      }
+      appendRoutingHitHistoryEntry(this.routingHitHistoryPath, entry, {
+        context: this.createRoutingHitDisplayContext(),
+        resolveCountryName: (countryCode) => this.resolveCountryName(countryCode)
+      });
     } catch (error) {
       this.store.appendLog(`[CoreManager] Failed to persist routing hit: ${error.message}`);
     }
   }
 
   getSettingsSnapshot() {
-    const settings = this.store.getSettings();
-    const normalizedSubscriptions = Array.isArray(settings.subscriptions)
-      ? settings.subscriptions.map(normalizeSubscriptionRecord).filter(Boolean)
-      : [];
-    const normalizedNodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec);
-    const normalizedNodeGroupLatencyCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
-    const normalizedSpeedtestUrl = String(settings.speedtestUrl || DEFAULT_SPEEDTEST_URL).trim() || DEFAULT_SPEEDTEST_URL;
-    const nodes = this.store.getNodes();
-
-    let normalizedNodeGroups;
-    try {
-      normalizedNodeGroups = Array.isArray(settings.nodeGroups) ? normalizeNodeGroups(settings.nodeGroups, nodes) : [];
-    } catch (error) {
-      this.store.appendLog(`[CoreManager] Invalid persisted node groups ignored: ${error.message}`);
-      normalizedNodeGroups = [];
-    }
-
-    const normalizedSystemProxyAutoSwitch = normalizeSystemProxyAutoSwitchSettings(settings, normalizedNodeGroups);
-
-    let normalizedRoutingItems;
-    let customRules;
-    let rulesets;
-
-    if (Array.isArray(settings.routingItems)) {
-      try {
-        normalizedRoutingItems = normalizeRoutingItems(settings.routingItems, normalizedNodeGroups);
-      } catch (error) {
-        this.store.appendLog(`[CoreManager] Invalid persisted routingItems recovered from legacy rules: ${error.message}`);
-        try {
-          normalizedRoutingItems = normalizeRoutingItems(
-            legacyRoutingItemsFromSettings(settings, normalizedNodeGroups),
-            normalizedNodeGroups
-          );
-        } catch (legacyError) {
-          this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${legacyError.message}`);
-          normalizedRoutingItems = [];
-        }
-      }
-    } else {
-      try {
-        normalizedRoutingItems = normalizeRoutingItems(
-          legacyRoutingItemsFromSettings(settings, normalizedNodeGroups),
-          normalizedNodeGroups
-        );
-      } catch (error) {
-        this.store.appendLog(`[CoreManager] Invalid persisted routing settings ignored: ${error.message}`);
-        normalizedRoutingItems = [];
-      }
-    }
-
-    ({ customRules, rulesets } = routingItemsToLegacySettings(normalizedRoutingItems));
-
-    if (!Array.isArray(settings.routingItems)
-      || JSON.stringify(settings.routingItems) !== JSON.stringify(normalizedRoutingItems)
-      || JSON.stringify(settings.customRules || []) !== JSON.stringify(customRules)
-      || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
-      || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
-      || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
-      || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)
-      || (settings.speedtestUrl || '') !== normalizedSpeedtestUrl
-      || !!settings.systemProxyAutoSwitchEnabled !== normalizedSystemProxyAutoSwitch.enabled
-      || (settings.systemProxyAutoSwitchGroupId ?? null) !== normalizedSystemProxyAutoSwitch.groupId
-      || settings.systemProxyAutoSwitchIntervalSec !== normalizedSystemProxyAutoSwitch.intervalSec
-      || (settings.systemProxyAutoSwitchLastAt ?? null) !== normalizedSystemProxyAutoSwitch.lastAt) {
-      return this.store.saveSettings({
-        ...settings,
-        routingItems: normalizedRoutingItems,
-        customRules,
-        rulesets,
-        nodeGroups: normalizedNodeGroups,
-        subscriptions: normalizedSubscriptions,
-        nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-        nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
-        speedtestUrl: normalizedSpeedtestUrl,
-        systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
-        systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
-        systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
-        systemProxyAutoSwitchLastAt: normalizedSystemProxyAutoSwitch.lastAt
-      });
-    }
-
-    return {
-      ...settings,
-      routingItems: normalizedRoutingItems,
-      customRules,
-      rulesets,
-      nodeGroups: normalizedNodeGroups,
-      subscriptions: normalizedSubscriptions,
-      nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-      nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
-      speedtestUrl: normalizedSpeedtestUrl,
-      systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
-      systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
-      systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
-      systemProxyAutoSwitchLastAt: normalizedSystemProxyAutoSwitch.lastAt
-    };
+    return settingsManager.getSettingsSnapshot(this);
   }
 
   buildBinaryState(overrides = {}) {
-    const settings = this.store.getSettings();
-    const status = this.binaryManager.getStatus(settings.singBoxBinaryPath);
-
-    return {
-      status: status.ready ? 'ready' : 'missing',
-      configuredPath: status.configuredPath,
-      managedPath: status.managedPath,
-      resolvedPath: status.configuredExists ? status.configuredPath : (status.managedExists ? status.managedPath : null),
-      source: status.source,
-      lastError: null,
-      version: null,
-      ...overrides
-    };
+    return statusManager.buildBinaryState(this, overrides);
   }
 
   buildSystemProxyState(overrides = {}) {
-    const settings = this.store.getSettings();
-    const capabilities = this.systemProxyManager.getCapabilities();
-
-    return {
-      enabled: false,
-      mode: capabilities.supported ? 'off' : 'unsupported',
-      provider: capabilities.provider,
-      http: null,
-      socks: null,
-      lastError: null,
-      supported: capabilities.supported,
-      desiredEnabled: !!settings.systemProxyCaptureEnabled,
-      ...overrides
-    };
+    return statusManager.buildSystemProxyState(this, overrides);
   }
 
   refreshConnectionsServiceBaseUrl(settings = this.getSettingsSnapshot()) {
-    if (typeof this.connectionsService?.setListenHost === 'function') {
-      this.connectionsService.setListenHost(settings?.proxyListenHost);
-    }
-    if (typeof this.clashApiService?.setListenHost === 'function') {
-      this.clashApiService.setListenHost(settings?.proxyListenHost);
-    }
+    return statusManager.refreshConnectionsServiceBaseUrl(this, settings);
   }
 
   buildAutoStartState(overrides = {}) {
-    const settings = this.store.getSettings();
-    const capabilities = this.autoStartManager.getCapabilities();
-
-    return {
-      enabled: false,
-      provider: capabilities.provider,
-      supported: capabilities.supported,
-      command: null,
-      lastError: null,
-      desiredEnabled: !!settings.autoStart,
-      ...overrides
-    };
+    return statusManager.buildAutoStartState(this, overrides);
   }
 
   resolveActiveNodeId(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
-    if (settings.activeNodeId && nodes.some((node) => node.id === settings.activeNodeId)) {
-      return settings.activeNodeId;
-    }
-
-    return nodes[0]?.id || null;
+    return selectorManager.resolveActiveNodeId(this, settings, nodes);
   }
 
   resolveSystemProxyDefaultNodeId(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    if (settings.systemProxyAutoSwitchEnabled) {
-      const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
-      const selectedNodeId = getNodeGroupSelectedNodeId(group);
-      if (selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
-        return selectedNodeId;
-      }
-    }
-
-    return this.resolveActiveNodeId(settings, nodes);
+    return selectorManager.resolveSystemProxyDefaultNodeId(this, settings, nodes);
   }
 
   getActiveNodeSelectorTarget(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    const activeNodeId = this.resolveActiveNodeId(settings, nodes);
-    if (!activeNodeId || !nodes.some((node) => node.id === activeNodeId)) {
-      return null;
-    }
-
-    return {
-      groupTag: ACTIVE_NODE_SELECTOR_TAG,
-      outboundTag: `out-${activeNodeId}`,
-      selectedNodeId: activeNodeId
-    };
+    return selectorManager.getActiveNodeSelectorTarget(this, settings, nodes);
   }
 
   getNodeGroupSelectorTarget(group, nodes = this.store.getNodes()) {
-    if (!group || typeof group !== 'object' || !group.id) {
-      return null;
-    }
-
-    const selectedNodeId = getNodeGroupSelectedNodeId(group);
-    if (!selectedNodeId || !nodes.some((node) => node.id === selectedNodeId)) {
-      return null;
-    }
-
-    return {
-      groupTag: getNodeGroupOutboundTag(group.id),
-      outboundTag: `out-${selectedNodeId}`,
-      selectedNodeId
-    };
+    return selectorManager.getNodeGroupSelectorTarget(this, group, nodes);
   }
 
   async closeRunningConnections(reason = 'selector switch') {
-    if (typeof this.connectionsService?.closeAllConnections !== 'function') {
-      return false;
-    }
-
-    try {
-      await this.connectionsService.closeAllConnections();
-      this.store.appendLog(`[CoreManager] Closed existing connections after ${reason}`);
-      return true;
-    } catch (error) {
-      this.store.appendLog(`[CoreManager] Failed to close existing connections after ${reason}: ${error.message}`);
-      return false;
-    }
+    return selectorManager.closeRunningConnections(this, reason);
   }
 
   async applyRunningActiveNodeSelector(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    const target = this.getActiveNodeSelectorTarget(settings, nodes);
-    if (!target) {
-      return false;
-    }
-
-    await this.clashApiService.setSelector(target.groupTag, target.outboundTag);
-    await this.closeRunningConnections('active node switch');
-    this.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
-    return true;
+    return selectorManager.applyRunningActiveNodeSelector(this, settings, nodes);
   }
 
   getEffectiveNodeGroupNodeIds(group, nodes = this.store.getNodes()) {
-    const validNodeIds = new Set((nodes || []).map((node) => node.id));
-    return Array.isArray(group?.nodeIds)
-      ? group.nodeIds
-        .map((nodeId) => String(nodeId || '').trim())
-        .filter((nodeId, index, array) => nodeId && validNodeIds.has(nodeId) && array.indexOf(nodeId) === index)
-      : [];
+    return selectorManager.getEffectiveNodeGroupNodeIds(this, group, nodes);
   }
 
   async applyRunningNodeGroupSelector(group, nodes = this.store.getNodes()) {
-    const target = this.getNodeGroupSelectorTarget(group, nodes);
-    if (!target) {
-      return false;
-    }
-
-    await this.clashApiService.setSelector(target.groupTag, target.outboundTag);
-    this.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
-    return true;
+    return selectorManager.applyRunningNodeGroupSelector(this, group, nodes);
   }
 
   async syncRunningSelectors(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    if (this.state.status !== 'running') {
-      return 0;
-    }
-
-    const nodeGroups = Array.isArray(settings?.nodeGroups) ? settings.nodeGroups : [];
-    const selectableGroups = nodeGroups.filter((group) => this.getNodeGroupSelectorTarget(group, nodes));
-    const activeSelectorTarget = this.getActiveNodeSelectorTarget(settings, nodes);
-    if (!activeSelectorTarget && !selectableGroups.length) {
-      return 0;
-    }
-
-    await this.clashApiService.waitUntilReady();
-    let appliedCount = 0;
-    if (activeSelectorTarget && await this.applyRunningActiveNodeSelector(settings, nodes)) {
-      appliedCount += 1;
-    }
-    for (const group of selectableGroups) {
-      if (await this.applyRunningNodeGroupSelector(group, nodes)) {
-        appliedCount += 1;
-      }
-    }
-    return appliedCount;
+    return selectorManager.syncRunningSelectors(this, settings, nodes);
   }
 
   getNodeGroupLatencySwitchState(groupId) {
-    const normalizedGroupId = String(groupId || '').trim();
-    if (!normalizedGroupId) {
-      return null;
-    }
-
-    if (!this._nodeGroupLatencySwitchState.has(normalizedGroupId)) {
-      this._nodeGroupLatencySwitchState.set(normalizedGroupId, {
-        lastSwitchAt: 0,
-        consecutiveCurrentFailures: 0
-      });
-    }
-
-    return this._nodeGroupLatencySwitchState.get(normalizedGroupId);
+    return selectorManager.getNodeGroupLatencySwitchState(this, groupId);
   }
 
   getNodeGroupTestingSnapshot(settings = this.getSettingsSnapshot()) {
-    return {
-      intervalSec: normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec),
-      latencyCache: normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache)
-    };
+    return selectorManager.getNodeGroupTestingSnapshot(this, settings);
   }
 
   persistNodeGroupLatencyResults(results = [], options = {}) {
-    const settings = options.settings || this.getSettingsSnapshot();
-    const testedAt = normalizeIsoTimestamp(options.testedAt) || new Date().toISOString();
-    const existingCache = normalizeNodeGroupLatencyCache(settings.nodeGroupLatencyCache);
-    const mergedResults = {
-      ...(existingCache.results || {})
-    };
-
-    for (const result of Array.isArray(results) ? results : []) {
-      const nodeId = String(result?.id || '').trim();
-      if (!nodeId) {
-        continue;
-      }
-
-      const ok = !!result.ok;
-      const normalizedEntry = {
-        ok,
-        latencyMs: null,
-        error: null,
-        updatedAt: testedAt
-      };
-
-      if (ok) {
-        const latencyMs = Number.parseInt(result.latencyMs, 10);
-        if (!Number.isInteger(latencyMs) || latencyMs < 0) {
-          continue;
-        }
-        normalizedEntry.latencyMs = latencyMs;
-      } else {
-        const error = String(result.error || '').trim();
-        normalizedEntry.error = error ? error.slice(0, 160) : 'failed';
-      }
-
-      mergedResults[nodeId] = normalizedEntry;
-    }
-
-    const latencyCache = {
-      updatedAt: testedAt,
-      results: mergedResults
-    };
-    const savedSettings = this.store.saveSettings({
-      ...settings,
-      nodeGroupLatencyCache: latencyCache
-    });
-
-    return {
-      settings: savedSettings,
-      latencyCache
-    };
+    return selectorManager.persistNodeGroupLatencyResults(this, results, options);
   }
 
   resolveLatencyPreferredNode(group, testResults = [], options = {}) {
-    const effectiveNodeIds = this.getEffectiveNodeGroupNodeIds(group, options.nodes || this.store.getNodes());
-    if (!effectiveNodeIds.length) {
-      return null;
-    }
-
-    const resultById = new Map(
-      (Array.isArray(testResults) ? testResults : [])
-        .map((item) => [String(item?.id || '').trim(), item])
-        .filter(([nodeId]) => Boolean(nodeId))
-    );
-    const candidateResults = effectiveNodeIds
-      .map((nodeId) => resultById.get(nodeId))
-      .filter((item) => item && item.ok && Number.isFinite(Number(item.latencyMs)))
-      .sort((a, b) => Number(a.latencyMs) - Number(b.latencyMs));
-
-    if (!candidateResults.length) {
-      return null;
-    }
-
-    const switchState = this.getNodeGroupLatencySwitchState(group?.id);
-    const currentId = String(group?.selectedNodeId || '').trim();
-    const currentResult = currentId ? resultById.get(currentId) : null;
-    const best = candidateResults[0];
-    let shouldSwitch = false;
-
-    if (!currentId || !effectiveNodeIds.includes(currentId)) {
-      shouldSwitch = true;
-    } else if (!currentResult || !currentResult.ok) {
-      if (switchState) {
-        switchState.consecutiveCurrentFailures += 1;
-        if (switchState.consecutiveCurrentFailures >= NODE_GROUP_SWITCH_FAIL_THRESHOLD && best.id !== currentId) {
-          shouldSwitch = true;
-        }
-      }
-    } else {
-      if (switchState) {
-        switchState.consecutiveCurrentFailures = 0;
-        const cooldownPassed = (Date.now() - switchState.lastSwitchAt) >= NODE_GROUP_SWITCH_COOLDOWN_MS;
-        const gain = Number(currentResult.latencyMs) - Number(best.latencyMs);
-        if (best.id !== currentId && cooldownPassed && gain >= NODE_GROUP_SWITCH_DELTA_MS) {
-          shouldSwitch = true;
-        }
-      }
-    }
-
-    if (!shouldSwitch || best.id === currentId) {
-      return null;
-    }
-
-    return {
-      selectedNodeId: best.id,
-      previousNodeId: currentId || null,
-      latencyMs: Number(best.latencyMs)
-    };
+    return selectorManager.resolveLatencyPreferredNode(this, group, testResults, options);
   }
 
   getSystemProxyAutoSwitchProfile(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
-    const selectedNodeId = getNodeGroupSelectedNodeId(group);
-    const effectiveNodeId = this.resolveSystemProxyDefaultNodeId(settings, nodes);
-    const effectiveNode = nodes.find((node) => node.id === effectiveNodeId) || null;
-    const lastAt = normalizeIsoTimestamp(settings.systemProxyAutoSwitchLastAt);
-    const intervalSec = normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec);
-    const nextAt = settings.systemProxyAutoSwitchEnabled && lastAt
-      ? new Date(Date.parse(lastAt) + (intervalSec * 1000)).toISOString()
-      : null;
-
-    return {
-      enabled: !!settings.systemProxyAutoSwitchEnabled,
-      groupId: settings.systemProxyAutoSwitchGroupId || null,
-      intervalSec,
-      lastAt,
-      nextAt,
-      group: group || null,
-      selectedNodeId,
-      selectedNode: selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) || null : null,
-      effectiveNodeId,
-      effectiveNode
-    };
+    return selectorManager.getSystemProxyAutoSwitchProfile(this, settings, nodes);
   }
 
   getProxyProfile() {
-    const settings = this.getSettingsSnapshot();
-    const nodes = this.store.getNodes();
-    const activeNodeId = this.resolveActiveNodeId(settings, nodes);
-    const systemDefaultNodeId = this.resolveSystemProxyDefaultNodeId(settings, nodes);
-    const systemProxyAutoSwitch = this.getSystemProxyAutoSwitchProfile(settings, nodes);
-    const listenHost = settings.proxyListenHost;
-    const unifiedSocksPort = settings.systemProxySocksPort;
-    const unifiedHttpPort = settings.systemProxyHttpPort;
-
-    return {
-      mode: settings.routingMode,
-      systemProxyEnabled: !!settings.systemProxyEnabled,
-      systemProxyCaptureEnabled: !!settings.systemProxyCaptureEnabled,
-      activeNodeId,
-      systemDefaultNodeId,
-      unifiedHttpPort,
-      unifiedSocksPort,
-      manualPortRangeStart: settings.proxyBasePort,
-      listenHost,
-      systemDefaultEndpoint: {
-        protocol: 'http',
-        host: listenHost,
-        port: unifiedHttpPort,
-        url: formatUrlWithHost('http', listenHost, unifiedHttpPort)
-      },
-      httpCompatibilityEndpoint: {
-        protocol: 'socks5',
-        host: listenHost,
-        port: unifiedSocksPort,
-        url: formatUrlWithHost('socks5', listenHost, unifiedSocksPort)
-      },
-      systemSocksEndpoint: {
-        protocol: 'socks5',
-        host: listenHost,
-        port: unifiedSocksPort,
-        url: formatUrlWithHost('socks5', listenHost, unifiedSocksPort)
-      },
-      customRules: settings.customRules,
-      rulesets: settings.rulesets || [],
-      routingItems: settings.routingItems || [],
-      nodeGroups: settings.nodeGroups || [],
-      activeNode: nodes.find((node) => node.id === activeNodeId) || null,
-      systemDefaultNode: nodes.find((node) => node.id === systemDefaultNodeId) || null,
-      systemProxyAutoSwitch
-    };
+    return statusManager.getProxyProfile(this);
   }
 
   getBuiltinRulesets() {
-    return [
-      ...BUILTIN_RULESETS.map((ruleset) => ({
-        id: ruleset.id,
-        name: ruleset.name,
-        kind: 'builtin',
-        remoteRuleSetIds: Array.isArray(ruleset.remoteRuleSetIds) ? [...ruleset.remoteRuleSetIds] : [],
-        entries: ruleset.entries.map((entry, index) => ({
-          id: `${ruleset.id}-entry-${index + 1}`,
-          type: entry.type,
-          value: entry.value,
-          note: entry.note || ''
-        }))
-      }))
-    ];
+    return statusManager.getBuiltinRulesets(this);
   }
 
   async refreshAutoStartState() {
@@ -1660,91 +315,27 @@ export class CoreManager {
   }
 
   getSubscriptions() {
-    return this.getSettingsSnapshot().subscriptions || [];
+    return getSubscriptionsForManager(this);
   }
 
   ensureStoredGroup(settings, groupName) {
-    if (!groupName) {
-      return settings;
-    }
-
-    const groups = Array.isArray(settings.groups) ? settings.groups : [];
-    if (groups.includes(groupName)) {
-      return settings;
-    }
-
-    return {
-      ...settings,
-      groups: [...groups, groupName]
-    };
+    return ensureSubscriptionStoredGroup(settings, groupName);
   }
 
   allocateSubscriptionGroupName(settings, preferredName, subscriptionId = null) {
-    const occupiedNames = new Set(this.getGroups());
-    for (const record of settings.subscriptions || []) {
-      if (!record?.groupName || (subscriptionId && record.id === subscriptionId)) {
-        continue;
-      }
-      occupiedNames.add(record.groupName);
-    }
-
-    return buildUniqueSubscriptionGroupName(preferredName, occupiedNames);
+    return allocateSubscriptionGroupNameForManager(this, settings, preferredName, subscriptionId);
   }
 
   updateSubscriptionRecord(recordInput, options = {}) {
-    const settings = options.settings || this.getSettingsSnapshot();
-    const subscriptions = Array.isArray(settings.subscriptions) ? settings.subscriptions : [];
-    const existingRecord = subscriptions.find((item) =>
-      (recordInput.id && item.id === recordInput.id)
-      || (recordInput.url && item.url === recordInput.url)
-    ) || null;
-    const nextRecord = normalizeSubscriptionRecord({
-      ...existingRecord,
-      ...recordInput,
-      id: recordInput.id || existingRecord?.id || `subscription-${Date.now()}`,
-      name: deriveSubscriptionDisplayName(recordInput.url || existingRecord?.url || '', recordInput.name || existingRecord?.name || '')
-    }, existingRecord ? subscriptions.indexOf(existingRecord) : subscriptions.length);
-    const nextSubscriptions = [
-      ...subscriptions.filter((item) => item.id !== existingRecord?.id),
-      nextRecord
-    ];
-    const nextSettings = {
-      ...settings,
-      subscriptions: nextSubscriptions
-    };
-
-    this.store.saveSettings(nextSettings);
-    return nextRecord;
+    return updateSubscriptionRecordForManager(this, recordInput, options);
   }
 
   updateSubscriptionRecordError(record, errorMessage) {
-    if (!record) {
-      return null;
-    }
-
-    return this.updateSubscriptionRecord({
-      ...record,
-      lastStatus: 'error',
-      lastError: String(errorMessage || '').trim() || 'Sync failed'
-    });
+    return updateSubscriptionRecordErrorForManager(this, record, errorMessage);
   }
 
   findSubscriptionRecord(input, settings = this.getSettingsSnapshot()) {
-    const subscriptions = Array.isArray(settings.subscriptions) ? settings.subscriptions : [];
-    if (typeof input === 'string') {
-      const url = String(input || '').trim();
-      return subscriptions.find((item) => item.url === url) || null;
-    }
-
-    const id = String(input?.id || '').trim();
-    const url = String(input?.url || '').trim();
-    if (id) {
-      return subscriptions.find((item) => item.id === id) || null;
-    }
-    if (url) {
-      return subscriptions.find((item) => item.url === url) || null;
-    }
-    return null;
+    return findSubscriptionRecordFromSettings(input, settings);
   }
 
   async refreshSystemProxyState() {
@@ -1841,407 +432,23 @@ export class CoreManager {
   }
 
   getRuntimeOptions(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
-    const snapshot = this.getSettingsSnapshot();
-    return {
-      activeNodeId: this.resolveActiveNodeId(snapshot, nodes),
-      systemDefaultNodeId: this.resolveSystemProxyDefaultNodeId(snapshot, nodes),
-      systemProxyAutoSwitchEnabled: !!snapshot.systemProxyAutoSwitchEnabled,
-      systemProxyAutoSwitchGroupId: snapshot.systemProxyAutoSwitchGroupId,
-      customRules: snapshot.customRules,
-      rulesets: snapshot.rulesets || [],
-      routingItems: snapshot.routingItems || [],
-      nodeGroups: snapshot.nodeGroups || [],
-      dnsRemoteServer: snapshot.dnsRemoteServer,
-      dnsDirectServer: snapshot.dnsDirectServer,
-      dnsBootstrapServer: snapshot.dnsBootstrapServer,
-      dnsFinal: snapshot.dnsFinal,
-      dnsStrategy: snapshot.dnsStrategy,
-      speedtestUrl: snapshot.speedtestUrl,
-      tlsFragmentEnabled: !!snapshot.tlsFragmentEnabled,
-      proxyMode: snapshot.routingMode,
-      systemProxyEnabled: !!snapshot.systemProxyEnabled,
-      systemProxyCaptureEnabled: !!snapshot.systemProxyCaptureEnabled,
-      systemProxyHttpPort: snapshot.systemProxyHttpPort,
-      systemProxySocksPort: snapshot.systemProxySocksPort
-    };
+    return statusManager.getRuntimeOptions(this, settings, nodes);
   }
 
   async updateSettings(patch) {
-    const current = this.getSettingsSnapshot();
-    const next = {
-      ...current,
-      ...patch
-    };
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'proxyListenHost')) {
-      next.proxyListenHost = normalizeHost(next.proxyListenHost);
-      if (!next.proxyListenHost) {
-        throw createHttpError('proxyListenHost is required', 400);
-      }
-    }
-
-    next.systemProxyEnabled = !!next.systemProxyEnabled;
-    next.systemProxyCaptureEnabled = !!next.systemProxyCaptureEnabled;
-    next.tlsFragmentEnabled = !!next.tlsFragmentEnabled;
-    if (this.runtimeMode === 'desktop'
-      && Object.prototype.hasOwnProperty.call(patch, 'systemProxyEnabled')
-      && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyCaptureEnabled')) {
-      next.systemProxyCaptureEnabled = next.systemProxyEnabled;
-    }
-    if (!next.systemProxyEnabled) {
-      next.systemProxyCaptureEnabled = false;
-    }
-    if (next.systemProxyCaptureEnabled) {
-      next.systemProxyEnabled = true;
-    }
-
-    if (next.routingMode && !ROUTING_MODES.includes(next.routingMode)) {
-      throw createHttpError('Invalid routing mode', 400);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'dnsFinal')) {
-      const dnsFinal = String(next.dnsFinal || '').trim();
-      if (!['dns-remote', 'dns-local'].includes(dnsFinal)) {
-        throw createHttpError('dnsFinal must be dns-remote or dns-local', 400);
-      }
-      next.dnsFinal = dnsFinal;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'dnsStrategy')) {
-      const dnsStrategy = String(next.dnsStrategy || '').trim();
-      if (!['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(dnsStrategy)) {
-        throw createHttpError('dnsStrategy is invalid', 400);
-      }
-      next.dnsStrategy = dnsStrategy;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'dnsRemoteServer')) {
-      next.dnsRemoteServer = String(next.dnsRemoteServer || '').trim();
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'dnsDirectServer')) {
-      next.dnsDirectServer = String(next.dnsDirectServer || '').trim();
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'dnsBootstrapServer')) {
-      next.dnsBootstrapServer = String(next.dnsBootstrapServer || '').trim();
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'speedtestUrl')) {
-      next.speedtestUrl = String(next.speedtestUrl || '').trim() || DEFAULT_SPEEDTEST_URL;
-    }
-
-    const proxyBasePort = validatePort(next.proxyBasePort, 'proxyBasePort');
-    const systemProxySocksPort = validatePort(next.systemProxySocksPort, 'systemProxySocksPort');
-    const systemProxyHttpPort = validatePort(next.systemProxyHttpPort, 'systemProxyHttpPort');
-    if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Array.isArray(next.customRules)) {
-      throw createHttpError('customRules must be an array', 400);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Array.isArray(next.rulesets)) {
-      throw createHttpError('rulesets must be an array', 400);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'routingItems') && !Array.isArray(next.routingItems)) {
-      throw createHttpError('routingItems must be an array', 400);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && !Array.isArray(next.nodeGroups)) {
-      throw createHttpError('nodeGroups must be an array', 400);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroupAutoTestIntervalSec')) {
-      const parsedIntervalSec = Number.parseInt(patch.nodeGroupAutoTestIntervalSec, 10);
-      if (!Number.isInteger(parsedIntervalSec)) {
-        throw createHttpError('nodeGroupAutoTestIntervalSec must be an integer', 400);
-      }
-      next.nodeGroupAutoTestIntervalSec = normalizeNodeGroupAutoTestIntervalSec(parsedIntervalSec);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroupLatencyCache')) {
-      if (!patch.nodeGroupLatencyCache || typeof patch.nodeGroupLatencyCache !== 'object') {
-        throw createHttpError('nodeGroupLatencyCache must be an object', 400);
-      }
-      next.nodeGroupLatencyCache = normalizeNodeGroupLatencyCache(patch.nodeGroupLatencyCache);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled')) {
-      next.systemProxyAutoSwitchEnabled = !!patch.systemProxyAutoSwitchEnabled;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')) {
-      next.systemProxyAutoSwitchGroupId = patch.systemProxyAutoSwitchGroupId == null
-        ? null
-        : String(patch.systemProxyAutoSwitchGroupId).trim() || null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchIntervalSec')) {
-      const parsedIntervalSec = Number.parseInt(patch.systemProxyAutoSwitchIntervalSec, 10);
-      if (!Number.isInteger(parsedIntervalSec)) {
-        throw createHttpError('systemProxyAutoSwitchIntervalSec must be an integer', 400);
-      }
-      next.systemProxyAutoSwitchIntervalSec = normalizeSystemProxyAutoSwitchIntervalSec(parsedIntervalSec);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchLastAt')) {
-      next.systemProxyAutoSwitchLastAt = normalizeIsoTimestamp(patch.systemProxyAutoSwitchLastAt);
-    }
-
-    const nodeGroups = Array.isArray(next.nodeGroups)
-      ? normalizeNodeGroups(next.nodeGroups, this.store.getNodes())
-      : current.nodeGroups;
-    const systemProxyAutoSwitch = normalizeSystemProxyAutoSwitchSettings(next, nodeGroups, {
-      strict: Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled')
-        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')
-    });
-    const shouldResetSystemProxyAutoSwitchLastAt = systemProxyAutoSwitch.enabled
-      && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchLastAt')
-      && (
-        (Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchEnabled') && !!patch.systemProxyAutoSwitchEnabled)
-        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchGroupId')
-        || Object.prototype.hasOwnProperty.call(patch, 'systemProxyAutoSwitchIntervalSec')
-      );
-    const systemProxyAutoSwitchLastAt = shouldResetSystemProxyAutoSwitchLastAt
-      ? new Date().toISOString()
-      : systemProxyAutoSwitch.lastAt;
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'customRules') && !Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
-      next.customRules = normalizeCustomRules(next.customRules || [], nodeGroups);
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'rulesets') && !Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
-      next.rulesets = normalizeRulesets(next.rulesets || [], nodeGroups);
-    }
-
-    let routingItems;
-    let customRules;
-    let rulesets;
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
-      routingItems = normalizeRoutingItems(next.routingItems, nodeGroups);
-      const legacy = routingItemsToLegacySettings(routingItems);
-      customRules = legacy.customRules;
-      rulesets = legacy.rulesets;
-    } else if (Object.prototype.hasOwnProperty.call(patch, 'customRules') || Object.prototype.hasOwnProperty.call(patch, 'rulesets')) {
-      customRules = Array.isArray(next.customRules)
-        ? normalizeCustomRules(next.customRules, nodeGroups)
-        : current.customRules;
-      rulesets = Array.isArray(next.rulesets)
-        ? normalizeRulesets(next.rulesets, nodeGroups)
-        : current.rulesets;
-      routingItems = legacyRoutingItemsFromSettings({ customRules, rulesets }, nodeGroups);
-    } else {
-      routingItems = Array.isArray(next.routingItems)
-        ? normalizeRoutingItems(next.routingItems, nodeGroups)
-        : current.routingItems;
-      const legacy = routingItemsToLegacySettings(routingItems);
-      customRules = legacy.customRules;
-      rulesets = legacy.rulesets;
-    }
-
-    if (systemProxySocksPort === systemProxyHttpPort) {
-      throw createHttpError('systemProxySocksPort and systemProxyHttpPort must be different', 400);
-    }
-
-    const nodes = this.store.getNodes();
-    const normalizedNodes = assignStableLocalPorts(nodes, proxyBasePort);
-    const occupiedManualPorts = new Set(normalizedNodes.map((node) => Number.parseInt(node.local_port, 10)).filter((port) => Number.isInteger(port)));
-
-    if (occupiedManualPorts.has(systemProxySocksPort) || systemProxySocksPort === proxyBasePort) {
-      throw createHttpError('systemProxySocksPort conflicts with manual proxy ports', 400);
-    }
-
-    if (occupiedManualPorts.has(systemProxyHttpPort) || systemProxyHttpPort === proxyBasePort) {
-      throw createHttpError('systemProxyHttpPort conflicts with manual proxy ports', 400);
-    }
-
-    const activeNodeId = this.resolveActiveNodeId(next, nodes);
-    let autoStart = this.state.autoStart;
-    if (Object.prototype.hasOwnProperty.call(patch, 'autoStart')) {
-      autoStart = patch.autoStart
-        ? await this.autoStartManager.enable()
-        : await this.autoStartManager.disable();
-    }
-
-    const systemProxyCaptureWasEnabled = !!current.systemProxyCaptureEnabled;
-    const systemProxyCaptureWillBeDisabled = systemProxyCaptureWasEnabled && !next.systemProxyCaptureEnabled;
-    const saved = this.store.saveSettings({
-      ...next,
-      proxyListenHost: next.proxyListenHost,
-      proxyBasePort,
-      tlsFragmentEnabled: !!next.tlsFragmentEnabled,
-      systemProxyEnabled: !!next.systemProxyEnabled,
-      systemProxyCaptureEnabled: !!next.systemProxyCaptureEnabled,
-      systemProxySocksPort,
-      systemProxyHttpPort,
-      routingItems,
-      customRules,
-      rulesets,
-      nodeGroups,
-      activeNodeId,
-      autoStart: !!next.autoStart,
-      nodeGroupAutoTestIntervalSec: normalizeNodeGroupAutoTestIntervalSec(next.nodeGroupAutoTestIntervalSec),
-      nodeGroupLatencyCache: normalizeNodeGroupLatencyCache(next.nodeGroupLatencyCache),
-      systemProxyAutoSwitchEnabled: systemProxyAutoSwitch.enabled,
-      systemProxyAutoSwitchGroupId: systemProxyAutoSwitch.groupId,
-      systemProxyAutoSwitchIntervalSec: systemProxyAutoSwitch.intervalSec,
-      systemProxyAutoSwitchLastAt: systemProxyAutoSwitchLastAt
-    });
-    if (systemProxyCaptureWillBeDisabled) {
-      const disabledProxy = await this.systemProxyManager.disable();
-      this.state.systemProxy = this.buildSystemProxyState(disabledProxy);
-    }
-    this.state.autoStart = this.buildAutoStartState(autoStart);
-    this.refreshConnectionsServiceBaseUrl(saved);
-    this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);
-
-    const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
-    const changedRuntimeKeys = runtimeSensitiveKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
-    const shouldHotSwitchActiveNode = this.state.status === 'running'
-      && changedRuntimeKeys.length === 1
-      && changedRuntimeKeys[0] === 'activeNodeId';
-    let shouldAutoRestart = this.state.status === 'running'
-      && changedRuntimeKeys.some((key) => key !== 'activeNodeId');
-    let hotSwitchedActiveNode = false;
-
-    let core = this.getStatus();
-    if (shouldHotSwitchActiveNode) {
-      try {
-        await this.applyRunningActiveNodeSelector(saved, nodes);
-        hotSwitchedActiveNode = true;
-      } catch (error) {
-        this.store.appendLog(`[CoreManager] Active selector hot-switch failed, falling back to restart: ${error.message}`);
-        shouldAutoRestart = true;
-      }
-    }
-    if (shouldAutoRestart) {
-      core = await this.restart();
-    }
-
-    return {
-      settings: { ...saved },
-      proxy: this.getProxyProfile(),
-      restartRequired: (shouldAutoRestart || hotSwitchedActiveNode) ? false : this.getRestartRequired(),
-      autoRestarted: shouldAutoRestart,
-      core
-    };
+    return settingsManager.updateSettings(this, patch);
   }
 
   getStatus() {
-    const binary = this.buildBinaryState(this.state.binary);
-
-    return {
-      ...this.state,
-      binary: { ...binary },
-      proxy: this.getProxyProfile(),
-      systemProxy: { ...this.state.systemProxy },
-      autoStart: { ...this.state.autoStart },
-      geoIp: this.getGeoIpStatus(),
-      rulesetDatabase: this.getRulesetDatabaseStatus(),
-      nodeApply: this.getNodeApplyStatus(),
-      settings: this.getSettingsSnapshot(),
-      paths: {
-        root: this.paths.root,
-        runtimeRoot: this.paths.runtimeRoot,
-        dataDir: this.paths.dataDir,
-        configPath: this.paths.configPath,
-        settingsPath: this.paths.settingsPath,
-        rulesDir: this.paths.rulesDir,
-        rulesetMetaPath: this.paths.rulesetMetaPath
-      },
-      hasConfig: fs.existsSync(this.paths.configPath),
-      nodeCount: this.store.getNodes().length,
-      nodes: this.store.getNodes(),
-      recentLogs: this.store.getRecentLogs(200)
-    };
+    return statusManager.getStatus(this);
   }
 
   async runSystemProxyAutoSwitchTick() {
-    if (this._systemProxyAutoSwitchBusy) {
-      return false;
-    }
-
-    const settings = this.getSettingsSnapshot();
-    if (this.state.status !== 'running' || !settings.systemProxyEnabled || !settings.systemProxyAutoSwitchEnabled) {
-      return false;
-    }
-
-    const group = getNodeGroupById(settings.nodeGroups || [], settings.systemProxyAutoSwitchGroupId);
-    const selectedNodeId = getNodeGroupSelectedNodeId(group);
-    if (!group || !selectedNodeId) {
-      return false;
-    }
-
-    const intervalMs = normalizeSystemProxyAutoSwitchIntervalSec(settings.systemProxyAutoSwitchIntervalSec) * 1000;
-    const nowMs = Date.now();
-    const lastAtMs = settings.systemProxyAutoSwitchLastAt ? Date.parse(settings.systemProxyAutoSwitchLastAt) : Number.NaN;
-    if (Number.isFinite(lastAtMs) && (nowMs - lastAtMs) < intervalMs) {
-      return false;
-    }
-
-    const nodes = this.store.getNodes();
-    const validNodeIds = (Array.isArray(group.nodeIds) ? group.nodeIds : [])
-      .map((nodeId) => String(nodeId || '').trim())
-      .filter((nodeId) => nodes.some((node) => node.id === nodeId));
-    if (!validNodeIds.length) {
-      return false;
-    }
-
-    this._systemProxyAutoSwitchBusy = true;
-    try {
-      const currentSelectedNodeId = validNodeIds.includes(selectedNodeId) ? selectedNodeId : (validNodeIds[0] || null);
-      const candidateNodeIds = validNodeIds.length > 1
-        ? validNodeIds.filter((nodeId) => nodeId !== currentSelectedNodeId)
-        : validNodeIds;
-      const nextSelectedNodeId = candidateNodeIds[Math.floor(Math.random() * candidateNodeIds.length)] || currentSelectedNodeId;
-      const nextLastAt = new Date(nowMs).toISOString();
-
-      if (!nextSelectedNodeId || nextSelectedNodeId === currentSelectedNodeId) {
-        await this.updateSettings({
-          systemProxyAutoSwitchLastAt: nextLastAt
-        });
-        return false;
-      }
-
-      this.store.appendLog(`[CoreManager] System proxy auto-switch selected ${nextSelectedNodeId} from group ${group.id}`);
-      await this.selectNodeGroupNode(group.id, nextSelectedNodeId);
-      await this.updateSettings({
-        systemProxyAutoSwitchLastAt: nextLastAt
-      });
-      return true;
-    } catch (error) {
-      this.store.appendLog(`[CoreManager] System proxy auto-switch failed: ${error.message}`);
-      return false;
-    } finally {
-      this._systemProxyAutoSwitchBusy = false;
-    }
+    return selectorManager.runSystemProxyAutoSwitchTick(this);
   }
 
   async runNodeGroupAutoTestTick() {
-    if (this._nodeGroupAutoTestBusy) {
-      return false;
-    }
-
-    if (this.state.status !== 'running') {
-      return false;
-    }
-
-    const settings = this.getSettingsSnapshot();
-    if (!Array.isArray(settings.nodeGroups) || !settings.nodeGroups.length) {
-      return false;
-    }
-
-    const intervalMs = normalizeNodeGroupAutoTestIntervalSec(settings.nodeGroupAutoTestIntervalSec) * 1000;
-    const lastAtMs = settings.nodeGroupLatencyCache?.updatedAt
-      ? Date.parse(settings.nodeGroupLatencyCache.updatedAt)
-      : Number.NaN;
-    if (Number.isFinite(lastAtMs) && (Date.now() - lastAtMs) < intervalMs) {
-      return false;
-    }
-
-    this._nodeGroupAutoTestBusy = true;
-    try {
-      const payload = await this.testNodeGroups([], {
-        autoStartCore: false,
-        silent: true
-      });
-      return Array.isArray(payload.results) && payload.results.length > 0;
-    } catch (error) {
-      this.store.appendLog(`[CoreManager] Node group auto-test failed: ${error.message}`);
-      return false;
-    } finally {
-      this._nodeGroupAutoTestBusy = false;
-    }
+    return selectorManager.runNodeGroupAutoTestTick(this);
   }
 
   async initializeGeoIp() {
@@ -2271,130 +478,19 @@ export class CoreManager {
   }
 
   async getRoutingHits() {
-    const history = this.readRoutingHitHistory();
-    if (this.state.status !== 'running') return history;
-    const settings = this.store.getSettings();
-    if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return history;
-
-    this.refreshConnectionsServiceBaseUrl(settings);
-    const nodes = this.store.getNodes();
-    const context = this.createRoutingHitDisplayContext(this.getSettingsSnapshot(), nodes);
-    const connections = await this.connectionsService.getConnections();
-    const liveHits = connections
-      .map((connection) => {
-        const metadata = connection.metadata || {};
-        const host = metadata.host || metadata.destinationIP || metadata.destination || '';
-        const chains = Array.isArray(connection.chains) ? connection.chains : [];
-        const outboundTag = chains[chains.length - 1] || '';
-        const hit = this.proxyService.resolveRoutingHit(connection.rule || connection.rulePayload || null, host, outboundTag, { allowHeuristic: false });
-        if (!hit) return null;
-        return this.decorateRoutingHitEntry({
-          id: connection.id || `${host}-${outboundTag}`,
-          timestamp: pickConnectionTimestamp(connection),
-          host,
-          port: metadata.destinationPort || metadata.dstPort || null,
-          outbound: outboundTag,
-          kind: hit.kind,
-          name: hit.name,
-          target: hit.target,
-          descriptor: hit.descriptor,
-          matchedTag: hit.matchedTag || null,
-          matchedBy: hit.matchedBy || null,
-          matchType: hit.matchType || null,
-          matchValue: hit.matchValue || null,
-          persisted: false,
-          chains,
-          rule: connection.rule || null,
-          rulePayload: connection.rulePayload || null
-        }, context);
-      })
-      .filter(Boolean);
-
-    const merged = [...liveHits, ...history].slice(0, ROUTING_HIT_READ_LIMIT);
-    return merged;
+    return statusManager.getRoutingHits(this);
   }
 
   async getTrafficSnapshot() {
-    if (this.state.status !== 'running') {
-      return {
-        timestamp: new Date().toISOString(),
-        uploadBytes: 0,
-        downloadBytes: 0,
-        connectionCount: 0
-      };
-    }
-
-    this.refreshConnectionsServiceBaseUrl();
-    const connections = await this.connectionsService.getConnections();
-    const totals = connections.reduce((acc, connection) => {
-      acc.uploadBytes += pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']);
-      acc.downloadBytes += pickConnectionBytes(connection, ['download', 'downloadBytes', 'down', 'downBytes', 'received', 'rx']);
-      return acc;
-    }, { uploadBytes: 0, downloadBytes: 0 });
-
-    return {
-      timestamp: new Date().toISOString(),
-      uploadBytes: Math.round(totals.uploadBytes),
-      downloadBytes: Math.round(totals.downloadBytes),
-      connectionCount: connections.length
-    };
+    return statusManager.getTrafficSnapshot(this);
   }
 
   async getNodeRecords() {
-    const settings = this.getSettingsSnapshot();
-    const nodes = this.store.getNodes();
-
-    this.proxyService.proxyListen = settings.proxyListenHost;
-    this.proxyService.basePort = settings.proxyBasePort;
-    this.proxyService.setNodes(nodes);
-
-    const records = nodes.map((node) => ({
-      ...node,
-      localPort: this.proxyService.getLocalPort(node.id),
-      listenHost: settings.proxyListenHost,
-      shareLink: this.proxyService.toShareLink ? this.proxyService.toShareLink(node) : null,
-      endpoint: {
-        protocol: 'socks5',
-        host: settings.proxyListenHost,
-        port: this.proxyService.getLocalPort(node.id),
-        url: formatUrlWithHost('socks5', settings.proxyListenHost, this.proxyService.getLocalPort(node.id))
-      },
-      copyText: formatHostPort(settings.proxyListenHost, this.proxyService.getLocalPort(node.id)),
-      isRunning: this.state.status === 'running'
-    }));
-
-    const enriched = await this.geoIpService.enrichNodes(records);
-    return enriched.map((node) => {
-      const countryCodeOverride = normalizeCountryCode(node.countryCodeOverride);
-      if (!countryCodeOverride) {
-        return {
-          ...node,
-          countryOverridden: false
-        };
-      }
-
-      return {
-        ...node,
-        countryCode: countryCodeOverride,
-        countryName: this.resolveCountryName(countryCodeOverride) || node.countryName || countryCodeOverride,
-        flagEmoji: geoFlagFromCountryCode(countryCodeOverride),
-        countryCodeOverride,
-        countryOverridden: true
-      };
-    });
+    return statusManager.getNodeRecords(this);
   }
 
   resolveCountryName(countryCode) {
-    const normalized = normalizeCountryCode(countryCode);
-    if (!normalized) {
-      return null;
-    }
-
-    try {
-      return new Intl.DisplayNames(['zh-CN', 'en'], { type: 'region' }).of(normalized) || normalized;
-    } catch {
-      return normalized;
-    }
+    return statusManager.resolveCountryName(countryCode);
   }
 
   getNodeById(nodeId) {
@@ -2406,1312 +502,186 @@ export class CoreManager {
   }
 
   normalizeFrontProxyRefs(nodes = []) {
-    const normalizedNodes = Array.isArray(nodes) ? nodes : [];
-    const nodeMap = new Map(normalizedNodes.filter((node) => node?.id).map((node) => [node.id, node]));
-
-    return normalizedNodes.map((node) => {
-      if (!node || typeof node !== 'object') {
-        return node;
-      }
-
-      const frontProxyNodeId = String(node.frontProxyNodeId || '').trim();
-      const targetNode = frontProxyNodeId ? nodeMap.get(frontProxyNodeId) : null;
-      if (String(node.type || '').toLowerCase() === 'socks'
-        && targetNode
-        && targetNode.id !== node.id
-        && String(targetNode.type || '').toLowerCase() !== 'socks') {
-        return {
-          ...node,
-          frontProxyNodeId: targetNode.id
-        };
-      }
-
-      if (!Object.prototype.hasOwnProperty.call(node, 'frontProxyNodeId')) {
-        return node;
-      }
-
-      const { frontProxyNodeId: _frontProxyNodeId, ...rest } = node;
-      return rest;
-    });
+    return nodeManager.normalizeFrontProxyRefs(this, nodes);
   }
 
   async applyNodeChanges(savedNodes) {
-    if (this.state.status !== 'running') {
-      const nodes = await this.getNodeRecords();
-      return {
-        nodes,
-        restartRequired: false,
-        autoRestarted: false,
-        core: this.getStatus()
-      };
-    }
-
-    try {
-      await this.validateRuntimeConfig(savedNodes);
-    } catch (error) {
-      const warning = buildDeferredApplyWarning(error.message);
-      this.store.appendLog(`[CoreManager] Auto-apply skipped: ${error.message}`);
-      return {
-        nodes: await this.getNodeRecords(),
-        restartRequired: false,
-        autoRestarted: false,
-        warning,
-        core: this.getStatus()
-      };
-    }
-
-    const core = await this.restart();
-    return {
-      nodes: await this.getNodeRecords(),
-      restartRequired: false,
-      autoRestarted: true,
-      core
-    };
+    return nodeManager.applyNodeChanges(this, savedNodes);
   }
 
   async queueNodeChangesApply(savedNodes) {
-    if (this.state.status !== 'running') {
-      const nodes = await this.getNodeRecords();
-      return {
-        nodes,
-        restartRequired: false,
-        autoRestarted: false,
-        applyPending: false,
-        core: this.getStatus()
-      };
-    }
-
-    this._nodeApplyPendingNodes = Array.isArray(savedNodes) ? [...savedNodes] : [];
-    this._nodeApplyLastError = null;
-    this._nodeApplyLastFailedAt = null;
-
-    const shouldStartApply = !this._nodeApplyRunning;
-    if (shouldStartApply) {
-      this._nodeApplyRunning = true;
-      this._nodeApplyLastStartedAt = new Date().toISOString();
-    }
-
-    const nodes = await this.getNodeRecords();
-
-    if (shouldStartApply) {
-      setTimeout(() => {
-        void this.runNodeChangesApplyQueue();
-      }, 0);
-    }
-
-    return {
-      nodes,
-      restartRequired: false,
-      autoRestarted: false,
-      applyPending: true,
-      warning: '节点已保存，正在后台应用到核心',
-      core: this.getStatus()
-    };
+    return nodeManager.queueNodeChangesApply(this, savedNodes);
   }
 
   async runNodeChangesApplyQueue() {
-    while (this._nodeApplyPendingNodes) {
-      const nodes = this._nodeApplyPendingNodes;
-      this._nodeApplyPendingNodes = null;
-
-      if (this.state.status !== 'running') {
-        continue;
-      }
-
-      try {
-        await this.validateRuntimeConfig(nodes);
-        if (this._nodeApplyPendingNodes) {
-          continue;
-        }
-        if (this.state.status === 'running') {
-          await this.restart();
-          this._nodeApplyLastAppliedAt = new Date().toISOString();
-          this.store.appendLog('[CoreManager] Queued node changes applied to running core');
-        }
-        this._nodeApplyLastError = null;
-        this._nodeApplyLastFailedAt = null;
-      } catch (error) {
-        this._nodeApplyLastError = error.message;
-        this._nodeApplyLastFailedAt = new Date().toISOString();
-        this.store.appendLog(`[CoreManager] Queued node apply failed: ${error.message}`);
-      }
-    }
-
-    this._nodeApplyRunning = false;
-
-    if (this._nodeApplyPendingNodes) {
-      this._nodeApplyRunning = true;
-      this._nodeApplyLastStartedAt = new Date().toISOString();
-      setTimeout(() => {
-        void this.runNodeChangesApplyQueue();
-      }, 0);
-    }
+    return nodeManager.runNodeChangesApplyQueue(this);
   }
 
   getNodeApplyStatus() {
-    const pending = Boolean(this._nodeApplyPendingNodes);
-    const running = Boolean(this._nodeApplyRunning);
-    const lastError = this._nodeApplyLastError || null;
-    const state = running || pending
-      ? 'applying'
-      : lastError
-        ? 'failed'
-        : this._nodeApplyLastAppliedAt
-          ? 'applied'
-          : 'idle';
-
-    return {
-      state,
-      pending,
-      running,
-      lastError,
-      lastStartedAt: this._nodeApplyLastStartedAt,
-      lastAppliedAt: this._nodeApplyLastAppliedAt,
-      lastFailedAt: this._nodeApplyLastFailedAt
-    };
+    return nodeManager.getNodeApplyStatus(this);
   }
 
   shouldApplyNodeRuntimeChanges(previousNodes, nextNodes) {
-    return getNodesRuntimeSignature(previousNodes) !== getNodesRuntimeSignature(nextNodes);
+    return nodeManager.shouldApplyNodeRuntimeChanges(this, previousNodes, nextNodes);
   }
 
   async buildSavedNodeChangeResult() {
-    return {
-      nodes: await this.getNodeRecords(),
-      restartRequired: false,
-      autoRestarted: false,
-      applyPending: false,
-      core: this.getStatus()
-    };
+    return nodeManager.buildSavedNodeChangeResult(this);
   }
 
   normalizeNodes(nodes) {
-    const normalizedNodes = (Array.isArray(nodes) ? nodes : []).map((node) => {
-      const normalizedOverride = normalizeCountryCode(node?.countryCodeOverride);
-      if (normalizedOverride) {
-        return {
-          ...node,
-          countryCodeOverride: normalizedOverride
-        };
-      }
-
-      if (!node || typeof node !== 'object' || !Object.prototype.hasOwnProperty.call(node, 'countryCodeOverride')) {
-        return node;
-      }
-
-      const { countryCodeOverride, ...rest } = node;
-      return rest;
-    });
-
-    return assignStableLocalPorts(this.normalizeFrontProxyRefs(normalizedNodes), this.getSettingsSnapshot().proxyBasePort);
+    return nodeManager.normalizeNodes(this, nodes);
   }
 
   saveNodes(nodes) {
-    const savedNodes = this.store.saveNodes(this.normalizeNodes(nodes));
-    const settings = this.getSettingsSnapshot();
-    this.store.saveSettings({
-      ...settings,
-      activeNodeId: this.resolveActiveNodeId(settings, savedNodes)
-    });
-    return savedNodes;
+    return nodeManager.saveNodes(this, nodes);
   }
 
   createValidationProxyService(settings = this.getSettingsSnapshot()) {
-    return new ProxyService({
-      configDir: this.paths.dataDir,
-      projectRoot: this.paths.root,
-      proxyListen: settings.proxyListenHost,
-      basePort: settings.proxyBasePort,
-      configFileName: this.paths.configPath.split(/[/\\]/).pop(),
-      log: this.createLogger()
-    });
+    return nodeManager.createValidationProxyService(this, settings);
   }
 
   resolveValidationBinaryPath(settings = this.getSettingsSnapshot()) {
-    const status = this.binaryManager.getStatus(settings.singBoxBinaryPath);
-    const candidates = [
-      this.state.binary?.resolvedPath,
-      this.state.executablePath,
-      status.configuredExists ? status.configuredPath : null,
-      status.managedExists ? status.managedPath : null
-    ];
-
-    for (const candidate of candidates) {
-      if (candidate && fs.existsSync(candidate)) {
-        return path.resolve(candidate);
-      }
-    }
-
-    return null;
+    return nodeManager.resolveValidationBinaryPath(this, settings);
   }
 
   async validateSingleNodeConfig(node, options = {}) {
-    if (!node) {
-      return { validated: false };
-    }
-
-    const settings = options.settings || this.getSettingsSnapshot();
-    const binPath = options.binPath || this.resolveValidationBinaryPath(settings);
-    if (!binPath) {
-      return { validated: false };
-    }
-
-    const candidate = { ...node };
-    const service = this.createValidationProxyService(settings);
-    service.setNodes([candidate]);
-    const config = service.generateConfig({
-      activeNodeId: candidate.id || null,
-      systemDefaultNodeId: candidate.id || null,
-      proxyMode: 'global'
-    });
-    const expectedTag = candidate.id ? `out-${candidate.id}` : null;
-    if (expectedTag && !config.outbounds?.some((outbound) => outbound.tag === expectedTag)) {
-      throw new Error('节点缺少必要字段或格式不受支持');
-    }
-
-    await service.validateConfig(config, { binPath });
-    return { validated: true, binPath };
+    return nodeManager.validateSingleNodeConfig(this, node, options);
   }
 
   async filterValidNodes(nodes, options = {}) {
-    const candidates = Array.isArray(nodes) ? nodes.filter(Boolean) : [];
-    if (!candidates.length) {
-      return { validNodes: [], invalidNodes: [] };
-    }
-
-    const settings = options.settings || this.getSettingsSnapshot();
-    const binPath = options.binPath || this.resolveValidationBinaryPath(settings);
-    if (!binPath) {
-      return { validNodes: candidates, invalidNodes: [] };
-    }
-
-    const validNodes = [];
-    const invalidNodes = [];
-
-    for (const node of candidates) {
-      try {
-        await this.validateSingleNodeConfig(node, { settings, binPath });
-        validNodes.push(node);
-      } catch (error) {
-        const message = String(error?.message || error || '节点配置无效').trim() || '节点配置无效';
-        invalidNodes.push({ node, error: message });
-        this.store.appendLog(`[CoreManager] Node validation skipped ${getNodeDisplayName(node, node?.id || 'node')}: ${message}`);
-      }
-    }
-
-    return { validNodes, invalidNodes };
+    return nodeManager.filterValidNodes(this, nodes, options);
   }
 
   async validateRuntimeConfig(nodes, settings = this.getSettingsSnapshot()) {
-    const binPath = this.resolveValidationBinaryPath(settings);
-    if (!binPath || !Array.isArray(nodes) || !nodes.length) {
-      return { validated: false };
-    }
-
-    const service = this.createValidationProxyService(settings);
-    service.setNodes(nodes);
-    const config = service.generateConfig(this.getRuntimeOptions(settings, nodes));
-    await service.validateConfig(config, { binPath });
-    return { validated: true, binPath };
+    return nodeManager.validateRuntimeConfig(this, nodes, settings);
   }
 
   mergeAndSaveNodes(incomingNodes) {
-    return this.saveNodes(mergeUniqueNodes(this.store.getNodes(), incomingNodes));
+    return nodeManager.mergeAndSaveNodes(this, incomingNodes);
   }
 
   async importProxyLink(link, group = null) {
-    const normalizedLink = this.proxyService.normalizeManualImportContent
-      ? this.proxyService.normalizeManualImportContent(link)
-      : this.proxyService.normalizeSubscriptionContent
-        ? this.proxyService.normalizeSubscriptionContent(link)
-        : link;
-    const parsedNodes = this.proxyService.parseProxyLinks
-      ? this.proxyService.parseProxyLinks(normalizedLink)
-      : [this.proxyService.parseProxyLink(normalizedLink)].filter(Boolean);
-    if (!parsedNodes.length) {
-      throw createHttpError('Invalid proxy link', 400);
-    }
-
-    const nodes = parsedNodes.map((parsedNode) => ({
-      ...(parsedNode.id ? parsedNode : { ...parsedNode, id: createNodeId() }),
-      ...(group ? { group } : {})
-    }));
-    const { validNodes, invalidNodes } = await this.filterValidNodes(nodes);
-    if (!validNodes.length) {
-      throw createHttpError(buildInvalidNodeWarning(invalidNodes) || 'Invalid proxy link', 400);
-    }
-
-    const existingNodes = this.store.getNodes();
-    const duplicateCount = countPotentialDuplicateNodes(existingNodes, validNodes);
-    const savedNodes = this.saveNodes(appendNodes(existingNodes, validNodes));
-    const applied = await this.queueNodeChangesApply(savedNodes);
-    const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
-    return {
-      node: applied.nodes.find((item) => item.id === validNodes[0].id),
-      importedCount: validNodes.length,
-      invalidCount: invalidNodes.length,
-      duplicateCount,
-      ...applied,
-      warning
-    };
+    return nodeManager.importProxyLink(this, link, group);
   }
 
   async importRawNode(rawNode) {
-    const existingNodes = this.store.getNodes();
-    const nextNodes = mergeUniqueNodes(existingNodes, [rawNode]);
-    const addedNodes = nextNodes.filter((node) => !existingNodes.some((existing) => existing.id === node.id));
-    if (addedNodes.length) {
-      const { invalidNodes } = await this.filterValidNodes(addedNodes);
-      if (invalidNodes.length) {
-        throw createHttpError(`节点配置校验失败：${invalidNodes[0].error}`, 400);
-      }
-    }
-
-    const savedNodes = this.saveNodes(nextNodes);
-    return this.queueNodeChangesApply(savedNodes);
+    return nodeManager.importRawNode(this, rawNode);
   }
 
   async updateNode(nodeId, patch) {
-    const nodes = this.store.getNodes();
-    const index = nodes.findIndex((node) => node.id === nodeId);
-    if (index === -1) {
-      throw createHttpError('Node not found', 404);
-    }
-
-    const currentNode = nodes[index];
-    if (currentNode.source === 'subscription') {
-      const requestedGroup = Object.prototype.hasOwnProperty.call(patch || {}, 'group')
-        ? (patch.group ? String(patch.group).trim() || null : null)
-        : currentNode.group || null;
-      const currentGroup = currentNode.group ? String(currentNode.group).trim() || null : null;
-
-      if (requestedGroup !== currentGroup) {
-        throw createHttpError('Subscription nodes must stay in their dedicated group', 400);
-      }
-    }
-
-    nodes[index] = {
-      ...(currentNode.local_port ? { local_port: currentNode.local_port } : {}),
-      ...patch,
-      id: nodeId,
-      ...(currentNode.source === 'subscription'
-        ? {
-            source: currentNode.source,
-            subscriptionUrl: currentNode.subscriptionUrl,
-            group: currentNode.group || null
-          }
-        : {})
-    };
-
-    const shouldApplyRuntimeChanges = this.shouldApplyNodeRuntimeChanges([currentNode], [nodes[index]]);
-    if (shouldApplyRuntimeChanges) {
-      try {
-        await this.validateSingleNodeConfig(nodes[index]);
-      } catch (error) {
-        throw createHttpError(`节点配置校验失败：${error.message}`, 400);
-      }
-    }
-
-    const savedNodes = this.saveNodes(nodes);
-    const applied = shouldApplyRuntimeChanges
-      ? await this.queueNodeChangesApply(savedNodes)
-      : await this.buildSavedNodeChangeResult();
-    return {
-      node: applied.nodes.find((item) => item.id === nodeId),
-      ...applied
-    };
+    return nodeManager.updateNode(this, nodeId, patch);
   }
 
   async deleteNode(nodeId) {
-    const nodes = this.store.getNodes();
-    const remainingNodes = nodes.filter((node) => node.id !== nodeId);
-    if (remainingNodes.length === nodes.length) {
-      throw createHttpError('Node not found', 404);
-    }
-
-    return this.queueNodeChangesApply(this.saveNodes(remainingNodes));
+    return nodeManager.deleteNode(this, nodeId);
   }
 
   async deleteNodes(nodeIds) {
-    const ids = [...new Set((Array.isArray(nodeIds) ? nodeIds : []).map((id) => String(id || '').trim()).filter(Boolean))];
-    if (!ids.length) {
-      throw createHttpError('Missing node ids', 400);
-    }
-
-    const nodes = this.store.getNodes();
-    const existingIds = new Set(nodes.map((node) => node.id));
-    const missingIds = ids.filter((id) => !existingIds.has(id));
-    if (missingIds.length) {
-      throw createHttpError(`Node not found: ${missingIds[0]}`, 404);
-    }
-
-    const idSet = new Set(ids);
-    const remainingNodes = nodes.filter((node) => !idSet.has(node.id));
-    const applied = await this.queueNodeChangesApply(this.saveNodes(remainingNodes));
-    return {
-      deletedCount: ids.length,
-      ...applied
-    };
+    return nodeManager.deleteNodes(this, nodeIds);
   }
 
   getGroups() {
-    const nodes = this.store.getNodes();
-    const stored = this.getSettingsSnapshot().groups || [];
-    const seen = new Set(stored);
-    const groups = [...stored];
-    for (const node of nodes) {
-      const g = node.group ? String(node.group).trim() : null;
-      if (g && !seen.has(g)) {
-        seen.add(g);
-        groups.push(g);
-      }
-    }
-    return groups;
+    return getGroupsForManager(this);
   }
 
   async createGroup(name) {
-    const trimmed = String(name || '').trim();
-    if (!trimmed) throw createHttpError('Group name cannot be empty', 400);
-    const settings = this.getSettingsSnapshot();
-    const groups = settings.groups || [];
-    if (groups.includes(trimmed)) return { groups: this.getGroups() };
-    this.store.saveSettings({ ...settings, groups: [...groups, trimmed] });
-    return { groups: this.getGroups() };
+    return createGroupForManager(this, name);
   }
 
   async setNodeGroup(nodeIds, group) {
-    const normalizedGroup = group ? String(group).trim() || null : null;
-    const nodes = this.store.getNodes();
-    const selectedSubscriptionNode = nodes.find((node) => nodeIds.includes(node.id) && node.source === 'subscription');
-    if (selectedSubscriptionNode) {
-      throw createHttpError('Subscription nodes must stay in their dedicated group', 400);
-    }
-
-    const updatedNodes = nodes.map((node) =>
-      nodeIds.includes(node.id) ? { ...node, group: normalizedGroup } : node
-    );
-    const savedNodes = this.saveNodes(updatedNodes);
-    return this.buildSavedNodeChangeResult();
+    return setNodeGroupForManager(this, nodeIds, group);
   }
 
   async renameGroup(oldName, newName) {
-    const trimmedNew = String(newName || '').trim();
-    if (!trimmedNew) throw createHttpError('Group name cannot be empty', 400);
-    const nodes = this.store.getNodes().map((node) =>
-      node.group === oldName ? { ...node, group: trimmedNew } : node
-    );
-    const settings = this.getSettingsSnapshot();
-    const groups = (settings.groups || []).map(g => g === oldName ? trimmedNew : g);
-    const subscriptions = (settings.subscriptions || []).map((record) =>
-      record.groupName === oldName ? { ...record, groupName: trimmedNew } : record
-    );
-    this.store.saveSettings({ ...settings, groups, subscriptions });
-    const savedNodes = this.saveNodes(nodes);
-    return this.buildSavedNodeChangeResult();
+    return renameGroupForManager(this, oldName, newName);
   }
 
   async deleteGroup(groupName) {
-    const settings = this.getSettingsSnapshot();
-    const boundSubscription = (settings.subscriptions || []).find((record) => record.groupName === groupName);
-    if (boundSubscription) {
-      throw createHttpError('This group is managed by a subscription. Delete the subscription instead.', 400);
-    }
-
-    const nodes = this.store.getNodes().map((node) =>
-      node.group === groupName ? { ...node, group: null } : node
-    );
-    const groups = (settings.groups || []).filter(g => g !== groupName);
-    this.store.saveSettings({ ...settings, groups });
-    const savedNodes = this.saveNodes(nodes);
-    return this.buildSavedNodeChangeResult();
+    return deleteGroupForManager(this, groupName);
   }
 
   async groupNodesByCountry() {
-    const nodeRecords = await this.getNodeRecords();
-    const countryByNodeId = new Map(
-      nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
-    );
-
-    let groupedCount = 0;
-    let skippedCount = 0;
-    const nextNodes = this.store.getNodes().map((node) => {
-      const countryCode = countryByNodeId.get(node.id);
-      if (!countryCode) {
-        skippedCount += 1;
-        return node;
-      }
-
-      groupedCount += 1;
-      return {
-        ...node,
-        group: buildCountryGroupName(countryCode)
-      };
-    });
-
-    if (!groupedCount) {
-      throw createHttpError('No nodes with resolvable country information', 400);
-    }
-
-    const savedNodes = this.saveNodes(nextNodes);
-    this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-    const applied = await this.queueNodeChangesApply(savedNodes);
-    return {
-      groupedCount,
-      skippedCount,
-      groups: this.getGroups(),
-      nodeGroups: this.getNodeGroups(),
-      ...applied
-    };
+    return groupNodesByCountryForManager(this);
   }
 
   async setNodeCountryOverride(nodeId, countryCode) {
-    const normalizedOverride = normalizeCountryCode(countryCode);
-    const nodes = this.store.getNodes();
-    const index = nodes.findIndex((node) => node.id === nodeId);
-    if (index === -1) {
-      throw createHttpError('Node not found', 404);
-    }
-
-    const nextNode = {
-      ...nodes[index]
-    };
-    if (normalizedOverride) {
-      nextNode.countryCodeOverride = normalizedOverride;
-    } else {
-      delete nextNode.countryCodeOverride;
-    }
-    nodes[index] = nextNode;
-
-    const savedNodes = this.saveNodes(nodes);
-    const nodeRecords = await this.getNodeRecords();
-    const countryByNodeId = new Map(
-      nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
-    );
-    this.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-    const applied = await this.queueNodeChangesApply(savedNodes);
-    return {
-      node: applied.nodes.find((item) => item.id === nodeId) || null,
-      groups: this.getGroups(),
-      nodeGroups: this.getNodeGroups(),
-      ...applied
-    };
+    return setNodeCountryOverrideForManager(this, nodeId, countryCode);
   }
 
   syncAutoCountryNodeGroups(nodes, countryByNodeId = null) {
-    const settings = this.getSettingsSnapshot();
-    const allNodeGroups = Array.isArray(settings.nodeGroups) ? settings.nodeGroups : [];
-    const manualNodeGroups = allNodeGroups.filter((group) => !String(group.id || '').startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX));
-    const existingAutoGroupMap = new Map(
-      allNodeGroups
-        .filter((group) => String(group.id || '').startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX))
-        .map((group) => [group.id, group])
-    );
-
-    let resolvedCountryByNodeId = countryByNodeId;
-    if (!resolvedCountryByNodeId) {
-      resolvedCountryByNodeId = new Map();
-      for (const node of nodes || []) {
-        resolvedCountryByNodeId.set(node.id, normalizeCountryCode(node.countryCodeOverride));
-      }
-    }
-
-    const nodeIdsByCountry = new Map();
-    for (const node of nodes || []) {
-      const code = normalizeCountryCode(resolvedCountryByNodeId.get(node.id));
-      if (!code) continue;
-      if (!nodeIdsByCountry.has(code)) {
-        nodeIdsByCountry.set(code, []);
-      }
-      nodeIdsByCountry.get(code).push(node.id);
-    }
-
-    const autoNodeGroups = Array.from(nodeIdsByCountry.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([countryCode, nodeIds]) => {
-        const id = `${AUTO_COUNTRY_NODE_GROUP_PREFIX}${countryCode.toLowerCase()}`;
-        const existing = existingAutoGroupMap.get(id);
-        const selectedNodeId = nodeIds.includes(existing?.selectedNodeId) ? existing.selectedNodeId : (nodeIds[0] || null);
-        return {
-          id,
-          name: buildCountryGroupName(countryCode),
-          type: 'country',
-          countryCode,
-          iconMode: 'auto',
-          iconEmoji: '',
-          note: '',
-          nodeIds,
-          selectedNodeId
-        };
-      });
-
-    const normalizedNodeGroups = normalizeNodeGroups([...manualNodeGroups, ...autoNodeGroups], nodes || []);
-    this.store.saveSettings({
-      ...settings,
-      nodeGroups: normalizedNodeGroups
-    });
+    return syncAutoCountryNodeGroupsForManager(this, nodes, countryByNodeId);
   }
 
   getNodeGroups() {
-    return this.getSettingsSnapshot().nodeGroups || [];
+    return getNodeGroupsForManager(this);
   }
 
   async getNodeGroupsResolved() {
-    const nodes = this.store.getNodes();
-    if (!nodes.length) {
-      return this.getNodeGroups();
-    }
-
-    try {
-      const nodeRecords = await this.getNodeRecords();
-      const countryByNodeId = new Map(
-        nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
-      );
-      this.syncAutoCountryNodeGroups(nodes, countryByNodeId);
-    } catch {
-      // Keep existing node group state when geo enrichment is unavailable.
-    }
-
-    return this.getNodeGroups();
+    return getNodeGroupsResolvedForManager(this);
   }
 
   async reorderNodeGroups(orderedIds = []) {
-    const settings = this.getSettingsSnapshot();
-    const currentGroups = settings.nodeGroups || [];
-    const validGroupIds = new Set(currentGroups.map((group) => group.id));
-    const normalizedOrder = [...new Set((Array.isArray(orderedIds) ? orderedIds : [])
-      .map((id) => String(id || '').trim())
-      .filter((id) => validGroupIds.has(id)))];
-
-    const nextGroups = [...currentGroups].sort((a, b) => {
-      const indexA = normalizedOrder.indexOf(a.id);
-      const indexB = normalizedOrder.indexOf(b.id);
-      if (indexA === -1 && indexB === -1) return 0;
-      if (indexA === -1) return 1;
-      if (indexB === -1) return -1;
-      return indexA - indexB;
-    });
-
-    await this.updateSettings({
-      nodeGroups: nextGroups,
-      groupSortOrder: normalizedOrder
-    });
-    return { nodeGroups: this.getNodeGroups(), groupSortOrder: this.getSettingsSnapshot().groupSortOrder || [] };
+    return reorderNodeGroupsForManager(this, orderedIds);
   }
 
   async createNodeGroup(payload = {}) {
-    const type = NODE_GROUP_TYPES.includes(String(payload.type || '').trim())
-      ? String(payload.type || '').trim()
-      : 'custom';
-    const countryCode = normalizeCountryCode(payload.countryCode);
-    const name = String(payload.name || '').trim() || (type === 'country' && countryCode ? buildCountryGroupName(countryCode) : '');
-    if (!name) throw createHttpError('Node group name cannot be empty', 400);
-
-    const iconMode = NODE_GROUP_ICON_MODES.includes(String(payload.iconMode || '').trim())
-      ? String(payload.iconMode || '').trim()
-      : 'auto';
-    const iconEmoji = typeof payload.iconEmoji === 'string' ? payload.iconEmoji.trim().slice(0, 4) : '';
-    const note = typeof payload.note === 'string' ? payload.note.trim().slice(0, 200) : '';
-    const nodeIds = Array.isArray(payload.nodeIds) ? payload.nodeIds : [];
-    const selectedNodeId = payload.selectedNodeId == null ? null : String(payload.selectedNodeId).trim();
-
-    const settings = this.getSettingsSnapshot();
-    const currentGroups = settings.nodeGroups || [];
-    const groupId = createNodeId();
-    const nextGroups = [...currentGroups, {
-      id: groupId,
-      name,
-      type,
-      countryCode,
-      iconMode,
-      iconEmoji,
-      note,
-      nodeIds,
-      selectedNodeId
-    }];
-    const nextSortOrder = [...(settings.groupSortOrder || []).filter((id) => currentGroups.some((group) => group.id === id)), groupId];
-    return this.updateSettings({ nodeGroups: nextGroups, groupSortOrder: nextSortOrder });
+    return createNodeGroupForManager(this, payload);
   }
 
   async updateNodeGroup(groupId, patch = {}) {
-    if (!groupId) {
-      throw createHttpError('Node group id is required', 400);
-    }
-
-    const settings = this.getSettingsSnapshot();
-    const existing = (settings.nodeGroups || []).find((group) => group.id === groupId);
-    if (!existing) {
-      throw createHttpError('Node group not found', 404);
-    }
-
-    const nextGroup = {
-      ...existing,
-      ...(Object.prototype.hasOwnProperty.call(patch, 'name') ? { name: patch.name } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'type') ? { type: patch.type } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'countryCode') ? { countryCode: patch.countryCode } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'iconMode') ? { iconMode: patch.iconMode } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'iconEmoji') ? { iconEmoji: patch.iconEmoji } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'note') ? { note: patch.note } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'selectedNodeId') ? { selectedNodeId: patch.selectedNodeId } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, 'nodeIds') ? { nodeIds: patch.nodeIds } : {})
-    };
-
-    const nextGroups = (settings.nodeGroups || []).map((group) => group.id === groupId ? nextGroup : group);
-    return this.updateSettings({ nodeGroups: nextGroups });
+    return updateNodeGroupForManager(this, groupId, patch);
   }
 
   async deleteNodeGroup(groupId) {
-    const settings = this.getSettingsSnapshot();
-    const nextGroups = (settings.nodeGroups || []).filter((group) => group.id !== groupId);
-    return this.updateSettings({
-      nodeGroups: nextGroups,
-      groupSortOrder: (settings.groupSortOrder || []).filter((id) => id !== groupId),
-      customRules: (settings.customRules || []).map((rule) => rule.action === 'node_group' && rule.nodeGroupId === groupId ? { ...rule, action: 'default', nodeGroupId: null } : rule),
-      rulesets: (settings.rulesets || []).map((ruleset) => ruleset.target === 'node_group' && ruleset.groupId === groupId ? { ...ruleset, target: 'default', groupId: null } : ruleset)
-    });
+    return deleteNodeGroupForManager(this, groupId);
   }
 
   async updateNodeGroupNodes(groupId, nodeIds) {
-    const settings = this.getSettingsSnapshot();
-    const normalizedIds = Array.isArray(nodeIds) ? nodeIds : [];
-    const nextGroups = (settings.nodeGroups || []).map((group) => {
-      if (group.id !== groupId) return group;
-      return {
-        ...group,
-        nodeIds: normalizedIds,
-        selectedNodeId: normalizedIds.includes(group.selectedNodeId) ? group.selectedNodeId : (normalizedIds[0] || null)
-      };
-    });
-    return this.updateSettings({ nodeGroups: nextGroups });
+    return updateNodeGroupNodesForManager(this, groupId, nodeIds);
   }
 
   async selectNodeGroupNode(groupId, selectedNodeId) {
-    const settings = this.getSettingsSnapshot();
-    const normalizedGroupId = String(groupId || '').trim();
-    if (!normalizedGroupId) {
-      throw createHttpError('Node group id is required', 400);
-    }
-
-    const nodes = this.store.getNodes();
-    const existingGroup = (settings.nodeGroups || []).find((group) => group.id === normalizedGroupId);
-    if (!existingGroup) {
-      throw createHttpError('Node group not found', 404);
-    }
-
-    const normalizedSelectedNodeId = selectedNodeId == null ? null : String(selectedNodeId).trim();
-    const nextGroups = normalizeNodeGroups(
-      (settings.nodeGroups || []).map((group) => group.id === normalizedGroupId
-        ? { ...group, selectedNodeId: normalizedSelectedNodeId }
-        : group),
-      nodes
-    );
-    const nextGroup = nextGroups.find((group) => group.id === normalizedGroupId) || null;
-
-    if (this.state.status === 'running') {
-      await this.clashApiService.waitUntilReady();
-      await this.applyRunningNodeGroupSelector(nextGroup, nodes);
-    }
-
-    const saved = this.store.saveSettings({
-      ...settings,
-      nodeGroups: nextGroups
-    });
-    this.proxyService.runtimeOptions = this.getRuntimeOptions(saved, nodes);
-
-    return {
-      settings: { ...saved },
-      proxy: this.getProxyProfile(),
-      restartRequired: false,
-      autoRestarted: false,
-      core: this.getStatus()
-    };
+    return selectNodeGroupNodeForManager(this, groupId, selectedNodeId);
   }
 
   async deleteSubscription(id) {
-    const settings = this.getSettingsSnapshot();
-    const subscription = this.findSubscriptionRecord({ id }, settings);
-    if (!subscription) {
-      throw createHttpError('Subscription not found', 404);
-    }
-
-    const remainingSubscriptions = (settings.subscriptions || []).filter((item) => item.id !== subscription.id);
-    const remainingNodes = this.store.getNodes().filter((node) => node.subscriptionUrl !== subscription.url);
-    const remainingGroups = (settings.groups || []).filter((groupName) => {
-      if (groupName !== subscription.groupName) {
-        return true;
-      }
-
-      const stillUsedBySubscription = remainingSubscriptions.some((item) => item.groupName === groupName);
-      const stillUsedByNode = remainingNodes.some((node) => node.group === groupName);
-      return stillUsedBySubscription || stillUsedByNode;
-    });
-
-    this.store.saveSettings({
-      ...settings,
-      groups: remainingGroups,
-      subscriptions: remainingSubscriptions
-    });
-
-    const savedNodes = this.saveNodes(remainingNodes);
-    const applied = await this.queueNodeChangesApply(savedNodes);
-    return {
-      subscription,
-      subscriptions: this.getSubscriptions(),
-      groups: this.getGroups(),
-      ...applied
-    };
+    return deleteSubscriptionForManager(this, id);
   }
 
   async syncSubscription(input) {
-    const request = typeof input === 'string'
-      ? { url: input }
-      : (input && typeof input === 'object' ? input : {});
-    let settings = this.getSettingsSnapshot();
-    const existingRecord = this.findSubscriptionRecord(request, settings);
-    const url = String(request.url || existingRecord?.url || '').trim();
-    if (!url) {
-      throw createHttpError('Missing subscription url', 400);
-    }
-
-    const displayName = deriveSubscriptionDisplayName(url, request.name || existingRecord?.name || '');
-    let groupName = existingRecord?.groupName || null;
-    const groupOwnedByOtherSubscription = groupName && (settings.subscriptions || []).some((record) =>
-      record.id !== existingRecord?.id && record.groupName === groupName
-    );
-    if (!groupName || groupOwnedByOtherSubscription) {
-      groupName = this.allocateSubscriptionGroupName(settings, displayName, existingRecord?.id || null);
-    }
-
-    let importedNodes;
-    try {
-      const activeNodeId = this.resolveActiveNodeId(settings, this.store.getNodes());
-      importedNodes = await this.proxyService.syncSubscription(url, {
-        allowInternalProxy: this.state.status === 'running',
-        activeNodeId,
-        localPort: activeNodeId ? this.proxyService.getLocalPort(activeNodeId) : null,
-        proxyListen: settings.proxyListenHost
-      });
-    } catch (error) {
-      this.updateSubscriptionRecordError(existingRecord, error.message);
-      throw error;
-    }
-
-    if (!importedNodes.length) {
-      this.updateSubscriptionRecordError(existingRecord, 'Subscription returned no usable nodes');
-      throw createHttpError('Subscription returned no usable nodes', 400);
-    }
-
-    const { validNodes, invalidNodes } = await this.filterValidNodes(importedNodes);
-    if (!validNodes.length) {
-      const errorMessage = buildInvalidNodeWarning(invalidNodes) || 'Subscription returned no usable nodes';
-      this.updateSubscriptionRecordError(existingRecord, errorMessage);
-      throw createHttpError(errorMessage, 400);
-    }
-
-    settings = this.ensureStoredGroup(settings, groupName);
-    this.store.saveSettings(settings);
-
-    const urlsToReplace = new Set([url, existingRecord?.url].filter(Boolean));
-    const existingNodes = this.store.getNodes().filter((node) => !urlsToReplace.has(node.subscriptionUrl));
-    const savedNodes = this.saveNodes(mergeUniqueNodes(existingNodes, validNodes.map((node) => ({
-      ...node,
-      source: 'subscription',
-      subscriptionUrl: url,
-      ...(groupName ? { group: groupName } : {})
-    }))));
-
-    const applied = await this.queueNodeChangesApply(savedNodes);
-    const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
-    const subscription = this.updateSubscriptionRecord({
-      id: existingRecord?.id,
-      url,
-      name: displayName,
-      groupName,
-      importedCount: validNodes.length,
-      lastSyncedAt: new Date().toISOString(),
-      lastNodeCount: applied.nodes.filter((node) => node.subscriptionUrl === url).length,
-      lastStatus: 'success',
-      lastError: null
-    }, { settings: this.getSettingsSnapshot() });
-
-    return {
-      importedCount: validNodes.length,
-      invalidCount: invalidNodes.length,
-      subscription,
-      subscriptions: this.getSubscriptions(),
-      groups: this.getGroups(),
-      ...applied,
-      warning
-    };
+    return syncSubscriptionForManager(this, input);
   }
 
   bindProcessState() {
-    if (!this.proxyService.proxyProcess) {
-      return;
-    }
-
-    this.proxyService.proxyProcess.once('exit', async (code, signal) => {
-      const wasRunning = this.state.status === 'running';
-      await this.cleanupSystemProxyAfterExit();
-      const isClean = code === 0 || signal === 'SIGTERM';
-      this.state = {
-        ...this.state,
-        status: isClean ? 'stopped' : 'error',
-        lastError: isClean
-          ? null
-          : `sing-box exited unexpectedly${code !== null ? ` with code ${code}` : ''}`,
-        startedAt: null,
-        executablePath: null
-      };
-
-      if (!isClean && wasRunning) {
-        const MAX_RESTART_ATTEMPTS = 5;
-        this._restartAttempts = (this._restartAttempts || 0) + 1;
-        if (this._restartAttempts > MAX_RESTART_ATTEMPTS) {
-          this.store.appendLog(`[CoreManager] sing-box crashed ${MAX_RESTART_ATTEMPTS} times, giving up`);
-          this.state = { ...this.state, status: 'crashed', lastError: 'sing-box crashed too many times, manual restart required' };
-          return;
-        }
-        const delay = Math.min(1000 * 2 ** (this._restartAttempts - 1), 30000);
-        this.store.appendLog(`[CoreManager] sing-box crashed, restarting in ${delay}ms (attempt ${this._restartAttempts}/${MAX_RESTART_ATTEMPTS})`);
-        if (this._autoRestartTimer) {
-          clearTimeout(this._autoRestartTimer);
-        }
-        this._autoRestartTimer = setTimeout(async () => {
-          this._autoRestartTimer = null;
-          try {
-            await this.start();
-            this._restartAttempts = 0;
-          } catch (err) {
-            this.store.appendLog(`[CoreManager] Auto-restart failed: ${err.message}`);
-          }
-        }, delay);
-        this._autoRestartTimer.unref?.();
-      } else {
-        this._restartAttempts = 0;
-      }
-    });
+    return lifecycleManager.bindProcessState(this);
   }
 
   async start() {
-    let binary = null;
-
-    try {
-      if (this._autoRestartTimer) {
-        clearTimeout(this._autoRestartTimer);
-        this._autoRestartTimer = null;
-      }
-      const settings = this.getSettingsSnapshot();
-      binary = await this.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
-      const nodes = this.store.getNodes();
-      this.proxyService.setNodes(nodes);
-      const result = await this.proxyService.start({
-        binPath: binary.executablePath,
-        runtime: this.getRuntimeOptions(settings, nodes)
-      });
-      let systemProxy = null;
-      if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled) {
-        systemProxy = await this.systemProxyManager.apply({
-          host: settings.proxyListenHost,
-          httpPort: settings.systemProxyHttpPort,
-          socksPort: settings.systemProxySocksPort
-        });
-      } else {
-        systemProxy = await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
-        if (this.isManagedSystemProxyStatus(systemProxy, settings)) {
-          systemProxy = await this.systemProxyManager.disable();
-        }
-      }
-      this.state = {
-        ...this.state,
-        status: 'running',
-        startedAt: new Date().toISOString(),
-        lastError: null,
-        executablePath: result.executablePath,
-        configPath: result.configPath,
-        binary: this.buildBinaryState({
-          status: 'ready',
-          resolvedPath: binary.executablePath,
-          source: binary.source,
-          lastError: null,
-          version: binary.version || this.state.binary.version
-        }),
-        systemProxy: this.buildSystemProxyState(systemProxy)
-      };
-      this.bindProcessState();
-      try {
-        await this.syncRunningSelectors(settings, nodes);
-      } catch (syncError) {
-        this.store.appendLog(`[CoreManager] Failed to sync running selectors: ${syncError.message}`);
-      }
-      void this.runNodeGroupAutoTestTick();
-      return this.getStatus();
-    } catch (error) {
-      if (binary && this.proxyService?.proxyProcess) {
-        await this.proxyService.stop();
-      }
-
-      const binaryState = binary
-        ? this.buildBinaryState({
-            status: 'ready',
-            resolvedPath: binary.executablePath,
-            source: binary.source,
-            lastError: null,
-            version: binary.version || this.state.binary.version
-          })
-        : this.buildBinaryState({
-            status: 'error',
-            lastError: error.message
-          });
-
-      this.state = {
-        ...this.state,
-        status: 'error',
-        lastError: error.message,
-        binary: binaryState,
-        systemProxy: this.buildSystemProxyState({
-          ...this.state.systemProxy,
-          lastError: this.state.systemProxy?.lastError || null
-        })
-      };
-      throw error;
-    }
+    return lifecycleManager.start(this);
   }
 
   async stop() {
-    this._restartAttempts = 0;
-    if (this._autoRestartTimer) {
-      clearTimeout(this._autoRestartTimer);
-      this._autoRestartTimer = null;
-    }
-    await this.proxyService.stop();
-    const settings = this.getSettingsSnapshot();
-    let systemProxy = null;
-    if (settings.systemProxyCaptureEnabled) {
-      systemProxy = await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
-        ...this.state.systemProxy,
-        lastError: error.message,
-        mode: 'error'
-      }));
-    } else {
-      systemProxy = await this.systemProxyManager.getStatus().catch(() => this.buildSystemProxyState());
-      if (this.isManagedSystemProxyStatus(systemProxy, settings)) {
-        systemProxy = await this.systemProxyManager.disable().catch((error) => this.buildSystemProxyState({
-          ...this.state.systemProxy,
-          lastError: error.message,
-          mode: 'error'
-        }));
-      }
-    }
-    this.state = {
-      ...this.state,
-      status: 'stopped',
-      startedAt: null,
-      lastError: null,
-      executablePath: null,
-      binary: this.buildBinaryState({
-        status: this.state.binary?.status === 'error' ? 'error' : this.buildBinaryState().status,
-        lastError: this.state.binary?.status === 'error' ? this.state.binary.lastError : null,
-        version: this.state.binary?.version || null,
-        resolvedPath: this.state.binary?.resolvedPath || this.buildBinaryState().resolvedPath,
-        source: this.state.binary?.source || this.buildBinaryState().source
-      }),
-      systemProxy: this.buildSystemProxyState(systemProxy)
-    };
-    return this.getStatus();
+    return lifecycleManager.stop(this);
   }
 
   async restart() {
-    await this.stop();
-    return this.start();
+    return lifecycleManager.restart(this);
   }
 
   async testNode(nodeId) {
-    if (!this.getNodeById(nodeId)) {
-      throw createHttpError('Node not found', 404);
-    }
-
-    const { results, autoStarted } = await this.measureNodeLatencies([nodeId], {
-      autoStartCore: true
-    });
-    const [result] = results;
-    if (!result?.ok) {
-      throw createHttpError(result?.error || 'Speed test failed', 502);
-    }
-
-    const latencyMs = result.latencyMs;
-    return {
-      node: this.getNodeById(nodeId),
-      latencyMs,
-      core: this.getStatus(),
-      autoStarted
-    };
+    return latencyManager.testNode(this, nodeId);
   }
 
   async measureNodeLatencies(nodeIds = [], options = {}) {
-    const requestedIds = Array.isArray(nodeIds) && nodeIds.length
-      ? [...new Set(nodeIds)]
-      : this.store.getNodes().map((node) => node.id);
-
-    if (!requestedIds.length) {
-      throw createHttpError('No nodes available for latency tests', 400);
-    }
-
-    const unknownId = requestedIds.find((nodeId) => !this.getNodeById(nodeId));
-    if (unknownId) {
-      throw createHttpError(`Node not found: ${unknownId}`, 404);
-    }
-
-    let autoStarted = false;
-    if (this.state.status !== 'running') {
-      if (options.autoStartCore === false) {
-        const settings = this.getSettingsSnapshot();
-        const binary = await this.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
-        this.proxyService.setNodes(this.store.getNodes());
-
-        if (typeof this.proxyService.testNodes === 'function') {
-          const results = await this.proxyService.testNodes(requestedIds, {
-            binPath: binary.executablePath
-          });
-          return {
-            results: results.map((item) => ({
-              ...item,
-              node: item.node || this.getNodeById(item.id)
-            })),
-            core: this.getStatus(),
-            autoStarted
-          };
-        }
-      } else {
-        await this.start();
-        autoStarted = true;
-      }
-    }
-
-    if (typeof this.proxyService.testNodes === 'function') {
-      const results = await this.proxyService.testNodes(requestedIds);
-      return {
-        results: results.map((item) => ({
-          ...item,
-          node: item.node || this.getNodeById(item.id)
-        })),
-        core: this.getStatus(),
-        autoStarted
-      };
-    }
-
-    const CONCURRENCY = 5;
-    const results = [];
-    for (let i = 0; i < requestedIds.length; i += CONCURRENCY) {
-      const batch = requestedIds.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.all(batch.map(async (nodeId) => {
-        const node = this.getNodeById(nodeId);
-        try {
-          const latencyMs = await this.proxyService.testNode(nodeId);
-          return { id: nodeId, ok: true, latencyMs, node };
-        } catch (error) {
-          return { id: nodeId, ok: false, error: error.message, node };
-        }
-      }));
-      results.push(...batchResults);
-    }
-
-    return {
-      results,
-      core: this.getStatus(),
-      autoStarted
-    };
+    return latencyManager.measureNodeLatencies(this, nodeIds, options);
   }
 
   async testNodes(nodeIds = []) {
-    return this.measureNodeLatencies(nodeIds, {
-      autoStartCore: true
-    });
+    return latencyManager.testNodes(this, nodeIds);
   }
 
   async testNodeGroups(groupIds = [], options = {}) {
-    const settings = this.getSettingsSnapshot();
-    const nodes = this.store.getNodes();
-    const requestedGroupIds = Array.isArray(groupIds)
-      ? [...new Set(groupIds.map((groupId) => String(groupId || '').trim()).filter(Boolean))]
-      : (groupIds ? [String(groupIds).trim()] : []);
-    const eligibleGroups = (settings.nodeGroups || []).filter((group) => {
-      if (!group?.id) {
-        return false;
-      }
-      if (requestedGroupIds.length && !requestedGroupIds.includes(group.id)) {
-        return false;
-      }
-      return this.getEffectiveNodeGroupNodeIds(group, nodes).length > 0;
-    });
-
-    if (!eligibleGroups.length) {
-      if (requestedGroupIds.length) {
-        throw createHttpError('Node group not found or has no testable nodes', 404);
-      }
-
-      return {
-        results: [],
-        switchedGroups: [],
-        nodeGroups: settings.nodeGroups || [],
-        nodeGroupTesting: this.getNodeGroupTestingSnapshot(settings),
-        core: this.getStatus(),
-        autoStarted: false
-      };
-    }
-
-    const requestedNodeIds = [...new Set(
-      eligibleGroups.flatMap((group) => this.getEffectiveNodeGroupNodeIds(group, nodes))
-    )];
-    const measurement = await this.measureNodeLatencies(requestedNodeIds, {
-      autoStartCore: options.autoStartCore !== false
-    });
-    const testedAt = new Date().toISOString();
-    let latestSettings = this.persistNodeGroupLatencyResults(measurement.results || [], {
-      settings: this.getSettingsSnapshot(),
-      testedAt
-    }).settings;
-    const switchedGroups = [];
-
-    if (options.applySelection !== false) {
-      for (const group of eligibleGroups) {
-        const latestGroup = getNodeGroupById(latestSettings.nodeGroups || [], group.id);
-        if (!latestGroup) {
-          continue;
-        }
-
-        const preferred = this.resolveLatencyPreferredNode(latestGroup, measurement.results || [], { nodes });
-        if (!preferred || preferred.selectedNodeId === latestGroup.selectedNodeId) {
-          continue;
-        }
-
-        const payload = await this.selectNodeGroupNode(latestGroup.id, preferred.selectedNodeId);
-        latestSettings = payload.settings;
-        const switchState = this.getNodeGroupLatencySwitchState(latestGroup.id);
-        if (switchState) {
-          switchState.lastSwitchAt = Date.now();
-          switchState.consecutiveCurrentFailures = 0;
-        }
-
-        switchedGroups.push({
-          groupId: latestGroup.id,
-          previousNodeId: preferred.previousNodeId,
-          selectedNodeId: preferred.selectedNodeId,
-          latencyMs: preferred.latencyMs
-        });
-
-        if (!options.silent) {
-          this.store.appendLog(`[CoreManager] Latency priority switched ${latestGroup.id} -> ${preferred.selectedNodeId} (${preferred.latencyMs} ms)`);
-        }
-      }
-    }
-
-    return {
-      results: measurement.results || [],
-      switchedGroups,
-      nodeGroups: latestSettings.nodeGroups || [],
-      nodeGroupTesting: this.getNodeGroupTestingSnapshot(latestSettings),
-      core: this.getStatus(),
-      autoStarted: measurement.autoStarted
-    };
+    return latencyManager.testNodeGroups(this, groupIds, options);
   }
 }
