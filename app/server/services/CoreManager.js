@@ -950,6 +950,9 @@ export class CoreManager {
     this._nodeApplyLastStartedAt = null;
     this._nodeApplyLastFailedAt = null;
 
+    this._restartAttempts = 0;
+    this._autoRestartTimer = null;
+
     this._nodeGroupAutoTestBusy = false;
     this._nodeGroupLatencySwitchState = new Map();
     this._nodeGroupAutoTestTimer = setInterval(() => {
@@ -3347,6 +3350,7 @@ export class CoreManager {
     }
 
     this.proxyService.proxyProcess.once('exit', async (code, signal) => {
+      const wasRunning = this.state.status === 'running';
       await this.cleanupSystemProxyAfterExit();
       const isClean = code === 0 || signal === 'SIGTERM';
       this.state = {
@@ -3359,7 +3363,7 @@ export class CoreManager {
         executablePath: null
       };
 
-      if (!isClean) {
+      if (!isClean && wasRunning) {
         const MAX_RESTART_ATTEMPTS = 5;
         this._restartAttempts = (this._restartAttempts || 0) + 1;
         if (this._restartAttempts > MAX_RESTART_ATTEMPTS) {
@@ -3369,7 +3373,11 @@ export class CoreManager {
         }
         const delay = Math.min(1000 * 2 ** (this._restartAttempts - 1), 30000);
         this.store.appendLog(`[CoreManager] sing-box crashed, restarting in ${delay}ms (attempt ${this._restartAttempts}/${MAX_RESTART_ATTEMPTS})`);
-        setTimeout(async () => {
+        if (this._autoRestartTimer) {
+          clearTimeout(this._autoRestartTimer);
+        }
+        this._autoRestartTimer = setTimeout(async () => {
+          this._autoRestartTimer = null;
           try {
             await this.start();
             this._restartAttempts = 0;
@@ -3377,6 +3385,7 @@ export class CoreManager {
             this.store.appendLog(`[CoreManager] Auto-restart failed: ${err.message}`);
           }
         }, delay);
+        this._autoRestartTimer.unref?.();
       } else {
         this._restartAttempts = 0;
       }
@@ -3387,6 +3396,10 @@ export class CoreManager {
     let binary = null;
 
     try {
+      if (this._autoRestartTimer) {
+        clearTimeout(this._autoRestartTimer);
+        this._autoRestartTimer = null;
+      }
       const settings = this.getSettingsSnapshot();
       binary = await this.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
       const nodes = this.store.getNodes();
@@ -3466,6 +3479,10 @@ export class CoreManager {
 
   async stop() {
     this._restartAttempts = 0;
+    if (this._autoRestartTimer) {
+      clearTimeout(this._autoRestartTimer);
+      this._autoRestartTimer = null;
+    }
     await this.proxyService.stop();
     const settings = this.getSettingsSnapshot();
     let systemProxy = null;
