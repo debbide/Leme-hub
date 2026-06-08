@@ -1204,11 +1204,11 @@ tr.active-row {
   font-weight: 500;
   font-size: 0.875rem;
 }
-.latency.good { color: var(--pill-green-text); }
-.latency.warn { color: #facc15; }
-.latency.bad { color: var(--btn-red-text); }
-.latency.success { color: var(--pill-green-text); }
-.latency.error { color: var(--btn-red-text); }
+.latency.good,
+.latency.success { color: #bbf7d0; }
+.latency.warn { color: #fde68a; }
+.latency.bad,
+.latency.error { color: #fecaca; }
 .latency.testing { color: #93c5fd; }
 
 .node-row-float-btn {
@@ -1231,6 +1231,9 @@ tr.active-row {
   box-shadow: none;
   transition: opacity 0.14s ease, color 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
   z-index: 4;
+}
+.node-row-test-btn {
+  right: 2.45rem;
 }
 .node-row-float-btn:hover,
 .node-row-float-btn:focus-visible {

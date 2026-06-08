@@ -80,7 +80,10 @@ export const renderNodeRow = ({
       <td class="node-latency-cell">
         <span class="latency" id="test-result-${escapeHtml(node.id)}">-</span>
       </td>
-      <td class="node-table-spacer-cell" aria-hidden="true">
+      <td class="node-table-spacer-cell">
+        <button type="button" class="node-row-float-btn node-row-test-btn test-node-btn" data-id="${escapeHtml(node.id)}" title="测试延迟" aria-label="测试延迟">
+          <i class="ph ph-activity"></i>
+        </button>
         <button type="button" class="node-row-float-btn node-action-menu-btn" data-id="${escapeHtml(node.id)}" title="节点操作" aria-label="节点操作">
           <i class="ph ph-dots-three-vertical"></i>
         </button>
@@ -89,7 +92,6 @@ export const renderNodeRow = ({
             <span class="node-action-menu-kicker">节点操作</span>
             <strong>${escapeHtml(node.name || '未命名节点')}</strong>
           </div>
-          <button type="button" class="node-menu-item test-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-activity"></i><span>测试延迟</span></button>
           <button type="button" class="node-menu-item detail-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-pencil-simple"></i><span>编辑详情</span></button>
           <hr class="group-menu-separator">
           <button type="button" class="node-menu-item share-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-copy"></i><span>复制链接</span></button>

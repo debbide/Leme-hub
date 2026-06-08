@@ -101,14 +101,16 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
 
   assert.doesNotMatch(html, /row-action-btn/u);
   assert.doesNotMatch(html, /node-action-more-btn/u);
+  assert.match(html, /class="node-row-float-btn node-row-test-btn test-node-btn"/u);
+  assert.match(html, /aria-label="测试延迟"/u);
   assert.match(html, /class="node-row-float-btn node-action-menu-btn"/u);
   assert.match(html, /aria-label="节点操作"/u);
   assert.match(html, /data-menu-panel="row"/u);
   assert.match(html, /class="node-action-menu-title"/u);
   assert.match(html, /节点操作/u);
   assert.match(html, /class="node-table-spacer-cell"/u);
-  assert.match(html, /class="node-menu-item test-node-btn"/u);
-  assert.match(html, />测试延迟</u);
+  assert.doesNotMatch(html, /class="node-menu-item test-node-btn"/u);
+  assert.doesNotMatch(html, />测试延迟</u);
   assert.match(html, /class="node-menu-item detail-node-btn"/u);
   assert.match(html, />编辑详情</u);
   assert.match(html, /class="node-menu-item share-node-btn"/u);
@@ -129,7 +131,6 @@ test('latency helpers show testing state, elapsed detail, and reset action butto
       add(value) { this.values.add(value); },
     }
   };
-  const buttonLabel = { textContent: '测速' };
   const button = {
     disabled: false,
     title: '',
@@ -140,8 +141,8 @@ test('latency helpers show testing state, elapsed detail, and reset action butto
         else this.values.delete(value);
       }
     },
-    querySelector(selector) {
-      return selector === 'span' ? buttonLabel : null;
+    querySelector() {
+      return null;
     }
   };
   elements.set('#test-result-node-1', resultEl);
@@ -169,7 +170,6 @@ test('latency helpers show testing state, elapsed detail, and reset action butto
     assert.equal(resultEl.textContent, '测试中...');
     assert.equal(resultEl.className, 'latency testing');
     assert.equal(button.disabled, true);
-    assert.equal(buttonLabel.textContent, '测速中');
 
     applyLatencyResult({ id: 'node-1', ok: true, latencyMs: 120, elapsedMs: 456 });
     assert.equal(resultEl.textContent, '120ms');
@@ -179,7 +179,7 @@ test('latency helpers show testing state, elapsed detail, and reset action butto
     resetLatencyPlaceholders(['node-1']);
     assert.equal(resultEl.textContent, '-');
     assert.equal(button.disabled, false);
-    assert.equal(buttonLabel.textContent, '测速');
+    assert.equal(button.title, '测试延迟');
   } finally {
     restoreGlobal('document', documentDescriptor);
     restoreGlobal('CSS', cssDescriptor);
