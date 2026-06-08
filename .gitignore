@@ -11,3 +11,5 @@ import-ui.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+dist/
+.claude/

@@ -1,3 +1,5 @@
+import { runWithButtonState } from './ui.js';
+
 export const bindSystemEvents = ({
   masterSwitch,
   masterStatusText,
@@ -32,44 +34,43 @@ export const bindSystemEvents = ({
   if (masterSwitch) {
     masterSwitch.addEventListener('click', async () => {
       const isCurrentlyOn = masterSwitch.classList.contains('on');
-      masterSwitch.disabled = true;
-      try {
-        if (isCurrentlyOn) {
-          await requestJson('/api/system/proxy/disable', { method: 'POST' });
-          await requestJson('/api/system/settings', {
-            method: 'PUT',
-            body: JSON.stringify({ systemProxyEnabled: false })
-          });
-          const stopPayload = await requestJson('/api/core/stop', { method: 'POST' });
-          updateCoreStatus(stopPayload.core);
-          masterSwitch.classList.remove('on');
-          masterSwitch.classList.add('off');
-          if (masterStatusText) masterStatusText.textContent = '统一代理已关闭';
-          showToast('统一代理已关闭', 'info');
-        } else {
-          const selectedMode = systemProxyModeSelect?.value || 'rule';
-          await requestJson('/api/system/settings', {
-            method: 'PUT',
-            body: JSON.stringify({
-              routingMode: selectedMode,
-              systemProxyEnabled: true
-            })
-          });
-          const startPayload = await requestJson('/api/core/start', { method: 'POST' });
-          updateCoreStatus(startPayload.core);
-          masterSwitch.classList.remove('off');
-          masterSwitch.classList.add('on');
-          const captureEnabled = !!startPayload.core?.systemProxy?.enabled;
-          if (masterStatusText) masterStatusText.textContent = captureEnabled ? '系统代理接管中' : '统一代理入口已开启';
-          showToast(captureEnabled ? '系统代理已启动' : '统一代理已启动', 'success');
+      await runWithButtonState(masterSwitch, null, async () => {
+        try {
+          if (isCurrentlyOn) {
+            await requestJson('/api/system/proxy/disable', { method: 'POST' });
+            await requestJson('/api/system/settings', {
+              method: 'PUT',
+              body: JSON.stringify({ systemProxyEnabled: false })
+            });
+            const stopPayload = await requestJson('/api/core/stop', { method: 'POST' });
+            updateCoreStatus(stopPayload.core);
+            masterSwitch.classList.remove('on');
+            masterSwitch.classList.add('off');
+            if (masterStatusText) masterStatusText.textContent = '统一代理已关闭';
+            showToast('统一代理已关闭', 'info');
+          } else {
+            const selectedMode = systemProxyModeSelect?.value || 'rule';
+            await requestJson('/api/system/settings', {
+              method: 'PUT',
+              body: JSON.stringify({
+                routingMode: selectedMode,
+                systemProxyEnabled: true
+              })
+            });
+            const startPayload = await requestJson('/api/core/start', { method: 'POST' });
+            updateCoreStatus(startPayload.core);
+            masterSwitch.classList.remove('off');
+            masterSwitch.classList.add('on');
+            const captureEnabled = !!startPayload.core?.systemProxy?.enabled;
+            if (masterStatusText) masterStatusText.textContent = captureEnabled ? '系统代理接管中' : '统一代理入口已开启';
+            showToast(captureEnabled ? '系统代理已启动' : '统一代理已启动', 'success');
+          }
+          await loadNodes();
+          await loadSystemStatus();
+        } catch (error) {
+          showToast(`操作失败: ${error.message}`, 'error');
         }
-        await loadNodes();
-        await loadSystemStatus();
-      } catch (error) {
-        showToast(`操作失败: ${error.message}`, 'error');
-      } finally {
-        masterSwitch.disabled = false;
-      }
+      });
     });
   }
 
@@ -256,39 +257,34 @@ export const bindSystemEvents = ({
 
   const runUwpLoopbackAction = async (button, path, loadingText, successText) => {
     if (!button) return;
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = loadingText;
-    try {
-      const payload = await requestJson(path, { method: 'POST' });
-      if (payload.core) updateCoreStatus(payload.core);
-      if (typeof renderUwpLoopbackStatus === 'function') {
-        renderUwpLoopbackStatus(payload.uwpLoopback || null, payload.systemProxyDiagnosis || null);
+    return runWithButtonState(button, loadingText, async () => {
+      try {
+        const payload = await requestJson(path, { method: 'POST' });
+        if (payload.core) updateCoreStatus(payload.core);
+        if (typeof renderUwpLoopbackStatus === 'function') {
+          renderUwpLoopbackStatus(payload.uwpLoopback || null, payload.systemProxyDiagnosis || null);
+        }
+        showToast(successText, 'success');
+      } catch (error) {
+        if (error.body?.uwpLoopback && typeof renderUwpLoopbackStatus === 'function') {
+          renderUwpLoopbackStatus(error.body.uwpLoopback, error.body.systemProxyDiagnosis || null);
+        }
+        showToast(error.message, 'error');
+      } finally {
+        await loadSystemStatus();
       }
-      showToast(successText, 'success');
-    } catch (error) {
-      if (error.body?.uwpLoopback && typeof renderUwpLoopbackStatus === 'function') {
-        renderUwpLoopbackStatus(error.body.uwpLoopback, error.body.systemProxyDiagnosis || null);
-      }
-      showToast(error.message, 'error');
-    } finally {
-      button.textContent = originalText;
-      await loadSystemStatus();
-    }
+    }, { restoreDisabled: false, restoreText: false });
   };
 
   if (uwpLoopbackRefreshBtn) {
     uwpLoopbackRefreshBtn.addEventListener('click', async () => {
-      const originalText = uwpLoopbackRefreshBtn.textContent;
-      uwpLoopbackRefreshBtn.disabled = true;
-      uwpLoopbackRefreshBtn.textContent = '检测中';
-      try {
-        await loadSystemStatus();
-      } catch (error) {
-        showToast(`UWP 回环状态检测失败: ${error.message}`, 'error');
-      } finally {
-        uwpLoopbackRefreshBtn.textContent = originalText;
-      }
+      await runWithButtonState(uwpLoopbackRefreshBtn, '检测中', async () => {
+        try {
+          await loadSystemStatus();
+        } catch (error) {
+          showToast(`UWP 回环状态检测失败: ${error.message}`, 'error');
+        }
+      }, { restoreDisabled: false, restoreText: false });
     });
   }
 

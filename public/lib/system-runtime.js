@@ -1,3 +1,5 @@
+import { runWithButtonState } from './ui.js';
+
 export const renderUwpLoopbackStatus = ({
   status,
   systemProxyDiagnosis = null,
@@ -138,36 +140,36 @@ export const applySystemSettingsSnapshot = ({ settings, autoStartToggle, dnsRemo
 
 export const refreshGeoIpData = async ({ geoIpRefreshBtn, requestJson, renderGeoIpStatus, getGeoIpStatus, loadNodes, showToast }) => {
   if (!geoIpRefreshBtn) return;
-  geoIpRefreshBtn.disabled = true;
-  geoIpRefreshBtn.textContent = 'GeoIP 下载中...';
-  try {
-    const payload = await requestJson('/api/system/geoip/refresh', { method: 'POST' });
-    renderGeoIpStatus(payload.geoIp || null);
-    await loadNodes();
-    showToast(payload.geoIp?.ready ? 'GeoIP 数据已刷新' : 'GeoIP 刷新已触发，正在后台准备', 'success');
-  } catch (error) {
-    renderGeoIpStatus(getGeoIpStatus());
-    showToast(`GeoIP 刷新失败: ${error.message}`, 'error');
-  } finally {
-    renderGeoIpStatus(getGeoIpStatus());
-  }
+  return runWithButtonState(geoIpRefreshBtn, 'GeoIP 下载中...', async () => {
+    try {
+      const payload = await requestJson('/api/system/geoip/refresh', { method: 'POST' });
+      renderGeoIpStatus(payload.geoIp || null);
+      await loadNodes();
+      showToast(payload.geoIp?.ready ? 'GeoIP 数据已刷新' : 'GeoIP 刷新已触发，正在后台准备', 'success');
+    } catch (error) {
+      renderGeoIpStatus(getGeoIpStatus());
+      showToast(`GeoIP 刷新失败: ${error.message}`, 'error');
+    } finally {
+      renderGeoIpStatus(getGeoIpStatus());
+    }
+  }, { restoreDisabled: false, restoreText: false });
 };
 
 export const refreshRulesetDatabaseState = async ({ rulesetDbRefreshBtn, requestJson, renderRulesetDatabaseStatus, getRulesetDatabaseStatus, loadSystemStatus, showToast }) => {
   if (!rulesetDbRefreshBtn) return;
-  rulesetDbRefreshBtn.disabled = true;
-  rulesetDbRefreshBtn.textContent = '规则库下载中...';
-  try {
-    const payload = await requestJson('/api/system/rulesets/refresh', { method: 'POST' });
-    renderRulesetDatabaseStatus(payload.rulesetDatabase || null);
-    await loadSystemStatus();
-    showToast(payload.rulesetDatabase?.ready ? '规则库已刷新' : '规则库刷新已触发，正在后台准备', 'success');
-  } catch (error) {
-    renderRulesetDatabaseStatus(getRulesetDatabaseStatus());
-    showToast(`规则库刷新失败: ${error.message}`, 'error');
-  } finally {
-    renderRulesetDatabaseStatus(getRulesetDatabaseStatus());
-  }
+  return runWithButtonState(rulesetDbRefreshBtn, '规则库下载中...', async () => {
+    try {
+      const payload = await requestJson('/api/system/rulesets/refresh', { method: 'POST' });
+      renderRulesetDatabaseStatus(payload.rulesetDatabase || null);
+      await loadSystemStatus();
+      showToast(payload.rulesetDatabase?.ready ? '规则库已刷新' : '规则库刷新已触发，正在后台准备', 'success');
+    } catch (error) {
+      renderRulesetDatabaseStatus(getRulesetDatabaseStatus());
+      showToast(`规则库刷新失败: ${error.message}`, 'error');
+    } finally {
+      renderRulesetDatabaseStatus(getRulesetDatabaseStatus());
+    }
+  }, { restoreDisabled: false, restoreText: false });
 };
 
 export const stopRoutingStatusPolling = ({ routingStatusPoller, setRoutingStatusPoller }) => {
@@ -203,17 +205,15 @@ export const startTrafficPolling = ({ trafficPoller, pollTraffic, setTrafficPoll
 
 export const runCoreAction = async ({ action, saveRestartBtn, requestJson, showToast, updateRestartWarning, updateCoreStatus, loadNodes }) => {
   const btn = saveRestartBtn;
-  const originalText = btn.textContent;
-  btn.textContent = '处理中...';
-  try {
-    const payload = await requestJson(`/api/core/${action}`, { method: 'POST' });
-    showToast('操作成功，代理已重启应用。', 'success');
-    updateRestartWarning(false);
-    updateCoreStatus(payload.core);
-    await loadNodes();
-  } catch (error) {
-    showToast(`操作失败: ${error.message}`, 'error');
-  } finally {
-    btn.textContent = originalText;
-  }
+  return runWithButtonState(btn, '处理中...', async () => {
+    try {
+      const payload = await requestJson(`/api/core/${action}`, { method: 'POST' });
+      showToast('操作成功，代理已重启应用。', 'success');
+      updateRestartWarning(false);
+      updateCoreStatus(payload.core);
+      await loadNodes();
+    } catch (error) {
+      showToast(`操作失败: ${error.message}`, 'error');
+    }
+  });
 };

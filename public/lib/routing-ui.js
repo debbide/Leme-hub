@@ -1,3 +1,5 @@
+import { runWithButtonState } from './ui.js';
+
 export const updateRoutingLogSearchControls = ({ routingLogSearchClearBtn, routingLogSearchQuery }) => {
   if (routingLogSearchClearBtn) {
     routingLogSearchClearBtn.classList.toggle('hidden', !routingLogSearchQuery.trim());
@@ -108,12 +110,14 @@ export const renderRoutingModeBanner = ({
 
   routingModeBanner.querySelectorAll('[data-routing-action]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const action = button.dataset.routingAction;
-      if (action === 'enable-system-proxy-rule') {
-        await onEnableSystemProxyRule();
-      } else if (action === 'start-core') {
-        await onStartCore();
-      }
+      await runWithButtonState(button, '处理中...', async () => {
+        const action = button.dataset.routingAction;
+        if (action === 'enable-system-proxy-rule') {
+          await onEnableSystemProxyRule();
+        } else if (action === 'start-core') {
+          await onStartCore();
+        }
+      });
     });
   });
 };

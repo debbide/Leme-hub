@@ -1,19 +1,89 @@
+const TOAST_ICONS = {
+  success: 'ph ph-check-circle',
+  error: 'ph ph-warning-circle',
+  info: 'ph ph-info',
+};
+
+const normalizeToastType = (type) => (['success', 'error', 'info'].includes(type) ? type : 'info');
+
+export const setControlBusy = (control, busyText = null, options = {}) => {
+  if (!control) {
+    return () => {};
+  }
+  const {
+    restoreDisabled = true,
+    restoreText = true
+  } = options;
+
+  const originalDisabled = Boolean(control.disabled);
+  const originalText = control.textContent;
+
+  control.disabled = true;
+  control.setAttribute?.('aria-busy', 'true');
+  if (control.dataset) {
+    control.dataset.busy = 'true';
+  }
+  if (busyText !== null && busyText !== undefined) {
+    control.textContent = busyText;
+  }
+
+  return () => {
+    if (restoreDisabled) {
+      control.disabled = originalDisabled;
+    }
+    control.removeAttribute?.('aria-busy');
+    if (control.dataset) {
+      delete control.dataset.busy;
+    }
+    if (restoreText && busyText !== null && busyText !== undefined) {
+      control.textContent = originalText;
+    }
+  };
+};
+
+export const runWithButtonState = async (button, busyText, action, options = {}) => {
+  const restore = setControlBusy(button, busyText, options);
+  try {
+    return await action();
+  } finally {
+    restore();
+  }
+};
+
 export const createToastController = (toastContainer) => {
-  const showToast = (message, type = 'info') => {
+  const showToast = (message, type = 'info', options = {}) => {
     if (!toastContainer) {
       return;
     }
+    const tone = normalizeToastType(type);
+    const durationMs = Number.isFinite(options.durationMs) ? options.durationMs : 3200;
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
+    toast.className = `toast ${tone}`;
+    toast.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
+    toast.innerHTML = `
+      <i class="toast-icon ${TOAST_ICONS[tone]}" aria-hidden="true"></i>
+      <span class="toast-message"></span>
+      <button type="button" class="toast-close" aria-label="Close notification">&times;</button>
+    `;
+    toast.querySelector('.toast-message').textContent = message;
     toastContainer.appendChild(toast);
 
-    setTimeout(() => {
+    while (toastContainer.children.length > 4) {
+      toastContainer.firstElementChild?.remove();
+    }
+
+    const dismiss = () => {
       toast.classList.add('hiding');
       toast.addEventListener('animationend', () => {
         if (toast.parentNode) toast.remove();
-      });
-    }, 3000);
+      }, { once: true });
+    };
+
+    toast.querySelector('.toast-close')?.addEventListener('click', dismiss);
+    if (durationMs > 0) {
+      setTimeout(dismiss, durationMs);
+    }
   };
 
   return { showToast };
