@@ -3,6 +3,7 @@ import { normalizeHost } from '../../../shared/network.js';
 import {
   assignStableLocalPorts,
   createHttpError,
+  hasNodeGroupsRuntimeChange,
   legacyRoutingItemsFromSettings,
   normalizeCustomRules,
   normalizeIsoTimestamp,
@@ -337,8 +338,15 @@ export const updateSettings = async (manager, patch) => {
   manager.refreshConnectionsServiceBaseUrl(saved);
   manager.proxyService.runtimeOptions = manager.getRuntimeOptions(saved, nodes);
 
-  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'nodeGroups', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
+  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
   const changedRuntimeKeys = runtimeSensitiveKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
+  if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && hasNodeGroupsRuntimeChange(current.nodeGroups || [], nodeGroups, {
+    ...current,
+    ...saved
+  })) {
+    changedRuntimeKeys.push('nodeGroups');
+  }
+  const hasRuntimeChanges = changedRuntimeKeys.length > 0;
   const shouldHotSwitchActiveNode = manager.state.status === 'running'
     && changedRuntimeKeys.length === 1
     && changedRuntimeKeys[0] === 'activeNodeId';
@@ -363,7 +371,7 @@ export const updateSettings = async (manager, patch) => {
   return {
     settings: { ...saved },
     proxy: manager.getProxyProfile(),
-    restartRequired: (shouldAutoRestart || hotSwitchedActiveNode) ? false : manager.getRestartRequired(),
+    restartRequired: hasRuntimeChanges && !shouldAutoRestart && !hotSwitchedActiveNode ? manager.getRestartRequired() : false,
     autoRestarted: shouldAutoRestart,
     core
   };

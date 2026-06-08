@@ -3897,3 +3897,87 @@ input:focus + .cyber-slider {
 #edit-node-sid {
   font-family: var(--font-mono);
 }
+
+
+/* ========================================= */
+/* PREMIUM TEXTURE & UI ENHANCEMENTS         */
+/* ========================================= */
+
+/* 1. Global Radius & Border Softening */
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+/* 2. Card Inset Highlights & Softer Shadows */
+.dashboard-hero-card,
+.dashboard-tile,
+.proxy-card,
+.sidebar-proxy-endpoint,
+.sidebar-footer,
+.dashboard-auto-switch-panel,
+.routing-log-summary-card {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* 3. Master Switch Breathing Animation */
+@keyframes master-switch-pulse {
+  0% { box-shadow: 0 0 20px var(--accent-base), inset 0 0 10px rgba(255,255,255,0.2), 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  70% { box-shadow: 0 0 25px var(--accent-base), inset 0 0 12px rgba(255,255,255,0.3), 0 0 0 12px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 20px var(--accent-base), inset 0 0 10px rgba(255,255,255,0.2), 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+.master-switch.on {
+  animation: master-switch-pulse 2.5s infinite;
+}
+
+/* 4. Button & Input Premium Depth */
+button,
+.btn-primary,
+.btn-outline,
+.system-proxy-mode,
+.dash-node-select,
+.dashboard-auto-switch-input,
+.modal-field-input,
+.text-input {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+button:hover:not(:disabled),
+.btn-primary:hover:not(:disabled),
+.btn-outline:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled),
+.btn-primary:active:not(:disabled),
+.btn-outline:active:not(:disabled) {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+}
+
+/* 5. Sidebar Nav Item Interaction */
+.nav-item {
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.05) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+/* 6. Smooth Scrollbars */
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid var(--bg-main);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

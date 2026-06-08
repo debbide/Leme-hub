@@ -5,9 +5,26 @@ import {
   buildCountryGroupName,
   createHttpError,
   createNodeId,
+  hasNodeGroupsRuntimeChange,
   normalizeCountryCode,
   normalizeNodeGroups
 } from './state-utils.js';
+
+const buildNodeGroupChangeResult = async (manager, previousNodeGroups, savedNodes = manager.store.getNodes()) => {
+  const nodeGroups = manager.getNodeGroups();
+  if (hasNodeGroupsRuntimeChange(previousNodeGroups || [], nodeGroups, manager.getSettingsSnapshot())) {
+    const applied = await manager.queueNodeChangesApply(savedNodes);
+    return {
+      nodeGroups,
+      ...applied
+    };
+  }
+
+  return {
+    nodeGroups,
+    ...await manager.buildSavedNodeChangeResult()
+  };
+};
 
 export const getGroups = (manager) => {
   const groups = new Set(manager.getSettingsSnapshot().groups || []);
@@ -29,8 +46,10 @@ export const createGroup = async (manager, name) => {
 };
 
 export const setNodeGroup = async (manager, nodeIds, group) => {
+  const previousNodes = manager.store.getNodes();
+  const previousNodeGroups = manager.getSettingsSnapshot().nodeGroups || [];
   const ids = new Set(Array.isArray(nodeIds) ? nodeIds : []);
-  const nodes = manager.store.getNodes().map((node) => {
+  const nodes = previousNodes.map((node) => {
     if (!ids.has(node.id)) return node;
     if (node.source === 'subscription' || node.subscriptionUrl) {
       throw createHttpError('Subscription nodes must stay in their dedicated group', 400);
@@ -38,7 +57,9 @@ export const setNodeGroup = async (manager, nodeIds, group) => {
     return { ...node, group: group || null };
   });
   const savedNodes = manager.saveNodes(nodes);
-  const applied = await manager.queueNodeChangesApply(savedNodes);
+  const applied = manager.shouldApplyNodeRuntimeChanges(manager.normalizeNodes(previousNodes), savedNodes)
+    ? await manager.queueNodeChangesApply(savedNodes)
+    : await buildNodeGroupChangeResult(manager, previousNodeGroups, savedNodes);
   return { groups: manager.getGroups(), ...applied };
 };
 
@@ -75,6 +96,8 @@ export const deleteGroup = async (manager, groupName) => {
 };
 
 export const groupNodesByCountry = async (manager) => {
+  const previousNodes = manager.store.getNodes();
+  const previousNodeGroups = manager.getSettingsSnapshot().nodeGroups || [];
   const nodeRecords = await manager.getNodeRecords();
   const countryByNodeId = new Map(
     nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
@@ -102,7 +125,9 @@ export const groupNodesByCountry = async (manager) => {
 
   const savedNodes = manager.saveNodes(nextNodes);
   manager.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-  const applied = await manager.queueNodeChangesApply(savedNodes);
+  const applied = manager.shouldApplyNodeRuntimeChanges(manager.normalizeNodes(previousNodes), savedNodes)
+    ? await manager.queueNodeChangesApply(savedNodes)
+    : await buildNodeGroupChangeResult(manager, previousNodeGroups, savedNodes);
   return {
     groupedCount,
     skippedCount,
@@ -113,8 +138,10 @@ export const groupNodesByCountry = async (manager) => {
 };
 
 export const setNodeCountryOverride = async (manager, nodeId, countryCode) => {
+  const previousNodes = manager.store.getNodes();
+  const previousNodeGroups = manager.getSettingsSnapshot().nodeGroups || [];
   const normalizedOverride = normalizeCountryCode(countryCode);
-  const nodes = manager.store.getNodes();
+  const nodes = [...previousNodes];
   const index = nodes.findIndex((node) => node.id === nodeId);
   if (index === -1) {
     throw createHttpError('Node not found', 404);
@@ -136,7 +163,9 @@ export const setNodeCountryOverride = async (manager, nodeId, countryCode) => {
     nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
   );
   manager.syncAutoCountryNodeGroups(savedNodes, countryByNodeId);
-  const applied = await manager.queueNodeChangesApply(savedNodes);
+  const applied = manager.shouldApplyNodeRuntimeChanges(manager.normalizeNodes(previousNodes), savedNodes)
+    ? await manager.queueNodeChangesApply(savedNodes)
+    : await buildNodeGroupChangeResult(manager, previousNodeGroups, savedNodes);
   return {
     node: applied.nodes.find((item) => item.id === nodeId) || null,
     groups: manager.getGroups(),
@@ -237,11 +266,15 @@ export const reorderNodeGroups = async (manager, orderedIds = []) => {
     return indexA - indexB;
   });
 
-  await manager.updateSettings({
+  const result = await manager.updateSettings({
     nodeGroups: nextGroups,
     groupSortOrder: normalizedOrder
   });
-  return { nodeGroups: manager.getNodeGroups(), groupSortOrder: manager.getSettingsSnapshot().groupSortOrder || [] };
+  return {
+    ...result,
+    nodeGroups: manager.getNodeGroups(),
+    groupSortOrder: manager.getSettingsSnapshot().groupSortOrder || []
+  };
 };
 
 export const createNodeGroup = async (manager, payload = {}) => {

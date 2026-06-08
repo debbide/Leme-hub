@@ -711,6 +711,28 @@ test('setNodeGroup rejects subscription nodes', async () => {
   await assert.rejects(() => manager.setNodeGroup(['sub-node'], 'Other'), /dedicated group/);
 });
 
+test('setNodeGroup keeps metadata-only grouping restart-free while running', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  manager.state.status = 'running';
+  attachPassiveNodeServices(manager, (nodeId) => (nodeId === 'n1' ? 20000 : 20001));
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.setNodeGroup(['n1'], 'Manual');
+
+  assert.equal(restarted, false);
+  assert.equal(result.applyPending, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.nodes.find((node) => node.id === 'n1')?.group, 'Manual');
+});
+
 test('deleteGroup rejects subscription-managed groups', async () => {
   const store = createStore([
     { id: 'sub-node', type: 'socks', server: 'sub.example', port: 1080, source: 'subscription', subscriptionUrl: 'https://example.com/sub', group: 'Feed A' }
@@ -1005,6 +1027,93 @@ test('reorderNodeGroups persists stable group id order', async () => {
   assert.deepEqual(result.groupSortOrder, ['g2', 'g1']);
   assert.deepEqual(result.nodeGroups.map((group) => group.id), ['g2', 'g1']);
   assert.deepEqual(manager.getSettingsSnapshot().groupSortOrder, ['g2', 'g1']);
+});
+
+test('reorderNodeGroups keeps running core untouched', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [
+      { id: 'g1', name: 'JP Pool', nodeIds: ['n1'], selectedNodeId: 'n1' },
+      { id: 'g2', name: 'US Pool', nodeIds: ['n2'], selectedNodeId: 'n2' }
+    ]
+  });
+
+  manager.state.status = 'running';
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.reorderNodeGroups(['g2', 'g1']);
+
+  assert.equal(restarted, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.deepEqual(result.groupSortOrder, ['g2', 'g1']);
+});
+
+test('updateNodeGroup keeps display-only edits restart-free while running', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', iconMode: 'auto', iconEmoji: '', note: '', nodeIds: ['n1'], selectedNodeId: 'n1' }]
+  });
+
+  manager.state.status = 'running';
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.updateNodeGroup('g1', {
+    name: 'JP Main',
+    iconMode: 'emoji',
+    iconEmoji: 'J',
+    note: 'display only'
+  });
+
+  assert.equal(restarted, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.settings.nodeGroups[0].name, 'JP Main');
+  assert.equal(result.settings.nodeGroups[0].note, 'display only');
+});
+
+test('updateNodeGroup still restarts when referenced selector membership changes while running', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1'], selectedNodeId: 'n1' }],
+    customRules: [{ type: 'domain', value: 'example.com', action: 'node_group', nodeGroupId: 'g1', note: 'group route' }]
+  });
+
+  manager.state.status = 'running';
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    manager.state.status = 'running';
+    return manager.getStatus();
+  };
+
+  const result = await manager.updateNodeGroup('g1', {
+    nodeIds: ['n1', 'n2'],
+    selectedNodeId: 'n1'
+  });
+
+  assert.equal(restarted, true);
+  assert.equal(result.autoRestarted, true);
+  assert.equal(result.restartRequired, false);
 });
 
 test('selectNodeGroupNode switches a running selector group without restarting', async () => {
@@ -2012,6 +2121,42 @@ test('setNodeCountryOverride normalizes country code and overrides geo result', 
   assert.equal(result.node.countryCodeOverride, 'JP');
   assert.equal(result.node.countryCode, 'JP');
   assert.equal(result.node.flagEmoji, '🇯🇵');
+});
+
+test('setNodeCountryOverride keeps display-only country changes restart-free while running', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+  manager.state.status = 'running';
+  manager.proxyService = {
+    setNodes() {},
+    getLocalPort: () => 20000,
+    toShareLink: () => null,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.geoIpService = {
+    getStatus: () => ({ ready: true, pending: false, lastError: null }),
+    enrichNodes: async (records) => records.map((record) => ({
+      ...record,
+      countryCode: 'US',
+      countryName: 'United States',
+      flagEmoji: 'US'
+    }))
+  };
+  let restarted = false;
+  manager.restart = async () => {
+    restarted = true;
+    return manager.getStatus();
+  };
+
+  const result = await manager.setNodeCountryOverride('n1', 'jp');
+
+  assert.equal(restarted, false);
+  assert.equal(result.applyPending, false);
+  assert.equal(result.autoRestarted, false);
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.node.countryCodeOverride, 'JP');
 });
 
 test('updateNode replaces form-managed fields while preserving local port', async () => {

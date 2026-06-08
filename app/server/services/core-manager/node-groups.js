@@ -193,6 +193,69 @@ const normalizeNodeGroups = (nodeGroups, nodes) => {
   return normalized;
 };
 
+const getNodeGroupsRuntimeSignature = (nodeGroups = []) => JSON.stringify(
+  (Array.isArray(nodeGroups) ? nodeGroups : [])
+    .map((group) => ({
+      id: String(group?.id || '').trim(),
+      nodeIds: (Array.isArray(group?.nodeIds) ? group.nodeIds : [])
+        .map((nodeId) => String(nodeId || '').trim())
+        .filter(Boolean),
+      selectedNodeId: group?.selectedNodeId == null ? null : String(group.selectedNodeId).trim() || null
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+);
+
+const getRuntimeReferencedNodeGroupIds = (settings = {}) => {
+  const ids = new Set();
+  if (settings.systemProxyAutoSwitchEnabled && settings.systemProxyAutoSwitchGroupId) {
+    ids.add(String(settings.systemProxyAutoSwitchGroupId).trim());
+  }
+
+  const routingItems = Array.isArray(settings.routingItems) ? settings.routingItems : [];
+  routingItems.forEach((item) => {
+    if (item?.kind === 'rule' && item.action === 'node_group' && item.nodeGroupId) {
+      ids.add(String(item.nodeGroupId).trim());
+      return;
+    }
+    if ((item?.kind === 'builtin_ruleset' || item?.kind === 'custom_entry') && item.target === 'node_group' && item.groupId) {
+      ids.add(String(item.groupId).trim());
+    }
+  });
+
+  const customRules = Array.isArray(settings.customRules) ? settings.customRules : [];
+  customRules.forEach((rule) => {
+    if (rule?.action === 'node_group' && rule.nodeGroupId) {
+      ids.add(String(rule.nodeGroupId).trim());
+    }
+  });
+
+  const rulesets = Array.isArray(settings.rulesets) ? settings.rulesets : [];
+  rulesets.forEach((ruleset) => {
+    if (ruleset?.target === 'node_group' && ruleset.groupId) {
+      ids.add(String(ruleset.groupId).trim());
+    }
+  });
+
+  ids.delete('');
+  return ids;
+};
+
+const filterRuntimeNodeGroups = (nodeGroups = [], referencedGroupIds = new Set()) => (
+  Array.isArray(nodeGroups)
+    ? nodeGroups.filter((group) => referencedGroupIds.has(String(group?.id || '').trim()))
+    : []
+);
+
+const hasNodeGroupsRuntimeChange = (previousGroups = [], nextGroups = [], settings = null) => {
+  if (!settings) {
+    return getNodeGroupsRuntimeSignature(previousGroups) !== getNodeGroupsRuntimeSignature(nextGroups);
+  }
+
+  const referencedGroupIds = getRuntimeReferencedNodeGroupIds(settings);
+  return getNodeGroupsRuntimeSignature(filterRuntimeNodeGroups(previousGroups, referencedGroupIds))
+    !== getNodeGroupsRuntimeSignature(filterRuntimeNodeGroups(nextGroups, referencedGroupIds));
+};
+
 export {
   AUTO_COUNTRY_NODE_GROUP_PREFIX,
   NODE_GROUP_AUTO_TEST_TICK_MS,
@@ -205,6 +268,9 @@ export {
   buildCountryGroupName,
   getNodeGroupById,
   getNodeGroupSelectedNodeId,
+  getRuntimeReferencedNodeGroupIds,
+  getNodeGroupsRuntimeSignature,
+  hasNodeGroupsRuntimeChange,
   hasExistingNodeGroup,
   normalizeNodeGroupAutoTestIntervalSec,
   normalizeNodeGroupLatencyCache,
