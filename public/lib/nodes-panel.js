@@ -92,12 +92,44 @@ export const createNodesPanelController = ({
     });
     nodesTbody?.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
       menu.classList.remove('open');
+      menu.classList.remove('is-floating');
+      menu.removeAttribute('style');
     });
   };
 
   const markOpenMenuRow = (element) => {
     const row = element?.closest?.('.node-row');
     row?.classList.add('has-open-menu');
+  };
+
+  const closeOpenGroupMenus = () => {
+    nodesTbody?.querySelectorAll('.group-menu.open').forEach((menu) => {
+      menu.classList.remove('open');
+    });
+  };
+
+  const openNodeActionMenu = (menu, anchor, event = null) => {
+    closeOpenNodeMenus();
+    markOpenMenuRow(anchor || menu);
+    menu.classList.add('open', 'is-floating');
+    menu.style.visibility = 'hidden';
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+    const rect = anchor?.getBoundingClientRect?.();
+    const menuWidth = menu.offsetWidth || 180;
+    const menuHeight = menu.offsetHeight || 260;
+    const margin = 8;
+    const desiredLeft = event?.clientX ?? ((rect?.right || viewportWidth - margin) - menuWidth);
+    const desiredTop = event?.clientY ?? ((rect?.bottom || margin) + 6);
+    const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
+    const maxTop = Math.max(margin, viewportHeight - menuHeight - margin);
+
+    menu.style.left = `${Math.min(Math.max(margin, desiredLeft), maxLeft)}px`;
+    menu.style.top = `${Math.min(Math.max(margin, desiredTop), maxTop)}px`;
+    menu.style.visibility = '';
   };
 
   const syncSelectAllState = () => {
@@ -155,8 +187,7 @@ export const createNodesPanelController = ({
         const isOpen = menu.classList.contains('open');
         closeOpenNodeMenus();
         if (!isOpen) {
-          markOpenMenuRow(menuButton);
-          menu.classList.add('open');
+          openNodeActionMenu(menu, menuButton);
         }
         return;
       }
@@ -168,9 +199,7 @@ export const createNodesPanelController = ({
         const menu = wrap?.querySelector('.group-menu');
         if (!menu) return;
         const isOpen = menu.classList.contains('open');
-        closeOpenNodeMenus();
-        const parentMenu = wrap.closest('.node-action-menu');
-        if (parentMenu) parentMenu.classList.add('open');
+        closeOpenGroupMenus();
         if (!isOpen) {
           markOpenMenuRow(moveGroupButton);
           menu.classList.add('open');
@@ -215,6 +244,19 @@ export const createNodesPanelController = ({
       if (!row || !nodesTbody.contains(row)) return;
       if (target.closest('.node-check-cell') || target.closest('.row-actions')) return;
       await switchActiveNode(row.dataset.id);
+    });
+
+    nodesTbody.addEventListener('contextmenu', (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      const row = target?.closest?.('.node-row');
+      if (!row || !nodesTbody.contains(row)) return;
+      if (target.closest('.node-check-cell')) return;
+
+      const menu = row.querySelector('.node-action-menu[data-menu-panel="row"]');
+      if (!menu) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openNodeActionMenu(menu, row, event);
     });
 
     nodesTbody.addEventListener('change', (event) => {

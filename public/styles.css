@@ -1083,15 +1083,15 @@ table {
 
 #nodes-list table {
   table-layout: fixed;
-  min-width: 1060px;
+  min-width: 880px;
 }
 
 .nodes-col-check { width: 56px; }
-.nodes-col-protocol { width: 170px; }
+.nodes-col-protocol { width: 138px; }
 .nodes-col-info { width: auto; }
 .nodes-col-transport { width: 160px; }
-.nodes-col-latency { width: 86px; }
-.nodes-col-actions { width: 300px; }
+.nodes-col-latency { width: 96px; }
+.nodes-col-actions { width: 74px; }
 
 #nodes-list th,
 #nodes-list td {
@@ -1113,13 +1113,13 @@ th {
 }
 
 #nodes-list th:last-child {
-  text-align: right;
+  text-align: center;
 }
 
 #nodes-list .row-actions-cell {
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-  text-align: right;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  text-align: center;
 }
 
 #nodes-list tr.has-open-menu .row-actions-cell {
@@ -1216,13 +1216,11 @@ tr.active-row {
 /* Row hover actions */
 .row-actions {
   display: flex;
-  gap: 0.4rem;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   opacity: 1;
   min-width: 0;
-  width: max-content;
-  margin-left: auto;
+  width: 100%;
 }
 
 .row-action-btn {
@@ -1253,6 +1251,9 @@ tr.active-row {
 }
 .node-action-more-btn {
   font-size: 0.95rem;
+  width: 34px;
+  height: 30px;
+  padding: 0;
 }
 .node-action-menu-wrap {
   position: relative;
@@ -1263,13 +1264,18 @@ tr.active-row {
   position: absolute;
   right: 0;
   top: calc(100% + 5px);
-  min-width: 148px;
+  min-width: 168px;
   padding: 0.25rem;
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   box-shadow: 0 12px 28px rgba(0,0,0,0.42);
   z-index: 120;
+}
+.node-action-menu.is-floating {
+  position: fixed;
+  right: auto;
+  top: auto;
 }
 .node-action-menu.open {
   display: block;

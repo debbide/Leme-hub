@@ -80,18 +80,15 @@ export const renderNodeRow = ({
       <td><span class="latency" id="test-result-${escapeHtml(node.id)}">-</span></td>
       <td class="row-actions-cell">
         <div class="row-actions">
-          <button type="button" class="row-action-btn row-action-btn-label test-node-btn" data-id="${escapeHtml(node.id)}" title="测试延迟"><i class="ph ph-activity"></i><span>测速</span></button>
-          <button type="button" class="row-action-btn row-action-btn-label detail-node-btn" data-id="${escapeHtml(node.id)}" title="编辑详情"><i class="ph ph-pencil-simple"></i><span>编辑</span></button>
           <div class="node-action-menu-wrap">
-            <button type="button" class="row-action-btn row-action-btn-label node-action-menu-btn" data-menu="share" data-id="${escapeHtml(node.id)}" title="分享节点"><i class="ph ph-share-network"></i><span>分享</span><i class="ph ph-caret-down"></i></button>
-            <div class="node-action-menu" data-menu-panel="share">
+            <button type="button" class="row-action-btn node-action-more-btn node-action-menu-btn" data-menu="row" data-id="${escapeHtml(node.id)}" title="节点操作"><i class="ph ph-dots-three-vertical"></i></button>
+            <div class="node-action-menu" data-menu-panel="row">
+              <button type="button" class="node-menu-item test-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-activity"></i><span>测试延迟</span></button>
+              <button type="button" class="node-menu-item detail-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-pencil-simple"></i><span>编辑详情</span></button>
+              <hr class="group-menu-separator">
               <button type="button" class="node-menu-item share-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-copy"></i><span>复制链接</span></button>
               <button type="button" class="node-menu-item qr-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-qr-code"></i><span>二维码分享</span></button>
-            </div>
-          </div>
-          <div class="node-action-menu-wrap">
-            <button type="button" class="row-action-btn node-action-more-btn node-action-menu-btn" data-menu="more" data-id="${escapeHtml(node.id)}" title="更多操作"><i class="ph ph-dots-three"></i></button>
-            <div class="node-action-menu" data-menu-panel="more">
+              <hr class="group-menu-separator">
               <button type="button" class="node-menu-item country-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-flag-banner"></i><span>修正国家</span></button>
               ${moveGroupAction}
               <hr class="group-menu-separator">

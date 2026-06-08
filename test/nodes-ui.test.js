@@ -98,11 +98,13 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
       .replace(/'/g, '&#39;'),
   });
 
-  assert.match(html, /row-action-btn row-action-btn-label test-node-btn/u);
-  assert.match(html, />测速</u);
-  assert.match(html, /row-action-btn row-action-btn-label detail-node-btn/u);
-  assert.match(html, />编辑</u);
-  assert.match(html, /node-action-menu-btn" data-menu="share"/u);
+  assert.doesNotMatch(html, /row-action-btn row-action-btn-label test-node-btn/u);
+  assert.match(html, /node-action-menu-btn" data-menu="row"/u);
+  assert.match(html, /data-menu-panel="row"/u);
+  assert.match(html, /class="node-menu-item test-node-btn"/u);
+  assert.match(html, />测试延迟</u);
+  assert.match(html, /class="node-menu-item detail-node-btn"/u);
+  assert.match(html, />编辑详情</u);
   assert.match(html, /class="node-menu-item share-node-btn"/u);
   assert.match(html, /class="node-menu-item qr-node-btn"/u);
   assert.match(html, /ph ph-qr-code/u);
