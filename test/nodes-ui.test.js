@@ -98,8 +98,9 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
       .replace(/'/g, '&#39;'),
   });
 
-  assert.doesNotMatch(html, /row-action-btn row-action-btn-label test-node-btn/u);
-  assert.match(html, /node-action-menu-btn" data-menu="row"/u);
+  assert.doesNotMatch(html, /row-action-btn/u);
+  assert.doesNotMatch(html, /node-action-menu-btn/u);
+  assert.doesNotMatch(html, /node-action-more-btn/u);
   assert.match(html, /data-menu-panel="row"/u);
   assert.match(html, /class="node-menu-item test-node-btn"/u);
   assert.match(html, />测试延迟</u);
@@ -108,7 +109,6 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
   assert.match(html, /class="node-menu-item share-node-btn"/u);
   assert.match(html, /class="node-menu-item qr-node-btn"/u);
   assert.match(html, /ph ph-qr-code/u);
-  assert.match(html, /node-action-more-btn/u);
   assert.match(html, /class="node-menu-item is-danger delete-node-btn"/u);
 });
 

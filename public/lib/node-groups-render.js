@@ -137,7 +137,7 @@ export const renderNodeGroups = ({
           <div class="routing-ruleset-actions">
             <button type="button" class="btn-outline node-group-sort-btn ${nodeGroupSortByLatency ? 'is-active' : ''}" data-group-id="${escapeHtml(group.id)}" title="${nodeGroupSortByLatency ? '已按延迟排序' : '按延迟排序'}"><i class="ph ph-sort-ascending"></i></button>
             <button type="button" class="btn-outline node-group-test-btn" data-group-id="${escapeHtml(group.id)}" title="测试该组节点延迟"><i class="ph ph-activity"></i></button>
-            ${isAutoCountry ? '<span class="routing-chip is-accent">国家组</span>' : `<button type="button" class="btn-outline node-group-edit-btn" data-group-id="${escapeHtml(group.id)}">编辑</button><button type="button" class="btn-outline node-group-delete-btn" data-group-id="${escapeHtml(group.id)}">删除</button>`}
+            ${isAutoCountry ? '<span class="routing-chip is-accent">国家组</span>' : `<button type="button" class="btn-outline node-group-edit-btn" data-group-id="${escapeHtml(group.id)}" title="编辑节点组" aria-label="编辑节点组"><i class="ph ph-pencil-simple"></i></button><button type="button" class="btn-outline node-group-delete-btn" data-group-id="${escapeHtml(group.id)}" title="删除节点组" aria-label="删除节点组"><i class="ph ph-trash"></i></button>`}
           </div>
         </summary>
         <div class="node-group-preview-strip">

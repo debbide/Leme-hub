@@ -77,24 +77,19 @@ export const renderNodeRow = ({
         <span class="pill pill-dark">${escapeHtml(transText)}</span>
         <span class="pill pill-dark">${escapeHtml(secText)}</span>
       </td>
-      <td><span class="latency" id="test-result-${escapeHtml(node.id)}">-</span></td>
-      <td class="row-actions-cell">
-        <div class="row-actions">
-          <div class="node-action-menu-wrap">
-            <button type="button" class="row-action-btn node-action-more-btn node-action-menu-btn" data-menu="row" data-id="${escapeHtml(node.id)}" title="节点操作"><i class="ph ph-dots-three-vertical"></i></button>
-            <div class="node-action-menu" data-menu-panel="row">
-              <button type="button" class="node-menu-item test-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-activity"></i><span>测试延迟</span></button>
-              <button type="button" class="node-menu-item detail-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-pencil-simple"></i><span>编辑详情</span></button>
-              <hr class="group-menu-separator">
-              <button type="button" class="node-menu-item share-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-copy"></i><span>复制链接</span></button>
-              <button type="button" class="node-menu-item qr-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-qr-code"></i><span>二维码分享</span></button>
-              <hr class="group-menu-separator">
-              <button type="button" class="node-menu-item country-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-flag-banner"></i><span>修正国家</span></button>
-              ${moveGroupAction}
-              <hr class="group-menu-separator">
-              <button type="button" class="node-menu-item is-danger delete-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-trash"></i><span>删除节点</span></button>
-            </div>
-          </div>
+      <td class="node-latency-cell">
+        <span class="latency" id="test-result-${escapeHtml(node.id)}">-</span>
+        <div class="node-action-menu" data-menu-panel="row">
+          <button type="button" class="node-menu-item test-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-activity"></i><span>测试延迟</span></button>
+          <button type="button" class="node-menu-item detail-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-pencil-simple"></i><span>编辑详情</span></button>
+          <hr class="group-menu-separator">
+          <button type="button" class="node-menu-item share-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-copy"></i><span>复制链接</span></button>
+          <button type="button" class="node-menu-item qr-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-qr-code"></i><span>二维码分享</span></button>
+          <hr class="group-menu-separator">
+          <button type="button" class="node-menu-item country-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-flag-banner"></i><span>修正国家</span></button>
+          ${moveGroupAction}
+          <hr class="group-menu-separator">
+          <button type="button" class="node-menu-item is-danger delete-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-trash"></i><span>删除节点</span></button>
         </div>
       </td>
     </tr>`;

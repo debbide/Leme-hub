@@ -108,7 +108,7 @@ export const createNodesPanelController = ({
     });
   };
 
-  const openNodeActionMenu = (menu, anchor, event = null) => {
+  const openNodeActionMenu = (menu, anchor, event) => {
     closeOpenNodeMenus();
     markOpenMenuRow(anchor || menu);
     menu.classList.add('open', 'is-floating');
@@ -122,8 +122,8 @@ export const createNodesPanelController = ({
     const menuWidth = menu.offsetWidth || 180;
     const menuHeight = menu.offsetHeight || 260;
     const margin = 8;
-    const desiredLeft = event?.clientX ?? ((rect?.right || viewportWidth - margin) - menuWidth);
-    const desiredTop = event?.clientY ?? ((rect?.bottom || margin) + 6);
+    const desiredLeft = event.clientX;
+    const desiredTop = event.clientY;
     const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
     const maxTop = Math.max(margin, viewportHeight - menuHeight - margin);
 
@@ -178,20 +178,6 @@ export const createNodesPanelController = ({
       const target = event.target instanceof Element ? event.target : event.target?.parentElement;
       if (!target) return;
 
-      const menuButton = target.closest('.node-action-menu-btn');
-      if (menuButton && nodesTbody.contains(menuButton)) {
-        event.stopPropagation();
-        const wrap = menuButton.closest('.node-action-menu-wrap');
-        const menu = wrap?.querySelector('.node-action-menu');
-        if (!menu) return;
-        const isOpen = menu.classList.contains('open');
-        closeOpenNodeMenus();
-        if (!isOpen) {
-          openNodeActionMenu(menu, menuButton);
-        }
-        return;
-      }
-
       const moveGroupButton = target.closest('.move-group-btn');
       if (moveGroupButton && nodesTbody.contains(moveGroupButton)) {
         event.stopPropagation();
@@ -242,7 +228,7 @@ export const createNodesPanelController = ({
 
       const row = target.closest('.node-row');
       if (!row || !nodesTbody.contains(row)) return;
-      if (target.closest('.node-check-cell') || target.closest('.row-actions')) return;
+      if (target.closest('.node-check-cell') || target.closest('.node-action-menu')) return;
       await switchActiveNode(row.dataset.id);
     });
 
