@@ -108,7 +108,7 @@ export const createNodesPanelController = ({
     });
   };
 
-  const openNodeActionMenu = (menu, anchor, event) => {
+  const openNodeActionMenu = (menu, anchor) => {
     closeOpenNodeMenus();
     markOpenMenuRow(anchor || menu);
     menu.classList.add('open', 'is-floating');
@@ -116,19 +116,15 @@ export const createNodesPanelController = ({
     menu.style.left = '0px';
     menu.style.top = '0px';
 
+    const containerRect = nodesList?.getBoundingClientRect?.();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
-    const rect = anchor?.getBoundingClientRect?.();
-    const menuWidth = menu.offsetWidth || 180;
-    const menuHeight = menu.offsetHeight || 260;
-    const margin = 8;
-    const desiredLeft = event.clientX;
-    const desiredTop = event.clientY;
-    const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
-    const maxTop = Math.max(margin, viewportHeight - menuHeight - margin);
+    const margin = 12;
+    const menuWidth = menu.offsetWidth || 220;
+    const rightEdge = containerRect?.right || viewportWidth - margin;
+    const topEdge = containerRect?.top || margin;
 
-    menu.style.left = `${Math.min(Math.max(margin, desiredLeft), maxLeft)}px`;
-    menu.style.top = `${Math.min(Math.max(margin, desiredTop), maxTop)}px`;
+    menu.style.left = `${Math.max(margin, rightEdge - menuWidth - margin)}px`;
+    menu.style.top = `${Math.max(margin, topEdge + margin)}px`;
     menu.style.visibility = '';
   };
 

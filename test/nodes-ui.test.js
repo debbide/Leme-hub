@@ -102,6 +102,9 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
   assert.doesNotMatch(html, /node-action-menu-btn/u);
   assert.doesNotMatch(html, /node-action-more-btn/u);
   assert.match(html, /data-menu-panel="row"/u);
+  assert.match(html, /class="node-action-menu-title"/u);
+  assert.match(html, /节点操作/u);
+  assert.match(html, /class="node-table-spacer-cell"/u);
   assert.match(html, /class="node-menu-item test-node-btn"/u);
   assert.match(html, />测试延迟</u);
   assert.match(html, /class="node-menu-item detail-node-btn"/u);

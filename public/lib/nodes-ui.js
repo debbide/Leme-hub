@@ -80,6 +80,10 @@ export const renderNodeRow = ({
       <td class="node-latency-cell">
         <span class="latency" id="test-result-${escapeHtml(node.id)}">-</span>
         <div class="node-action-menu" data-menu-panel="row">
+          <div class="node-action-menu-title">
+            <span class="node-action-menu-kicker">节点操作</span>
+            <strong>${escapeHtml(node.name || '未命名节点')}</strong>
+          </div>
           <button type="button" class="node-menu-item test-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-activity"></i><span>测试延迟</span></button>
           <button type="button" class="node-menu-item detail-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-pencil-simple"></i><span>编辑详情</span></button>
           <hr class="group-menu-separator">
@@ -92,6 +96,7 @@ export const renderNodeRow = ({
           <button type="button" class="node-menu-item is-danger delete-node-btn" data-id="${escapeHtml(node.id)}"><i class="ph ph-trash"></i><span>删除节点</span></button>
         </div>
       </td>
+      <td class="node-table-spacer-cell" aria-hidden="true"></td>
     </tr>`;
 };
 
