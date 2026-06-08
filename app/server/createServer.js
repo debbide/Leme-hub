@@ -110,11 +110,17 @@ export function createAppServer(paths, env = process.env) {
     if (route) {
       try {
         const body = await readJsonBody(request);
-        const result = await route({ request, url, body });
-        sendJson(response, result.status || 200, result.body);
+        const result = await route({ request, response, url, body });
+        if (!result?.handled && !response.writableEnded) {
+          sendJson(response, result.status || 200, result.body);
+        }
       } catch (error) {
         const status = error.status || (error instanceof SyntaxError ? 400 : 500);
-        sendJson(response, status, { ok: false, error: error.message });
+        if (!response.headersSent) {
+          sendJson(response, status, { ok: false, error: error.message });
+        } else if (!response.writableEnded) {
+          response.end();
+        }
       }
       return;
     }

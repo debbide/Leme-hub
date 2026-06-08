@@ -677,8 +677,8 @@ export class CoreManager {
     return latencyManager.measureNodeLatencies(this, nodeIds, options);
   }
 
-  async testNodes(nodeIds = []) {
-    return latencyManager.testNodes(this, nodeIds);
+  async testNodes(nodeIds = [], options = {}) {
+    return latencyManager.testNodes(this, nodeIds, options);
   }
 
   async testNodeGroups(groupIds = [], options = {}) {

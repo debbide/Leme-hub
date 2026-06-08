@@ -271,6 +271,7 @@ export const testAllNodes = async ({
   nodeSearchQuery,
   testAllBtn,
   requestJson,
+  requestSseStream,
   updateCoreStatus,
   applyLatencyResult,
   resetLatencyPlaceholders,
@@ -307,7 +308,46 @@ export const testAllNodes = async ({
     setNodeTestingActionState?.(node.id, true);
   });
 
+  const applyBatchResult = (result, done) => {
+    applyLatencyResult({
+      ...result,
+      elapsedMs: getLatencyTestingElapsed?.(result.id)
+    });
+    if (testAllBtn) testAllBtn.textContent = `测试 ${done}/${targetNodes.length}...`;
+    setNodeTestingActionState?.(result.id, false);
+  };
+
   try {
+    if (typeof requestSseStream === 'function') {
+      const results = [];
+      let autoStarted = false;
+
+      await requestSseStream('/api/nodes/test-batch-stream', {
+        method: 'POST',
+        body: JSON.stringify({ ids: targetNodes.map((node) => node.id) })
+      }, async ({ event, data }) => {
+        if (event === 'result' && data?.id) {
+          results.push(data);
+          applyBatchResult(data, Number(data.done) || results.length);
+          return;
+        }
+        if (event === 'complete') {
+          if (data?.core) updateCoreStatus(data.core);
+          autoStarted = Boolean(data?.autoStarted);
+          return;
+        }
+        if (event === 'error') {
+          throw new Error(data?.error || '批量测速失败');
+        }
+      });
+
+      const successCount = results.filter((result) => result.ok).length;
+      const failedCount = results.length - successCount;
+      const autoStartText = autoStarted ? '，并已自动启动核心' : '';
+      showToast(`批量测试完成：成功 ${successCount}，失败 ${failedCount}${autoStartText}`, failedCount ? 'info' : 'success');
+      return;
+    }
+
     const payload = await requestJson('/api/nodes/test-batch', {
       method: 'POST',
       body: JSON.stringify({ ids: targetNodes.map((node) => node.id) })
@@ -317,13 +357,8 @@ export const testAllNodes = async ({
 
     let done = 0;
     payload.results.forEach((result) => {
-      applyLatencyResult({
-        ...result,
-        elapsedMs: getLatencyTestingElapsed?.(result.id)
-      });
       done += 1;
-      if (testAllBtn) testAllBtn.textContent = `测试 ${done}/${targetNodes.length}...`;
-      setNodeTestingActionState?.(result.id, false);
+      applyBatchResult(result, done);
     });
 
     const successCount = payload.results.filter((result) => result.ok).length;

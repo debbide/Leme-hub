@@ -301,16 +301,19 @@ export const testNodes = async (context, nodeIds = [], options = {}) => {
     for (let index = 0; index < nodes.length; index += concurrency) {
       const batch = nodes.slice(index, index + concurrency);
       const batchResults = await Promise.all(batch.map(async (node) => {
+        let result;
         try {
           const latencyMs = await measureSpeedtestLatency(context, service.getLocalPort(node.id), {
             proxyListen: listenHost,
             url: runtime.speedtestUrl,
             nodeId: node.id
           });
-          return { id: node.id, ok: true, latencyMs };
+          result = { id: node.id, ok: true, latencyMs };
         } catch (error) {
-          return { id: node.id, ok: false, error: error.message };
+          result = { id: node.id, ok: false, error: error.message };
         }
+        await options.onResult?.(result);
+        return result;
       }));
       results.push(...batchResults);
     }

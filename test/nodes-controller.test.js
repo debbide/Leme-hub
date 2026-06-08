@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderGroupTabs, updateBulkBar } from '../public/lib/nodes-controller.js';
+import { renderGroupTabs, testAllNodes, updateBulkBar } from '../public/lib/nodes-controller.js';
 
 const createTabsElement = () => ({
   innerHTML: '',
@@ -156,4 +156,64 @@ test('updateBulkBar escapes group menu labels', () => {
       delete globalThis.document;
     }
   }
+});
+
+test('testAllNodes applies streamed latency results as each event arrives', async () => {
+  const applied = [];
+  const marked = [];
+  const actionStates = [];
+  const toasts = [];
+  const button = { disabled: false, textContent: '' };
+
+  await testAllNodes({
+    activeGroupTab: null,
+    nodesData: [
+      { id: 'n1', name: 'One', server: 'one.example' },
+      { id: 'n2', name: 'Two', server: 'two.example' }
+    ],
+    nodeSearchQuery: '',
+    testAllBtn: button,
+    requestJson: async () => {
+      throw new Error('fallback should not be used');
+    },
+    requestSseStream: async (url, options, onEvent) => {
+      assert.equal(url, '/api/nodes/test-batch-stream');
+      assert.deepEqual(JSON.parse(options.body).ids, ['n1', 'n2']);
+      await onEvent({ event: 'result', data: { id: 'n1', ok: true, latencyMs: 88, done: 1 } });
+      assert.deepEqual(applied.map((item) => item.id), ['n1']);
+      assert.deepEqual(marked, ['n1', 'n2']);
+      assert.equal(button.textContent, '测试 1/2...');
+      await onEvent({ event: 'result', data: { id: 'n2', ok: false, error: 'timeout', done: 2 } });
+      await onEvent({ event: 'complete', data: { ok: true, core: { status: 'running' }, autoStarted: true } });
+    },
+    updateCoreStatus: () => {},
+    applyLatencyResult: (result) => applied.push(result),
+    resetLatencyPlaceholders: () => {},
+    markLatencyTesting: (id) => marked.push(id),
+    setNodeTestingActionState: (id, isTesting) => actionStates.push({ id, isTesting }),
+    getLatencyTestingElapsed: () => 123,
+    showToast: (message, type) => toasts.push({ message, type }),
+  });
+
+  assert.deepEqual(applied.map((item) => ({
+    id: item.id,
+    ok: item.ok,
+    latencyMs: item.latencyMs,
+    error: item.error,
+    elapsedMs: item.elapsedMs,
+  })), [
+    { id: 'n1', ok: true, latencyMs: 88, error: undefined, elapsedMs: 123 },
+    { id: 'n2', ok: false, latencyMs: undefined, error: 'timeout', elapsedMs: 123 }
+  ]);
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, '批量测试');
+  assert.deepEqual(actionStates, [
+    { id: 'n1', isTesting: true },
+    { id: 'n2', isTesting: true },
+    { id: 'n1', isTesting: false },
+    { id: 'n2', isTesting: false },
+    { id: 'n1', isTesting: false },
+    { id: 'n2', isTesting: false }
+  ]);
+  assert.equal(toasts.at(-1).type, 'info');
 });

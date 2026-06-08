@@ -88,6 +88,60 @@ test('node routes support deleting multiple nodes in one request', async () => {
   assert.equal(invalidResponse.status, 400);
 });
 
+test('node routes stream batch latency results as server-sent events', async () => {
+  const writes = [];
+  let ended = false;
+  const routes = createNodeRoutes({
+    coreManager: {
+      testNodes: async (ids, options = {}) => {
+        assert.deepEqual(ids, ['n1', 'n2']);
+        await options.onResult?.({ id: 'n1', ok: true, latencyMs: 90 });
+        await options.onResult?.({ id: 'n2', ok: false, error: 'timeout' });
+        return {
+          results: [
+            { id: 'n1', ok: true, latencyMs: 90 },
+            { id: 'n2', ok: false, error: 'timeout' }
+          ],
+          core: { status: 'running' },
+          autoStarted: false
+        };
+      }
+    }
+  });
+
+  const response = {
+    writableEnded: false,
+    destroyed: false,
+    writeHead: (status, headers) => {
+      writes.push({ status, headers });
+    },
+    write: (chunk) => writes.push(chunk),
+    end: () => {
+      response.writableEnded = true;
+      ended = true;
+    }
+  };
+  const request = {
+    on() {}
+  };
+
+  const result = await routes['POST /api/nodes/test-batch-stream']({
+    body: { ids: ['n1', 'n2'] },
+    request,
+    response
+  });
+
+  const streamText = writes.filter((item) => typeof item === 'string').join('');
+  assert.equal(result.handled, true);
+  assert.equal(ended, true);
+  assert.equal(writes[0].status, 200);
+  assert.match(writes[0].headers['Content-Type'], /text\/event-stream/u);
+  assert.match(streamText, /event: start/u);
+  assert.match(streamText, /event: result\ndata: \{"id":"n1","ok":true,"latencyMs":90,"done":1\}/u);
+  assert.match(streamText, /event: result\ndata: \{"id":"n2","ok":false,"error":"timeout","done":2\}/u);
+  assert.match(streamText, /event: complete/u);
+});
+
 test('subscription routes support sync by url or id and delete by id', async () => {
   const syncCalls = [];
   const deleteCalls = [];

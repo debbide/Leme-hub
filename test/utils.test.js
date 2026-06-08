@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { copyTextToClipboard } from '../public/lib/utils.js';
+import { copyTextToClipboard, requestSseStream } from '../public/lib/utils.js';
 
 const restoreGlobal = (key, descriptor) => {
   if (descriptor) {
@@ -133,4 +133,39 @@ test('copyTextToClipboard falls back to execCommand when clipboard api rejects',
     restoreGlobal('navigator', navigatorDescriptor);
     restoreGlobal('document', documentDescriptor);
   }
+});
+
+test('requestSseStream emits parsed stream events as they arrive', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const encoder = new TextEncoder();
+  const chunks = [
+    'event: result\ndata: {"id":"n1","ok":true,"latencyMs":88}\n\n',
+    'event: complete\ndata: {"ok":true,"total":1}\n\n'
+  ].map((chunk) => encoder.encode(chunk));
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: async () => chunks.length
+          ? { value: chunks.shift(), done: false }
+          : { value: undefined, done: true }
+      })
+    }
+  });
+
+  const events = [];
+  await requestSseStream('/api/nodes/test-batch-stream', { method: 'POST' }, (event) => {
+    events.push(event);
+  });
+
+  assert.deepEqual(events, [
+    { event: 'result', data: { id: 'n1', ok: true, latencyMs: 88 } },
+    { event: 'complete', data: { ok: true, total: 1 } }
+  ]);
 });

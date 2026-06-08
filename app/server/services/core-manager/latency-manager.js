@@ -48,7 +48,8 @@ export const measureNodeLatencies = async (manager, nodeIds = [], options = {}) 
 
       if (typeof manager.proxyService.testNodes === 'function') {
         const results = await manager.proxyService.testNodes(requestedIds, {
-          binPath: binary.executablePath
+          binPath: binary.executablePath,
+          onResult: options.onResult
         });
         return {
           results: results.map((item) => ({
@@ -66,7 +67,9 @@ export const measureNodeLatencies = async (manager, nodeIds = [], options = {}) 
   }
 
   if (typeof manager.proxyService.testNodes === 'function') {
-    const results = await manager.proxyService.testNodes(requestedIds);
+    const results = await manager.proxyService.testNodes(requestedIds, {
+      onResult: options.onResult
+    });
     return {
       results: results.map((item) => ({
         ...item,
@@ -85,9 +88,13 @@ export const measureNodeLatencies = async (manager, nodeIds = [], options = {}) 
       const node = manager.getNodeById(nodeId);
       try {
         const latencyMs = await manager.proxyService.testNode(nodeId);
-        return { id: nodeId, ok: true, latencyMs, node };
+        const result = { id: nodeId, ok: true, latencyMs, node };
+        await options.onResult?.(result);
+        return result;
       } catch (error) {
-        return { id: nodeId, ok: false, error: error.message, node };
+        const result = { id: nodeId, ok: false, error: error.message, node };
+        await options.onResult?.(result);
+        return result;
       }
     }));
     results.push(...batchResults);
@@ -100,7 +107,8 @@ export const measureNodeLatencies = async (manager, nodeIds = [], options = {}) 
   };
 };
 
-export const testNodes = async (manager, nodeIds = []) => manager.measureNodeLatencies(nodeIds, {
+export const testNodes = async (manager, nodeIds = [], options = {}) => manager.measureNodeLatencies(nodeIds, {
+  ...options,
   autoStartCore: true
 });
 

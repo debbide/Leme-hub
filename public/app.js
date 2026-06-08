@@ -11,7 +11,7 @@ import { bindSystemEvents } from './lib/system-bindings.js';
 import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, renderUwpLoopbackStatus as renderUwpLoopbackStatusView, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
 import { bindAppMiscEvents, bindWindowChromeFallbacks, runInitialAppBootstrap } from './lib/app-init.js';
 import { bindViewLifecycle } from './lib/view-lifecycle.js';
-import { debounce, escapeHtml, escapeRegExp, flagFromCountryCode, requestJson } from './lib/utils.js';
+import { debounce, escapeHtml, escapeRegExp, flagFromCountryCode, requestJson, requestSseStream } from './lib/utils.js';
 
 const nodesList = document.querySelector('#nodes-list');
 const nodesTbody = document.querySelector('#nodes-tbody');
@@ -464,6 +464,7 @@ const nodesPanel = createNodesPanelController({
   showConfirmModal,
   showToast,
   requestJson,
+  requestSseStream,
   escapeHtml,
   renderGeoIpStatus,
   updateCoreStatus,

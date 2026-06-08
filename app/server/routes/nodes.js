@@ -1,5 +1,13 @@
 const json = (body, status = 200) => ({ status, body });
 
+const writeSseEvent = (response, event, data) => {
+  if (!response || response.writableEnded || response.destroyed) {
+    return;
+  }
+  response.write(`event: ${event}\n`);
+  response.write(`data: ${JSON.stringify(data)}\n\n`);
+};
+
 export function createNodeRoutes({ coreManager }) {
   return {
     'GET /api/nodes': async () => json({
@@ -135,6 +143,67 @@ export function createNodeRoutes({ coreManager }) {
       } catch (error) {
         return json({ ok: false, error: error.message }, error.status || 500);
       }
+    },
+
+    'POST /api/nodes/test-batch-stream': async ({ body, request, response }) => {
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      });
+      response.flushHeaders?.();
+
+      let closed = false;
+      request.on?.('close', () => {
+        closed = true;
+      });
+
+      const requestedIds = Array.isArray(body?.ids) && body.ids.length
+        ? [...new Set(body.ids)]
+        : [];
+      let done = 0;
+
+      const send = (event, payload) => {
+        if (closed) return;
+        writeSseEvent(response, event, payload);
+      };
+
+      send('start', { ok: true, total: requestedIds.length || null });
+
+      try {
+        const result = await coreManager.testNodes(body?.ids, {
+          onResult: (item) => {
+            done += 1;
+            send('result', {
+              ...item,
+              done
+            });
+          }
+        });
+        const results = result.results || [];
+        const successCount = results.filter((item) => item.ok).length;
+        send('complete', {
+          ok: true,
+          results,
+          core: result.core,
+          autoStarted: result.autoStarted,
+          successCount,
+          failedCount: results.length - successCount,
+          total: results.length
+        });
+      } catch (error) {
+        send('error', {
+          ok: false,
+          error: error.message || 'Speed test failed'
+        });
+      } finally {
+        if (!response.writableEnded) {
+          response.end();
+        }
+      }
+
+      return { handled: true };
     },
 
     'POST /api/subscriptions/sync': async ({ body }) => {
