@@ -92,7 +92,6 @@ export const createNodesPanelController = ({
     });
     nodesTbody?.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
       menu.classList.remove('open');
-      menu.classList.remove('is-floating');
       menu.removeAttribute('style');
     });
   };
@@ -111,21 +110,7 @@ export const createNodesPanelController = ({
   const openNodeActionMenu = (menu, anchor) => {
     closeOpenNodeMenus();
     markOpenMenuRow(anchor || menu);
-    menu.classList.add('open', 'is-floating');
-    menu.style.visibility = 'hidden';
-    menu.style.left = '0px';
-    menu.style.top = '0px';
-
-    const containerRect = nodesList?.getBoundingClientRect?.();
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
-    const margin = 12;
-    const menuWidth = menu.offsetWidth || 220;
-    const rightEdge = containerRect?.right || viewportWidth - margin;
-    const topEdge = containerRect?.top || margin;
-
-    menu.style.left = `${Math.max(margin, rightEdge - menuWidth - margin)}px`;
-    menu.style.top = `${Math.max(margin, topEdge + margin)}px`;
-    menu.style.visibility = '';
+    menu.classList.add('open');
   };
 
   const syncSelectAllState = () => {
@@ -173,6 +158,23 @@ export const createNodesPanelController = ({
     nodesTbody.addEventListener('click', async (event) => {
       const target = event.target instanceof Element ? event.target : event.target?.parentElement;
       if (!target) return;
+
+      const menuButton = target.closest('.node-action-menu-btn');
+      if (menuButton && nodesTbody.contains(menuButton)) {
+        event.stopPropagation();
+        const row = menuButton.closest('.node-row');
+        const menu = row?.querySelector('.node-action-menu[data-menu-panel="row"]');
+        if (!menu) {
+          showToast('未找到该节点的操作菜单，请刷新节点列表后重试', 'error');
+          return;
+        }
+        const isOpen = menu.classList.contains('open');
+        closeOpenNodeMenus();
+        if (!isOpen) {
+          openNodeActionMenu(menu, menuButton);
+        }
+        return;
+      }
 
       const moveGroupButton = target.closest('.move-group-btn');
       if (moveGroupButton && nodesTbody.contains(moveGroupButton)) {
@@ -224,24 +226,8 @@ export const createNodesPanelController = ({
 
       const row = target.closest('.node-row');
       if (!row || !nodesTbody.contains(row)) return;
-      if (target.closest('.node-check-cell') || target.closest('.node-action-menu')) return;
+      if (target.closest('.node-check-cell') || target.closest('.node-action-menu') || target.closest('.node-row-float-btn')) return;
       await switchActiveNode(row.dataset.id);
-    });
-
-    nodesTbody.addEventListener('contextmenu', (event) => {
-      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-      const row = target?.closest?.('.node-row');
-      if (!row || !nodesTbody.contains(row)) return;
-      if (target.closest('.node-check-cell')) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      const menu = row.querySelector('.node-action-menu[data-menu-panel="row"]');
-      if (!menu) {
-        showToast('未找到该节点的操作菜单，请刷新节点列表后重试', 'error');
-        return;
-      }
-      openNodeActionMenu(menu, row);
     });
 
     nodesTbody.addEventListener('change', (event) => {

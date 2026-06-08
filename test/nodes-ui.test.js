@@ -100,8 +100,9 @@ test('renderNodeRow groups frequent actions and share options clearly', () => {
   });
 
   assert.doesNotMatch(html, /row-action-btn/u);
-  assert.doesNotMatch(html, /node-action-menu-btn/u);
   assert.doesNotMatch(html, /node-action-more-btn/u);
+  assert.match(html, /class="node-row-float-btn node-action-menu-btn"/u);
+  assert.match(html, /aria-label="节点操作"/u);
   assert.match(html, /data-menu-panel="row"/u);
   assert.match(html, /class="node-action-menu-title"/u);
   assert.match(html, /节点操作/u);
@@ -195,10 +196,12 @@ test('createQrMatrix generates a square QR matrix for proxy links', () => {
   assert.equal(qr.modules[6][6], true);
 });
 
-test('node table spacer column keeps pointer events for row context menu', () => {
+test('node table spacer column hosts floating action buttons', () => {
   const styles = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   const spacerRule = styles.match(/#nodes-list th:nth-child\(6\),\s*#nodes-list td:nth-child\(6\)\s*\{(?<body>[^}]+)\}/u);
 
   assert.ok(spacerRule);
   assert.doesNotMatch(spacerRule.groups.body, /pointer-events\s*:\s*none/u);
+  assert.match(styles, /\.node-row-float-btn\s*\{/u);
+  assert.match(styles, /\.node-row:hover \.node-row-float-btn/u);
 });
