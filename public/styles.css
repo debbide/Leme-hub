@@ -1082,7 +1082,20 @@ table {
 }
 
 #nodes-list table {
-  min-width: 1040px;
+  table-layout: fixed;
+  min-width: 1060px;
+}
+
+.nodes-col-check { width: 56px; }
+.nodes-col-protocol { width: 170px; }
+.nodes-col-info { width: auto; }
+.nodes-col-transport { width: 160px; }
+.nodes-col-latency { width: 86px; }
+.nodes-col-actions { width: 300px; }
+
+#nodes-list th,
+#nodes-list td {
+  overflow: visible;
 }
 
 th {
@@ -1099,40 +1112,24 @@ th {
   z-index: 1;
 }
 
-#nodes-list th:last-child,
-#nodes-list .row-actions-cell {
-  position: sticky;
-  right: 0;
-}
-
 #nodes-list th:last-child {
-  width: 272px;
-  min-width: 272px;
-  z-index: 4;
   text-align: right;
-  box-shadow: -10px 0 18px rgba(0, 0, 0, 0.18);
 }
 
 #nodes-list .row-actions-cell {
-  width: 272px;
-  min-width: 272px;
-  z-index: 3;
   padding-left: 0.75rem;
   padding-right: 0.75rem;
-  background: linear-gradient(90deg, rgba(18, 18, 23, 0.82), rgba(18, 18, 23, 0.98) 24%);
-  box-shadow: -10px 0 18px rgba(0, 0, 0, 0.16);
-}
-
-#nodes-list tr:hover .row-actions-cell {
-  background: linear-gradient(90deg, rgba(23, 28, 39, 0.9), rgba(23, 28, 39, 0.98) 24%);
-}
-
-#nodes-list tr.active-row .row-actions-cell {
-  background: linear-gradient(90deg, rgba(13, 40, 34, 0.88), rgba(16, 35, 34, 0.98) 24%);
+  text-align: right;
 }
 
 #nodes-list tr.has-open-menu .row-actions-cell {
-  z-index: 10;
+  position: relative;
+  z-index: 12;
+}
+
+#nodes-list th:nth-child(5),
+#nodes-list td:nth-child(5) {
+  text-align: center;
 }
 
 td {
@@ -1162,6 +1159,7 @@ tr.active-row {
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.25rem;
+  min-width: 0;
 }
 .node-flag {
   width: 1.9rem;
@@ -1184,6 +1182,9 @@ tr.active-row {
 }
 .node-primary-line .node-name {
   margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pill {
@@ -1218,15 +1219,11 @@ tr.active-row {
   gap: 0.4rem;
   justify-content: flex-end;
   align-items: center;
-  opacity: 0;
-  transition: opacity 0.15s;
+  opacity: 1;
   min-width: 0;
   width: max-content;
   margin-left: auto;
 }
-tr:hover .row-actions { opacity: 1; }
-tr.active-row .row-actions { opacity: 1; }
-.row-actions:focus-within { opacity: 1; }
 
 .row-action-btn {
   background: transparent;

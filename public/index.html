@@ -222,7 +222,15 @@
 
             <!-- Table Section -->
             <div id="nodes-list" class="table-wrapper hidden flex-fill">
-              <table>
+              <table class="nodes-table">
+                <colgroup>
+                  <col class="nodes-col-check">
+                  <col class="nodes-col-protocol">
+                  <col class="nodes-col-info">
+                  <col class="nodes-col-transport">
+                  <col class="nodes-col-latency">
+                  <col class="nodes-col-actions">
+                </colgroup>
                 <thead>
                   <tr>
                     <th style="width:36px;"><input type="checkbox" id="select-all-nodes" title="全选"></th>
