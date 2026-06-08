@@ -234,11 +234,14 @@ export const createNodesPanelController = ({
       if (!row || !nodesTbody.contains(row)) return;
       if (target.closest('.node-check-cell')) return;
 
-      const menu = row.querySelector('.node-action-menu[data-menu-panel="row"]');
-      if (!menu) return;
       event.preventDefault();
       event.stopPropagation();
-      openNodeActionMenu(menu, row, event);
+      const menu = row.querySelector('.node-action-menu[data-menu-panel="row"]');
+      if (!menu) {
+        showToast('未找到该节点的操作菜单，请刷新节点列表后重试', 'error');
+        return;
+      }
+      openNodeActionMenu(menu, row);
     });
 
     nodesTbody.addEventListener('change', (event) => {

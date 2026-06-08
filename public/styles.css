@@ -1124,7 +1124,6 @@ th {
 #nodes-list td:nth-child(6) {
   padding-left: 0;
   padding-right: 0;
-  pointer-events: none;
 }
 
 td {

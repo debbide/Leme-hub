@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import { createQrMatrix } from '../public/lib/qr-code.js';
 import { applyLatencyResult, copySelectedNodeShareLinks, markLatencyTesting, renderNodeRow, resetLatencyPlaceholders, setNodeTestingActionState } from '../public/lib/nodes-ui.js';
@@ -192,4 +193,12 @@ test('createQrMatrix generates a square QR matrix for proxy links', () => {
   assert.equal(qr.modules.every((row) => row.length === qr.size), true);
   assert.equal(qr.modules[0][0], true);
   assert.equal(qr.modules[6][6], true);
+});
+
+test('node table spacer column keeps pointer events for row context menu', () => {
+  const styles = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const spacerRule = styles.match(/#nodes-list th:nth-child\(6\),\s*#nodes-list td:nth-child\(6\)\s*\{(?<body>[^}]+)\}/u);
+
+  assert.ok(spacerRule);
+  assert.doesNotMatch(spacerRule.groups.body, /pointer-events\s*:\s*none/u);
 });
