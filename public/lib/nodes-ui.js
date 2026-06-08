@@ -235,7 +235,8 @@ export const applyLatencyResult = (result) => {
   delete resultEl.dataset.startedAt;
   if (result.ok) {
     resultEl.textContent = `${result.latencyMs}ms`;
-    resultEl.classList.add(result.latencyMs < 150 ? 'good' : (result.latencyMs < 400 ? 'warn' : 'bad'));
+    const latencyMs = Number(result.latencyMs);
+    resultEl.classList.add(Number.isFinite(latencyMs) && latencyMs > 0 && latencyMs <= 500 ? 'good' : 'bad');
     if (result.elapsedMs != null) {
       resultEl.title = `测试耗时 ${Math.max(0, Math.round(Number(result.elapsedMs)))} ms`;
     }

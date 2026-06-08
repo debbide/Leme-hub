@@ -174,6 +174,10 @@ test('latency helpers show testing state, elapsed detail, and reset action butto
     applyLatencyResult({ id: 'node-1', ok: true, latencyMs: 120, elapsedMs: 456 });
     assert.equal(resultEl.textContent, '120ms');
     assert.equal(resultEl.classList.values.has('good'), true);
+    applyLatencyResult({ id: 'node-1', ok: true, latencyMs: 350, elapsedMs: 456 });
+    assert.equal(resultEl.textContent, '350ms');
+    assert.equal(resultEl.classList.values.has('good'), true);
+    assert.equal(resultEl.classList.values.has('warn'), false);
     assert.equal(resultEl.title, '测试耗时 456 ms');
 
     resetLatencyPlaceholders(['node-1']);

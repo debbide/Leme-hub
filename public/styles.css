@@ -1205,8 +1205,8 @@ tr.active-row {
   font-size: 0.875rem;
 }
 .latency.good,
-.latency.success { color: #bbf7d0; }
-.latency.warn { color: #fde68a; }
+.latency.success,
+.latency.warn { color: #bbf7d0; }
 .latency.bad,
 .latency.error { color: #fecaca; }
 .latency.testing { color: #93c5fd; }
@@ -1226,6 +1226,9 @@ tr.active-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  appearance: none;
+  line-height: 1;
+  font-size: 0.95rem;
   opacity: 0;
   pointer-events: none;
   box-shadow: none;
@@ -1238,15 +1241,30 @@ tr.active-row {
 .node-row-float-btn:hover,
 .node-row-float-btn:focus-visible {
   color: var(--text-main);
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  transform: translateY(-50%);
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
 }
 .node-row-float-btn:active {
-  background: transparent;
-  box-shadow: none;
-  transform: translateY(-50%);
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
+}
+.node-row-float-btn:disabled,
+.node-row-float-btn[disabled],
+.node-row-float-btn:disabled:hover,
+.node-row-float-btn[disabled]:hover {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
+  cursor: default;
+}
+.node-row-float-btn i {
+  display: block;
+  line-height: 1;
 }
 .node-row:hover .node-row-float-btn,
 .node-row:focus-within .node-row-float-btn,
