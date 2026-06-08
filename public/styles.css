@@ -961,13 +961,13 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-button:hover {
+button:hover:not(.node-row-float-btn) {
   background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
   border-color: rgba(255, 255, 255, 0.14);
   transform: translateY(-1px);
 }
 
-button:active {
+button:active:not(.node-row-float-btn) {
   transform: translateY(0);
 }
 
@@ -1216,12 +1216,12 @@ tr.active-row {
   right: 0.95rem;
   top: 50%;
   transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+  min-height: 0;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border-radius: 7px;
-  border: 1px solid var(--border-strong);
-  background: rgba(15, 23, 42, 0.72);
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
@@ -1235,8 +1235,14 @@ tr.active-row {
 .node-row-float-btn:hover,
 .node-row-float-btn:focus-visible {
   color: var(--text-main);
-  border-color: rgba(59, 130, 246, 0.55);
-  background: rgba(59, 130, 246, 0.16);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: translateY(-50%);
+}
+.node-row-float-btn:active {
+  background: transparent;
+  box-shadow: none;
   transform: translateY(-50%);
 }
 .node-row:hover .node-row-float-btn,
@@ -4124,14 +4130,14 @@ button,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-button:hover:not(:disabled),
+button:hover:not(:disabled):not(.node-row-float-btn),
 .btn-primary:hover:not(:disabled),
 .btn-outline:hover:not(:disabled) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.3);
   transform: translateY(-1px);
 }
 
-button:active:not(:disabled),
+button:active:not(:disabled):not(.node-row-float-btn),
 .btn-primary:active:not(:disabled),
 .btn-outline:active:not(:disabled) {
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
