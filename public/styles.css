@@ -153,6 +153,12 @@ textarea:focus-visible,
   display: none;
 }
 
+body.desktop-shell .titlebar-controls {
+  display: flex;
+  align-self: stretch;
+  -webkit-app-region: no-drag;
+}
+
 .titlebar-btn {
   background: transparent;
   border: none;
@@ -165,6 +171,7 @@ textarea:focus-visible,
   font-size: 1rem;
   cursor: pointer;
   transition: background 0.1s;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-btn:hover {

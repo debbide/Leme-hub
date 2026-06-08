@@ -53,7 +53,79 @@ export const bindAppMiscEvents = ({
   });
 };
 
+const getDesktopWindowBridge = () => {
+  const bridge = globalThis.window?.lemeDesktopWindow;
+  return bridge?.isAvailable ? bridge : null;
+};
+
+const setWindowButtonState = (button, isMaximized) => {
+  if (!button) {
+    return;
+  }
+
+  button.classList.toggle('is-maximized', Boolean(isMaximized));
+  button.innerHTML = isMaximized ? '&#10064;' : '&#9744;';
+  button.setAttribute('aria-label', isMaximized ? 'Restore window' : 'Maximize window');
+  button.setAttribute('title', isMaximized ? 'Restore' : 'Maximize');
+};
+
+const bindDesktopWindowButton = ({ button, action, showToast }) => {
+  button?.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      await action();
+    } catch {
+      showToast?.('Window control is temporarily unavailable.', 'error');
+    }
+  });
+};
+
 export const bindWindowChromeFallbacks = ({ showToast }) => {
+  const desktopWindow = getDesktopWindowBridge();
+  const minimizeButton = document.getElementById('titlebar-minimize');
+  const maximizeButton = document.getElementById('titlebar-maximize');
+  const closeButton = document.getElementById('titlebar-close');
+
+  document.body?.classList.toggle('desktop-shell', Boolean(desktopWindow));
+
+  if (desktopWindow) {
+    bindDesktopWindowButton({
+      button: minimizeButton,
+      action: () => desktopWindow.minimize(),
+      showToast
+    });
+    bindDesktopWindowButton({
+      button: maximizeButton,
+      action: async () => {
+        const state = await desktopWindow.toggleMaximize();
+        if (state && Object.prototype.hasOwnProperty.call(state, 'isMaximized')) {
+          setWindowButtonState(maximizeButton, state.isMaximized);
+        }
+      },
+      showToast
+    });
+    bindDesktopWindowButton({
+      button: closeButton,
+      action: () => desktopWindow.close(),
+      showToast
+    });
+
+    setWindowButtonState(maximizeButton, false);
+    desktopWindow.isMaximized?.()
+      .then((isMaximized) => setWindowButtonState(maximizeButton, isMaximized))
+      .catch(() => {});
+    desktopWindow.onMaximizedChange?.((isMaximized) => {
+      setWindowButtonState(maximizeButton, isMaximized);
+    });
+
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.group-menu.open').forEach((menu) => menu.classList.remove('open'));
+      document.querySelectorAll('.node-action-menu.open').forEach((menu) => menu.classList.remove('open'));
+    });
+    return;
+  }
   document.getElementById('titlebar-close')?.addEventListener('click', () => {
     showToast('Tauri 退出指令正在开发中...', 'info');
   });

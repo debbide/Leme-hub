@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { app, BrowserWindow, Menu, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron';
 
 import { createAppServer } from '../app/server/createServer.js';
 import { resolveProjectPaths } from '../app/shared/paths.js';
@@ -15,6 +15,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const WINDOW_PRELOAD_PATH = path.join(__dirname, 'window-preload.cjs');
 const BACKGROUND_ARG = '--background';
 const WINDOW_BACKGROUND_COLOR = '#0a0a0e';
 const DESKTOP_NET_TRACE_ENABLED = String(process.env.LEME_DESKTOP_NET_TRACE || '').trim() === '1';
@@ -39,6 +40,73 @@ let serverContext = null;
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+
+function getWindowForIpcEvent(event) {
+  const targetWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return null;
+  }
+
+  return targetWindow;
+}
+
+function buildWindowState(targetWindow) {
+  return {
+    isMaximized: Boolean(targetWindow && !targetWindow.isDestroyed() && targetWindow.isMaximized())
+  };
+}
+
+function emitWindowState(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  targetWindow.webContents.send('desktop-window:maximized-change', buildWindowState(targetWindow));
+}
+
+function registerDesktopWindowIpc() {
+  ipcMain.handle('desktop-window:minimize', (event) => {
+    const targetWindow = getWindowForIpcEvent(event);
+    if (!targetWindow) {
+      return { ok: false };
+    }
+
+    targetWindow.minimize();
+    return { ok: true, ...buildWindowState(targetWindow) };
+  });
+
+  ipcMain.handle('desktop-window:toggle-maximize', (event) => {
+    const targetWindow = getWindowForIpcEvent(event);
+    if (!targetWindow) {
+      return { ok: false, isMaximized: false };
+    }
+
+    if (targetWindow.isMaximized()) {
+      targetWindow.unmaximize();
+    } else {
+      targetWindow.maximize();
+    }
+
+    return { ok: true, ...buildWindowState(targetWindow) };
+  });
+
+  ipcMain.handle('desktop-window:close', (event) => {
+    const targetWindow = getWindowForIpcEvent(event);
+    if (!targetWindow) {
+      return { ok: false };
+    }
+
+    targetWindow.close();
+    return { ok: true };
+  });
+
+  ipcMain.handle('desktop-window:get-state', (event) => {
+    const targetWindow = getWindowForIpcEvent(event);
+    return buildWindowState(targetWindow);
+  });
+}
+
+registerDesktopWindowIpc();
 
 function getDesktopCacheMarkerPath(context) {
   const dataDir = context?.store?.paths?.dataDir || path.join(resolveDesktopRuntimeRoot(), 'data');
@@ -335,11 +403,13 @@ async function createWindow() {
     height: 900,
     minWidth: 1080,
     minHeight: 720,
+    frame: false,
     autoHideMenuBar: true,
     show: false,
     backgroundColor: WINDOW_BACKGROUND_COLOR,
     webPreferences: {
       contextIsolation: true,
+      preload: WINDOW_PRELOAD_PATH,
       sandbox: false
     },
     title: 'Leme Hub'
@@ -357,6 +427,9 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  mainWindow.on('maximize', () => emitWindowState(mainWindow));
+  mainWindow.on('unmaximize', () => emitWindowState(mainWindow));
+  mainWindow.on('restore', () => emitWindowState(mainWindow));
 
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
