@@ -87,9 +87,17 @@ export const createNodesPanelController = ({
   const getSubscriptionForGroup = (groupName) => subscriptionsData.find((item) => item.groupName === groupName) || null;
 
   const closeOpenNodeMenus = () => {
+    nodesTbody?.querySelectorAll('.node-row.has-open-menu').forEach((row) => {
+      row.classList.remove('has-open-menu');
+    });
     nodesTbody?.querySelectorAll('.node-action-menu.open, .group-menu.open').forEach((menu) => {
       menu.classList.remove('open');
     });
+  };
+
+  const markOpenMenuRow = (element) => {
+    const row = element?.closest?.('.node-row');
+    row?.classList.add('has-open-menu');
   };
 
   const syncSelectAllState = () => {
@@ -146,7 +154,10 @@ export const createNodesPanelController = ({
         if (!menu) return;
         const isOpen = menu.classList.contains('open');
         closeOpenNodeMenus();
-        if (!isOpen) menu.classList.add('open');
+        if (!isOpen) {
+          markOpenMenuRow(menuButton);
+          menu.classList.add('open');
+        }
         return;
       }
 
@@ -160,7 +171,10 @@ export const createNodesPanelController = ({
         closeOpenNodeMenus();
         const parentMenu = wrap.closest('.node-action-menu');
         if (parentMenu) parentMenu.classList.add('open');
-        if (!isOpen) menu.classList.add('open');
+        if (!isOpen) {
+          markOpenMenuRow(moveGroupButton);
+          menu.classList.add('open');
+        }
         return;
       }
 
