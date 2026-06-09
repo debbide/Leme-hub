@@ -42,8 +42,10 @@ export const getSettingsSnapshot = (manager) => {
   let normalizedRoutingItems;
   let customRules;
   let rulesets;
+  const hasLegacyRoutingSettings = (Array.isArray(settings.customRules) && settings.customRules.length > 0)
+    || (Array.isArray(settings.rulesets) && settings.rulesets.length > 0);
 
-  if (Array.isArray(settings.routingItems)) {
+  if (Array.isArray(settings.routingItems) && (settings.routingItems.length > 0 || !hasLegacyRoutingSettings)) {
     try {
       normalizedRoutingItems = normalizeRoutingItems(settings.routingItems, normalizedNodeGroups);
     } catch (error) {

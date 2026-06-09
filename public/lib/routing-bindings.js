@@ -47,10 +47,17 @@ export const bindRoutingEvents = ({
   routingLogSearchClearBtn,
   resetRoutingLogSearch,
   updateRoutingLogSearchControls,
+  ensureRoutingEditable,
 }) => {
-  routingAddRuleBtn?.addEventListener('click', () => openRoutingRuleModal());
+  const canEditRouting = () => (typeof ensureRoutingEditable === 'function' ? ensureRoutingEditable() : true);
+
+  routingAddRuleBtn?.addEventListener('click', () => {
+    if (!canEditRouting()) return;
+    openRoutingRuleModal();
+  });
 
   routingAddRulesetBtn?.addEventListener('click', () => {
+    if (!canEditRouting()) return;
     const rulesets = getRoutingRulesets();
     const nextRulesets = [...rulesets, createRoutingRulesetDraft({ kind: 'custom', name: `自定义规则集 ${rulesets.length + 1}`, entries: [createRoutingRulesetEntryDraft()] })];
     setRoutingRulesets(nextRulesets);
@@ -62,6 +69,10 @@ export const bindRoutingEvents = ({
   routingSaveBtn?.addEventListener('click', saveRoutingRules);
 
   routingRulesetPresetSelect?.addEventListener('change', () => {
+    if (!canEditRouting()) {
+      routingRulesetPresetSelect.value = '';
+      return;
+    }
     const builtin = getBuiltinRulesetById(routingRulesetPresetSelect.value);
     if (!builtin) return;
     const nextRulesets = [...getRoutingRulesets(), createRoutingRulesetDraft({
@@ -79,6 +90,10 @@ export const bindRoutingEvents = ({
   });
 
   routingPresetSelect?.addEventListener('change', () => {
+    if (!canEditRouting()) {
+      routingPresetSelect.value = '';
+      return;
+    }
     const rulesToAppend = applyRoutingPreset(routingPresetSelect.value);
     if (!rulesToAppend.length) return;
     const nextRules = [...getRoutingRules(), ...rulesToAppend];

@@ -126,6 +126,25 @@ export class ConfigStore {
     this.ensureFiles();
   }
 
+  rotateJsonBackups(filePath, maxBackups = 5) {
+    if (!fs.existsSync(filePath)) return;
+
+    const oldest = `${filePath}.bak.${maxBackups}`;
+    if (fs.existsSync(oldest)) {
+      fs.rmSync(oldest);
+    }
+
+    for (let index = maxBackups - 1; index >= 1; index -= 1) {
+      const current = `${filePath}.bak.${index}`;
+      const next = `${filePath}.bak.${index + 1}`;
+      if (fs.existsSync(current)) {
+        fs.renameSync(current, next);
+      }
+    }
+
+    fs.copyFileSync(filePath, `${filePath}.bak.1`);
+  }
+
   ensureFiles() {
     const bootstrap = [
       [this.paths.settingsPath, defaultSettings(this.paths, this.options)],
@@ -179,7 +198,10 @@ export class ConfigStore {
     }
   }
 
-  writeJson(filePath, value) {
+  writeJson(filePath, value, options = {}) {
+    if (options.backup) {
+      this.rotateJsonBackups(filePath);
+    }
     const tmp = `${filePath}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
     fs.renameSync(tmp, filePath);
@@ -199,7 +221,7 @@ export class ConfigStore {
   }
 
   saveSettings(settings) {
-    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options));
+    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options), { backup: true });
   }
 
   rotateLogs() {

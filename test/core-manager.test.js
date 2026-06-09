@@ -1251,6 +1251,27 @@ test('getSettingsSnapshot recovers invalid routingItems from legacy routing fiel
   assert.equal(settings.nodeGroups[0].name, 'JP Pool');
 });
 
+test('getSettingsSnapshot recovers legacy routing fields when routingItems is an empty default', () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    customRules: [{ id: 'rule-legacy', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    rulesets: [{ id: 'rs-legacy', kind: 'builtin', presetId: 'telegram', name: 'Telegram', enabled: true, target: 'direct', entries: [], note: '' }],
+    routingItems: []
+  });
+  const manager = new CoreManager(createPaths(), store);
+
+  const settings = manager.getSettingsSnapshot();
+
+  assert.equal(settings.customRules.length, 1);
+  assert.equal(settings.customRules[0].id, 'rule-legacy');
+  assert.equal(settings.rulesets.length, 1);
+  assert.equal(settings.rulesets[0].id, 'rs-legacy');
+  assert.equal(settings.routingItems.length, 2);
+  assert.equal(settings.routingItems[0].kind, 'rule');
+  assert.equal(settings.routingItems[1].kind, 'builtin_ruleset');
+});
+
 test('updateSettings keeps node group routing items when the group is temporarily empty', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 

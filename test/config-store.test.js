@@ -117,3 +117,18 @@ test('normalizes persisted group sort order ids', () => {
 
   assert.deepEqual(settings.groupSortOrder, ['g2', 'g1']);
 });
+
+test('backs up settings before saving', () => {
+  const paths = createPaths();
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+
+  store.saveSettings({ ...store.getSettings(), routingMode: 'global' });
+  store.saveSettings({ ...store.getSettings(), routingMode: 'direct' });
+
+  const newestBackup = JSON.parse(fs.readFileSync(`${paths.settingsPath}.bak.1`, 'utf8'));
+  const olderBackup = JSON.parse(fs.readFileSync(`${paths.settingsPath}.bak.2`, 'utf8'));
+
+  assert.equal(newestBackup.routingMode, 'global');
+  assert.equal(olderBackup.routingMode, 'rule');
+  assert.equal(store.getSettings().routingMode, 'direct');
+});

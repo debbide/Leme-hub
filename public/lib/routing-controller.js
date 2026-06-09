@@ -74,7 +74,7 @@ export const createRoutingController = ({
   const updateRoutingSaveState = () => {
     if (!routingSaveBtn) return;
     const inSavedFlash = !routingDirty && !routingSavingState && Date.now() < routingSavedFlashUntil;
-    routingSaveBtn.disabled = routingSavingState || routingLoadingState || !routingDirty;
+    routingSaveBtn.disabled = routingSavingState || routingLoadingState || !routingLoaded || !routingDirty;
     routingSaveBtn.textContent = routingSavingState
       ? '保存中...'
       : routingDirty
@@ -82,6 +82,20 @@ export const createRoutingController = ({
         : inSavedFlash
           ? '已保存'
           : '保存规则';
+  };
+
+  const ensureRoutingEditable = () => {
+    if (routingLoaded && !routingLoadingState) return true;
+
+    if (routingLoadingState) {
+      showToast('分流规则正在加载，加载完成后再操作', 'info');
+      return false;
+    }
+
+    showToast('分流规则还没有加载完成，正在重新加载', 'info');
+    loadRoutingRules(true);
+    updateRoutingSaveState();
+    return false;
   };
 
   const renderRoutingRulesetPresetOptions = () => {
@@ -405,42 +419,46 @@ export const createRoutingController = ({
     renderRoutingModeBanner,
   });
 
-  const saveRoutingRules = () => saveRoutingRulesData({
-    routingSavingState,
-    routingRules,
-    normalizeRoutingRule,
-    buildRoutingRuleErrors,
-    setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
-    routingRulesets,
-    routingRowOrder,
-    normalizeRoutingRulesetEntry,
-    buildRoutingRulesetErrors,
-    setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },
-    setRoutingRowOrder: (routingItems = []) => { syncRoutingRowOrder(routingItems); },
-    setRoutingDirty: (value) => { routingDirty = value; },
-    renderRoutingRules,
-    showToast,
-    setRoutingSavingState: (value) => { routingSavingState = value; },
-    updateRoutingSaveState,
-    requestJson,
-    createRoutingRuleDraft,
-    createRoutingRulesetDraft,
-    setRoutingRules: (value) => { routingRules = value; },
-    setRoutingRulesets: (value) => { routingRulesets = value; },
-    buildRoutingItemsFromUnifiedRows,
-    nodeGroups: getNodeGroups(),
-    setNodeGroups,
-    routingBuiltinRulesets,
-    setRoutingBuiltinRulesets: (value) => { routingBuiltinRulesets = value || []; },
-    currentCoreState: getCurrentCoreState(),
-    setRoutingNodeOptions,
-    renderRoutingRulesetPresetOptions,
-    updateCoreStatus,
-    extractRoutingObservability,
-    setRoutingObservabilityEntries: (value) => { routingObservabilityEntries = value || []; },
-    setRoutingSavedFlashUntil: (value) => { routingSavedFlashUntil = value; },
-    getRoutingMode,
-  });
+  const saveRoutingRules = () => {
+    if (!ensureRoutingEditable()) return;
+
+    return saveRoutingRulesData({
+      routingSavingState,
+      routingRules,
+      normalizeRoutingRule,
+      buildRoutingRuleErrors,
+      setRoutingRuleErrors: (value) => { routingRuleErrors = value; },
+      routingRulesets,
+      routingRowOrder,
+      normalizeRoutingRulesetEntry,
+      buildRoutingRulesetErrors,
+      setRoutingRulesetErrors: (value) => { routingRulesetErrors = value; },
+      setRoutingRowOrder: (routingItems = []) => { syncRoutingRowOrder(routingItems); },
+      setRoutingDirty: (value) => { routingDirty = value; },
+      renderRoutingRules,
+      showToast,
+      setRoutingSavingState: (value) => { routingSavingState = value; },
+      updateRoutingSaveState,
+      requestJson,
+      createRoutingRuleDraft,
+      createRoutingRulesetDraft,
+      setRoutingRules: (value) => { routingRules = value; },
+      setRoutingRulesets: (value) => { routingRulesets = value; },
+      buildRoutingItemsFromUnifiedRows,
+      nodeGroups: getNodeGroups(),
+      setNodeGroups,
+      routingBuiltinRulesets,
+      setRoutingBuiltinRulesets: (value) => { routingBuiltinRulesets = value || []; },
+      currentCoreState: getCurrentCoreState(),
+      setRoutingNodeOptions,
+      renderRoutingRulesetPresetOptions,
+      updateCoreStatus,
+      extractRoutingObservability,
+      setRoutingObservabilityEntries: (value) => { routingObservabilityEntries = value || []; },
+      setRoutingSavedFlashUntil: (value) => { routingSavedFlashUntil = value; },
+      getRoutingMode,
+    });
+  };
 
   const loadRoutingHits = async () => {
     try {
@@ -497,6 +515,8 @@ export const createRoutingController = ({
     renderRoutingObservability,
     loadRoutingRules,
     saveRoutingRules,
+    ensureRoutingEditable,
+    isRoutingLoaded: () => routingLoaded,
     loadRoutingHits,
     markRoutingHitsAsSeen,
     updateRoutingLogNavBadge,

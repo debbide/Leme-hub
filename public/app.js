@@ -719,6 +719,7 @@ bindRoutingEvents({
   renderRoutingRules: () => routingController.renderRoutingRules(),
   routingSaveBtn,
   saveRoutingRules: () => routingController.saveRoutingRules(),
+  ensureRoutingEditable: () => routingController.ensureRoutingEditable(),
   routingRulesetPresetSelect,
   getBuiltinRulesetById: (presetId) => routingController.getBuiltinRulesetById(routingController.getRoutingBuiltinRulesets(), presetId),
   showToast,
