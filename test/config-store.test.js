@@ -132,3 +132,17 @@ test('backs up settings before saving', () => {
   assert.equal(olderBackup.routingMode, 'rule');
   assert.equal(store.getSettings().routingMode, 'direct');
 });
+
+test('can save maintenance settings without rotating backups', () => {
+  const paths = createPaths();
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+
+  store.saveSettings({ ...store.getSettings(), routingMode: 'global' });
+  store.saveSettings({ ...store.getSettings(), routingMode: 'direct' }, { backup: false });
+
+  const newestBackup = JSON.parse(fs.readFileSync(`${paths.settingsPath}.bak.1`, 'utf8'));
+
+  assert.equal(newestBackup.routingMode, 'rule');
+  assert.equal(fs.existsSync(`${paths.settingsPath}.bak.2`), false);
+  assert.equal(store.getSettings().routingMode, 'direct');
+});

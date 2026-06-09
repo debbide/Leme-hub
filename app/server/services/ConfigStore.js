@@ -220,8 +220,9 @@ export class ConfigStore {
     return this.writeJson(this.paths.nodesPath, nodes);
   }
 
-  saveSettings(settings) {
-    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options), { backup: true });
+  saveSettings(settings, options = {}) {
+    const backup = options.backup !== false;
+    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options), { backup });
   }
 
   rotateLogs() {

@@ -130,8 +130,8 @@ export const getBuiltinRulesets = () => [
   }))
 ];
 
-export const getRuntimeOptions = (manager, settings = manager.store.getSettings(), nodes = manager.store.getNodes()) => {
-  const snapshot = manager.getSettingsSnapshot();
+export const getRuntimeOptions = (manager, settings = null, nodes = manager.store.getNodes()) => {
+  const snapshot = settings || manager.getSettingsSnapshot();
   return {
     activeNodeId: manager.resolveActiveNodeId(snapshot, nodes),
     systemDefaultNodeId: manager.resolveSystemProxyDefaultNodeId(snapshot, nodes),

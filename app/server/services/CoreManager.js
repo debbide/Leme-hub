@@ -431,12 +431,12 @@ export class CoreManager {
     });
   }
 
-  getRuntimeOptions(settings = this.store.getSettings(), nodes = this.store.getNodes()) {
+  getRuntimeOptions(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
     return statusManager.getRuntimeOptions(this, settings, nodes);
   }
 
-  async updateSettings(patch) {
-    return settingsManager.updateSettings(this, patch);
+  async updateSettings(patch, options = {}) {
+    return settingsManager.updateSettings(this, patch, options);
   }
 
   getStatus() {
@@ -609,8 +609,8 @@ export class CoreManager {
     return setNodeCountryOverrideForManager(this, nodeId, countryCode);
   }
 
-  syncAutoCountryNodeGroups(nodes, countryByNodeId = null) {
-    return syncAutoCountryNodeGroupsForManager(this, nodes, countryByNodeId);
+  syncAutoCountryNodeGroups(nodes, countryByNodeId = null, options = {}) {
+    return syncAutoCountryNodeGroupsForManager(this, nodes, countryByNodeId, options);
   }
 
   getNodeGroups() {

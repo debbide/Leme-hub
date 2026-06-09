@@ -113,8 +113,12 @@ export const testNodes = async (manager, nodeIds = [], options = {}) => manager.
 });
 
 export const testNodeGroups = async (manager, groupIds = [], options = {}) => {
-  const settings = manager.getSettingsSnapshot();
+  let settings = manager.getSettingsSnapshot();
   const nodes = manager.store.getNodes();
+  settings = {
+    ...settings,
+    nodeGroups: await manager.getNodeGroupsResolved()
+  };
   const requestedGroupIds = Array.isArray(groupIds)
     ? [...new Set(groupIds.map((groupId) => String(groupId || '').trim()).filter(Boolean))]
     : (groupIds ? [String(groupIds).trim()] : []);
@@ -151,7 +155,7 @@ export const testNodeGroups = async (manager, groupIds = [], options = {}) => {
   });
   const testedAt = new Date().toISOString();
   let latestSettings = manager.persistNodeGroupLatencyResults(measurement.results || [], {
-    settings: manager.getSettingsSnapshot(),
+    settings,
     testedAt
   }).settings;
   const switchedGroups = [];

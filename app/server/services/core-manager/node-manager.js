@@ -83,7 +83,7 @@ export const saveNodes = (manager, nodes) => {
   manager.store.saveSettings({
     ...settings,
     activeNodeId: manager.resolveActiveNodeId(settings, savedNodes)
-  });
+  }, { backup: false });
   return savedNodes;
 };
 

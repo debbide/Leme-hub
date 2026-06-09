@@ -9,6 +9,7 @@ import { ACTIVE_NODE_SELECTOR_TAG } from '../app/proxy/ProxyService.js';
 
 const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]) => {
   let nodes = [...initialNodes];
+  const saveCalls = [];
   const settings = {
     proxyListenHost: '127.0.0.1',
     proxyBasePort: 20000,
@@ -41,7 +42,12 @@ const createStore = (initialNodes = [{ id: 'n1', type: 'socks', server: '127.0.0
       nodes = nextNodes;
       return nodes;
     },
-    saveSettings: (nextSettings) => {
+    clearSaveCalls: () => {
+      saveCalls.length = 0;
+    },
+    getSaveCalls: () => saveCalls,
+    saveSettings: (nextSettings, options = {}) => {
+      saveCalls.push({ settings: nextSettings, options });
       Object.assign(settings, nextSettings);
       return settings;
     }
@@ -1131,7 +1137,10 @@ test('selectNodeGroupNode switches a running selector group without restarting',
   manager.proxyService = { runtimeOptions: null };
   manager.clashApiService = {
     waitUntilReady: async () => calls.push('waitUntilReady'),
-    setSelector: async (groupTag, outboundTag) => calls.push(['setSelector', groupTag, outboundTag]),
+    setSelector: async (groupTag, outboundTag) => {
+      assert.equal(manager.getSettingsSnapshot().nodeGroups[0].selectedNodeId, 'n2');
+      calls.push(['setSelector', groupTag, outboundTag]);
+    },
     setListenHost() {}
   };
   let restarted = false;
@@ -1149,6 +1158,31 @@ test('selectNodeGroupNode switches a running selector group without restarting',
   assert.equal(result.restartRequired, false);
   assert.equal(result.settings.nodeGroups[0].selectedNodeId, 'n2');
   assert.equal(manager.getSettingsSnapshot().nodeGroups[0].selectedNodeId, 'n2');
+});
+
+test('selectNodeGroupNode rolls back persisted selection when hot switch fails', async () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+
+  await manager.updateSettings({
+    nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n1' }]
+  });
+
+  manager.state.status = 'running';
+  manager.proxyService = { runtimeOptions: null };
+  manager.clashApiService = {
+    waitUntilReady: async () => {},
+    setSelector: async () => {
+      throw new Error('selector unavailable');
+    },
+    setListenHost() {}
+  };
+
+  await assert.rejects(() => manager.selectNodeGroupNode('g1', 'n2'), /selector unavailable/);
+
+  assert.equal(manager.getSettingsSnapshot().nodeGroups[0].selectedNodeId, 'n1');
 });
 
 test('selectNodeGroupNode keeps auto-switch system proxy group changes restart-free', async () => {
@@ -1270,6 +1304,23 @@ test('getSettingsSnapshot recovers legacy routing fields when routingItems is an
   assert.equal(settings.routingItems.length, 2);
   assert.equal(settings.routingItems[0].kind, 'rule');
   assert.equal(settings.routingItems[1].kind, 'builtin_ruleset');
+});
+
+test('getSettingsSnapshot returns repaired settings without saving during reads', () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    customRules: [{ id: 'rule-legacy', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    routingItems: []
+  });
+  store.clearSaveCalls();
+  const manager = new CoreManager(createPaths(), store);
+
+  const settings = manager.getSettingsSnapshot();
+
+  assert.equal(settings.customRules.length, 1);
+  assert.equal(settings.routingItems.length, 1);
+  assert.equal(store.getSaveCalls().length, 0);
 });
 
 test('updateSettings keeps node group routing items when the group is temporarily empty', async () => {
@@ -1433,6 +1484,21 @@ test('getStatus exposes system proxy auto switch profile and effective node', as
   assert.equal(status.proxy.systemProxyAutoSwitch.nextAt, '2026-04-15T10:15:00.000Z');
 });
 
+test('getRuntimeOptions uses the provided settings snapshot', () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]));
+  const settings = {
+    ...manager.getSettingsSnapshot(),
+    activeNodeId: 'n2'
+  };
+
+  const runtime = manager.getRuntimeOptions(settings, manager.store.getNodes());
+
+  assert.equal(runtime.activeNodeId, 'n2');
+});
+
 test('getRoutingHits expands node group selectors to the current node name', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', name: 'SG 01', type: 'socks', server: 'one.example', port: 1080 },
@@ -1535,6 +1601,7 @@ test('runSystemProxyAutoSwitchTick rotates the selected group node and persists 
     setSelector: async (groupTag, outboundTag) => selectorCalls.push(['setSelector', groupTag, outboundTag]),
     setListenHost() {}
   };
+  manager.store.clearSaveCalls();
 
   const originalRandom = Math.random;
   Math.random = () => 0;
@@ -1547,9 +1614,54 @@ test('runSystemProxyAutoSwitchTick rotates the selected group node and persists 
     assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
     assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
     assert.equal(settings.systemProxyAutoSwitchLastAt !== null, true);
+    assert.equal(manager.store.getSaveCalls().at(-1).options.backup, false);
   } finally {
     Math.random = originalRandom;
   }
+});
+
+test('persistNodeGroupLatencyResults saves latency cache without rotating backups', () => {
+  const manager = new CoreManager(createPaths(), createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]));
+  manager.store.clearSaveCalls();
+
+  const result = manager.persistNodeGroupLatencyResults([
+    { id: 'n1', ok: true, latencyMs: 88 }
+  ], {
+    settings: manager.getSettingsSnapshot(),
+    testedAt: '2026-01-01T00:00:00.000Z'
+  });
+
+  assert.equal(result.latencyCache.results.n1.latencyMs, 88);
+  assert.equal(manager.store.getSaveCalls().length, 1);
+  assert.equal(manager.store.getSaveCalls()[0].options.backup, false);
+});
+
+test('testNodeGroups can test resolved auto country groups', async () => {
+  const store = createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]);
+  const manager = new CoreManager(createPaths(), store);
+  manager.state.status = 'running';
+  manager.getNodeRecords = async () => ([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080, countryCode: 'JP' },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081, countryCode: 'JP' }
+  ]);
+  manager.proxyService = {
+    testNodes: async (ids) => ids.map((id, index) => ({ id, ok: true, latencyMs: 100 + index })),
+    runtimeOptions: null,
+    setNodes() {}
+  };
+  store.clearSaveCalls();
+
+  const result = await manager.testNodeGroups(['country-auto-jp'], { applySelection: false });
+
+  assert.deepEqual(result.results.map((item) => item.id), ['n1', 'n2']);
+  assert.equal(result.nodeGroups.some((group) => group.id === 'country-auto-jp'), true);
+  assert.equal(store.getSaveCalls().length, 1);
+  assert.equal(store.getSaveCalls()[0].options.backup, false);
 });
 
 test('runNodeGroupAutoTestTick tests groups and switches selector to the faster node', async () => {
@@ -2178,6 +2290,32 @@ test('setNodeCountryOverride keeps display-only country changes restart-free whi
   assert.equal(result.autoRestarted, false);
   assert.equal(result.restartRequired, false);
   assert.equal(result.node.countryCodeOverride, 'JP');
+});
+
+test('getNodeGroupsResolved computes auto country groups without saving during reads', async () => {
+  const store = createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]);
+  const manager = new CoreManager(createPaths(), store);
+  manager.getNodeRecords = async () => ([{
+    id: 'n1',
+    type: 'socks',
+    server: 'one.example',
+    port: 1080,
+    countryCode: 'JP'
+  }]);
+  store.clearSaveCalls();
+
+  const groups = await manager.getNodeGroupsResolved();
+
+  assert.equal(groups.some((group) => group.id === 'country-auto-jp' && group.nodeIds.includes('n1')), true);
+  assert.equal(store.getSaveCalls().length, 0);
+
+  manager.proxyService = { runtimeOptions: null };
+  const result = await manager.selectNodeGroupNode('country-auto-jp', 'n1');
+
+  assert.equal(result.settings.nodeGroups.some((group) => group.id === 'country-auto-jp'), true);
+  assert.equal(store.getSaveCalls().length, 1);
 });
 
 test('updateNode replaces form-managed fields while preserving local port', async () => {

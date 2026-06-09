@@ -38,10 +38,11 @@ export const createGroup = async (manager, name) => {
   const trimmed = String(name || '').trim();
   if (!trimmed) throw createHttpError('Group name cannot be empty', 400);
   const settings = manager.getSettingsSnapshot();
+  if ((settings.groups || []).includes(trimmed)) {
+    return { groups: manager.getGroups() };
+  }
   const groups = [...new Set([...(settings.groups || []), trimmed])];
   manager.store.saveSettings({ ...settings, groups });
-  if (groups.includes(trimmed)) return { groups: manager.getGroups() };
-  manager.store.saveSettings({ ...settings, groups: [...groups, trimmed] });
   return { groups: manager.getGroups() };
 };
 
@@ -174,8 +175,7 @@ export const setNodeCountryOverride = async (manager, nodeId, countryCode) => {
   };
 };
 
-export const syncAutoCountryNodeGroups = (manager, nodes, countryByNodeId = null) => {
-  const settings = manager.getSettingsSnapshot();
+const buildAutoCountryNodeGroups = (settings, nodes, countryByNodeId = null) => {
   const allNodeGroups = Array.isArray(settings.nodeGroups) ? settings.nodeGroups : [];
   const manualNodeGroups = allNodeGroups.filter((group) => !String(group.id || '').startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX));
   const existingAutoGroupMap = new Map(
@@ -221,11 +221,21 @@ export const syncAutoCountryNodeGroups = (manager, nodes, countryByNodeId = null
       };
     });
 
-  const normalizedNodeGroups = normalizeNodeGroups([...manualNodeGroups, ...autoNodeGroups], nodes || []);
+  return normalizeNodeGroups([...manualNodeGroups, ...autoNodeGroups], nodes || []);
+};
+
+export const syncAutoCountryNodeGroups = (manager, nodes, countryByNodeId = null, options = {}) => {
+  const settings = options.settings || manager.getSettingsSnapshot();
+  const normalizedNodeGroups = buildAutoCountryNodeGroups(settings, nodes, countryByNodeId);
+  if (options.save === false) {
+    return normalizedNodeGroups;
+  }
+
   manager.store.saveSettings({
     ...settings,
     nodeGroups: normalizedNodeGroups
-  });
+  }, { backup: options.backup !== true ? false : true });
+  return normalizedNodeGroups;
 };
 
 export const getNodeGroups = (manager) => manager.getSettingsSnapshot().nodeGroups || [];
@@ -241,7 +251,10 @@ export const getNodeGroupsResolved = async (manager) => {
     const countryByNodeId = new Map(
       nodeRecords.map((node) => [node.id, normalizeCountryCode(node.countryCode)])
     );
-    manager.syncAutoCountryNodeGroups(nodes, countryByNodeId);
+    return manager.syncAutoCountryNodeGroups(nodes, countryByNodeId, {
+      settings: manager.getSettingsSnapshot(),
+      save: false
+    });
   } catch {
     // Keep existing node group state when geo enrichment is unavailable.
   }
@@ -364,37 +377,52 @@ export const updateNodeGroupNodes = async (manager, groupId, nodeIds) => {
 };
 
 export const selectNodeGroupNode = async (manager, groupId, selectedNodeId) => {
-  const settings = manager.getSettingsSnapshot();
+  let settings = manager.getSettingsSnapshot();
   const normalizedGroupId = String(groupId || '').trim();
   if (!normalizedGroupId) {
     throw createHttpError('Node group id is required', 400);
   }
 
   const nodes = manager.store.getNodes();
-  const existingGroup = (settings.nodeGroups || []).find((group) => group.id === normalizedGroupId);
+  let currentGroups = settings.nodeGroups || [];
+  let existingGroup = currentGroups.find((group) => group.id === normalizedGroupId);
+  if (!existingGroup && normalizedGroupId.startsWith(AUTO_COUNTRY_NODE_GROUP_PREFIX)) {
+    currentGroups = await manager.getNodeGroupsResolved();
+    settings = {
+      ...settings,
+      nodeGroups: currentGroups
+    };
+    existingGroup = currentGroups.find((group) => group.id === normalizedGroupId);
+  }
   if (!existingGroup) {
     throw createHttpError('Node group not found', 404);
   }
 
   const normalizedSelectedNodeId = selectedNodeId == null ? null : String(selectedNodeId).trim();
   const nextGroups = normalizeNodeGroups(
-    (settings.nodeGroups || []).map((group) => group.id === normalizedGroupId
+    currentGroups.map((group) => group.id === normalizedGroupId
       ? { ...group, selectedNodeId: normalizedSelectedNodeId }
       : group),
     nodes
   );
   const nextGroup = nextGroups.find((group) => group.id === normalizedGroupId) || null;
 
-  if (manager.state.status === 'running') {
-    await manager.clashApiService.waitUntilReady();
-    await manager.applyRunningNodeGroupSelector(nextGroup, nodes);
-  }
-
   const saved = manager.store.saveSettings({
     ...settings,
     nodeGroups: nextGroups
   });
   manager.proxyService.runtimeOptions = manager.getRuntimeOptions(saved, nodes);
+
+  if (manager.state.status === 'running') {
+    try {
+      await manager.clashApiService.waitUntilReady();
+      await manager.applyRunningNodeGroupSelector(nextGroup, nodes);
+    } catch (error) {
+      const rolledBack = manager.store.saveSettings(settings, { backup: false });
+      manager.proxyService.runtimeOptions = manager.getRuntimeOptions(rolledBack, nodes);
+      throw error;
+    }
+  }
 
   return {
     settings: { ...saved },

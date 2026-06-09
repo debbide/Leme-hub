@@ -19,6 +19,20 @@ import {
   validatePort
 } from './state-utils.js';
 
+const MAINTENANCE_SETTINGS_KEYS = new Set([
+  'nodeGroupLatencyCache',
+  'systemProxyAutoSwitchLastAt'
+]);
+
+const shouldBackupSettingsPatch = (patch = {}, options = {}) => {
+  if (Object.prototype.hasOwnProperty.call(options, 'backup')) {
+    return options.backup !== false;
+  }
+
+  const keys = Object.keys(patch || {});
+  return !keys.length || keys.some((key) => !MAINTENANCE_SETTINGS_KEYS.has(key));
+};
+
 export const getSettingsSnapshot = (manager) => {
   const settings = manager.store.getSettings();
   const normalizedSubscriptions = Array.isArray(settings.subscriptions)
@@ -74,35 +88,6 @@ export const getSettingsSnapshot = (manager) => {
 
   ({ customRules, rulesets } = routingItemsToLegacySettings(normalizedRoutingItems));
 
-  if (!Array.isArray(settings.routingItems)
-    || JSON.stringify(settings.routingItems) !== JSON.stringify(normalizedRoutingItems)
-    || JSON.stringify(settings.customRules || []) !== JSON.stringify(customRules)
-    || JSON.stringify(settings.rulesets || []) !== JSON.stringify(rulesets)
-    || JSON.stringify(settings.nodeGroups || []) !== JSON.stringify(normalizedNodeGroups)
-    || settings.nodeGroupAutoTestIntervalSec !== normalizedNodeGroupAutoTestIntervalSec
-    || JSON.stringify(settings.nodeGroupLatencyCache || {}) !== JSON.stringify(normalizedNodeGroupLatencyCache)
-    || (settings.speedtestUrl || '') !== normalizedSpeedtestUrl
-    || !!settings.systemProxyAutoSwitchEnabled !== normalizedSystemProxyAutoSwitch.enabled
-    || (settings.systemProxyAutoSwitchGroupId ?? null) !== normalizedSystemProxyAutoSwitch.groupId
-    || settings.systemProxyAutoSwitchIntervalSec !== normalizedSystemProxyAutoSwitch.intervalSec
-    || (settings.systemProxyAutoSwitchLastAt ?? null) !== normalizedSystemProxyAutoSwitch.lastAt) {
-    return manager.store.saveSettings({
-      ...settings,
-      routingItems: normalizedRoutingItems,
-      customRules,
-      rulesets,
-      nodeGroups: normalizedNodeGroups,
-      subscriptions: normalizedSubscriptions,
-      nodeGroupAutoTestIntervalSec: normalizedNodeGroupAutoTestIntervalSec,
-      nodeGroupLatencyCache: normalizedNodeGroupLatencyCache,
-      speedtestUrl: normalizedSpeedtestUrl,
-      systemProxyAutoSwitchEnabled: normalizedSystemProxyAutoSwitch.enabled,
-      systemProxyAutoSwitchGroupId: normalizedSystemProxyAutoSwitch.groupId,
-      systemProxyAutoSwitchIntervalSec: normalizedSystemProxyAutoSwitch.intervalSec,
-      systemProxyAutoSwitchLastAt: normalizedSystemProxyAutoSwitch.lastAt
-    });
-  }
-
   return {
     ...settings,
     routingItems: normalizedRoutingItems,
@@ -121,7 +106,7 @@ export const getSettingsSnapshot = (manager) => {
 
 };
 
-export const updateSettings = async (manager, patch) => {
+export const updateSettings = async (manager, patch, options = {}) => {
   const current = manager.getSettingsSnapshot();
   const next = {
     ...current,
@@ -331,7 +316,7 @@ export const updateSettings = async (manager, patch) => {
     systemProxyAutoSwitchGroupId: systemProxyAutoSwitch.groupId,
     systemProxyAutoSwitchIntervalSec: systemProxyAutoSwitch.intervalSec,
     systemProxyAutoSwitchLastAt: systemProxyAutoSwitchLastAt
-  });
+  }, { backup: shouldBackupSettingsPatch(patch, options) });
   if (systemProxyCaptureWillBeDisabled) {
     const disabledProxy = await manager.systemProxyManager.disable();
     manager.state.systemProxy = manager.buildSystemProxyState(disabledProxy);

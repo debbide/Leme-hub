@@ -210,7 +210,7 @@ export const persistNodeGroupLatencyResults = (manager, results = [], options = 
   const savedSettings = manager.store.saveSettings({
     ...settings,
     nodeGroupLatencyCache: latencyCache
-  });
+  }, { backup: false });
 
   return {
     settings: savedSettings,
