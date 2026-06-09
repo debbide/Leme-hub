@@ -4694,7 +4694,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
   }
 }
 
-/* Dashboard vertical fill: stretch telemetry instead of adding log noise */
+/* Dashboard stacked fill: node controls first, wide telemetry below */
 #dashboard-view.view.active {
   display: flex;
   flex-direction: column;
@@ -4716,8 +4716,89 @@ button:active:not(:disabled):not(.node-row-float-btn),
 
 .dashboard-control-grid {
   align-items: stretch;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+}
+
+.dashboard-node-panel {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.34fr) minmax(300px, 0.82fr) minmax(500px, 1.34fr);
+  align-items: stretch;
+  align-content: stretch;
+  align-self: start;
+  gap: 0.75rem;
+}
+
+.dashboard-node-panel > .dashboard-panel-head {
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.42rem;
+}
+
+.dashboard-node-panel > .dashboard-panel-head h3 {
+  white-space: nowrap;
+}
+
+.dashboard-node-panel > .dashboard-panel-head .dashboard-apply-status {
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0.2rem 0.48rem;
+  font-size: 0.72rem;
+}
+
+.dashboard-node-panel > .dash-node-select {
+  align-self: center;
+}
+
+.dashboard-node-panel > .dashboard-auto-switch-panel {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: auto minmax(230px, 1fr) minmax(118px, 0.52fr);
+  grid-template-rows: 1fr;
+  gap: 0.5rem 0.62rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-head {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-hint {
+  display: none;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(108px, 128px);
+  gap: 0.48rem;
+  align-items: end;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-field {
+  gap: 0.28rem;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-meta {
+  grid-column: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.dashboard-node-panel .dashboard-auto-switch-meta span {
+  min-height: 26px;
+  padding: 0.24rem 0.5rem;
+  font-size: 0.74rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-runtime-panel {
@@ -4726,25 +4807,38 @@ button:active:not(:disabled):not(.node-row-float-btn),
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.dashboard-runtime-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .dashboard-runtime-panel .dashboard-speed-tile {
+  align-self: stretch;
+  overflow: hidden;
   min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
+  justify-content: stretch;
 }
 
 .dashboard-runtime-panel .speed-sparkline {
-  height: auto;
-  min-height: 170px;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
   align-items: stretch;
+  justify-content: stretch;
+  gap: clamp(5px, 0.7vw, 10px);
   padding: 0.55rem;
 }
 
 .dashboard-runtime-panel .speed-sparkline span {
+  flex: 1 1 0;
   align-self: end;
 }
 
 @media (max-height: 760px) {
   .dashboard-runtime-panel .speed-sparkline {
-    min-height: 120px;
+    min-height: 0;
   }
 }
 
@@ -4753,12 +4847,15 @@ button:active:not(:disabled):not(.node-row-float-btn),
     height: 100%;
   }
 
-  .dashboard-control-grid {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
   .dashboard-runtime-panel .speed-sparkline {
-    min-height: 150px;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .dashboard-node-panel,
+  .dashboard-node-panel > .dashboard-auto-switch-panel {
+    grid-template-columns: 1fr;
   }
 }
 
