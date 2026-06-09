@@ -1950,8 +1950,10 @@ test('importRawNode queues runtime apply when core is already running', async ()
   const manager = new CoreManager(createPaths(), createStore());
   manager.state.status = 'running';
   let restarted = false;
-  manager.restart = async () => {
+  let restartOptions = null;
+  manager.restart = async (options = {}) => {
     restarted = true;
+    restartOptions = options;
     manager.state.status = 'running';
     return manager.getStatus();
   };
@@ -1970,8 +1972,12 @@ test('importRawNode queues runtime apply when core is already running', async ()
   assert.equal(result.restartRequired, false);
   assert.equal(manager.getStatus().nodeApply.state, 'applying');
 
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 180));
   assert.equal(restarted, true);
+  assert.equal(restartOptions.skipValidation, true);
+  assert.equal(restartOptions.waitForAllNodePorts, false);
+  assert.equal(restartOptions.waitNodeIds.length, 1);
+  assert.equal(restartOptions.waitNodeIds[0], manager.store.getNodes()[1].id);
   assert.equal(manager.getStatus().nodeApply.state, 'applied');
   assert.ok(manager.getStatus().nodeApply.lastAppliedAt);
 });
@@ -2031,7 +2037,7 @@ test('queued node apply exposes validation failures in core status', async () =>
   assert.equal(result.applyPending, true);
   assert.equal(manager.getStatus().nodeApply.state, 'applying');
 
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 180));
   const status = manager.getStatus().nodeApply;
   assert.equal(status.state, 'failed');
   assert.match(status.lastError, /missing obfs password/);
@@ -2100,7 +2106,7 @@ test('updateNode queues runtime apply for connection setting edits', async () =>
   assert.equal(result.applyPending, true);
   assert.equal(result.autoRestarted, false);
 
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 180));
   assert.equal(restarted, true);
 });
 
@@ -2125,7 +2131,7 @@ test('deleteNodes removes multiple nodes with one queued apply', async () => {
   assert.equal(result.applyPending, true);
   assert.deepEqual(manager.store.getNodes().map((node) => node.id), ['n3']);
 
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 180));
   assert.equal(restarted, true);
 });
 

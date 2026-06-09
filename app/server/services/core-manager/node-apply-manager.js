@@ -3,9 +3,42 @@ import {
   getNodesRuntimeSignature
 } from './state-utils.js';
 
-export const applyNodeChanges = async (manager, savedNodes) => {
+const NODE_APPLY_DEBOUNCE_MS = 120;
+const MAX_READY_NODE_WAIT_IDS = 16;
+
+const normalizeWaitNodeIds = (nodeIds = []) => [...new Set(
+  (Array.isArray(nodeIds) ? nodeIds : [nodeIds])
+    .map((nodeId) => String(nodeId || '').trim())
+    .filter(Boolean)
+)].slice(0, MAX_READY_NODE_WAIT_IDS);
+
+const getFastNodeRecords = (manager) => manager.getNodeRecords({ enrichGeoIp: false });
+
+const mergePendingWaitNodeIds = (manager, waitNodeIds = []) => {
+  const merged = [
+    ...(Array.isArray(manager._nodeApplyPendingWaitNodeIds) ? manager._nodeApplyPendingWaitNodeIds : []),
+    ...normalizeWaitNodeIds(waitNodeIds)
+  ];
+  manager._nodeApplyPendingWaitNodeIds = normalizeWaitNodeIds(merged);
+};
+
+const buildFastRestartOptions = (waitNodeIds = []) => ({
+  skipValidation: true,
+  waitForAllNodePorts: false,
+  waitNodeIds: normalizeWaitNodeIds(waitNodeIds)
+});
+
+const scheduleApplyQueue = (manager) => {
+  manager._nodeApplyTimer = setTimeout(() => {
+    manager._nodeApplyTimer = null;
+    void manager.runNodeChangesApplyQueue();
+  }, NODE_APPLY_DEBOUNCE_MS);
+  manager._nodeApplyTimer.unref?.();
+};
+
+export const applyNodeChanges = async (manager, savedNodes, options = {}) => {
   if (manager.state.status !== 'running') {
-    const nodes = await manager.getNodeRecords();
+    const nodes = await getFastNodeRecords(manager);
     return {
       nodes,
       restartRequired: false,
@@ -20,7 +53,7 @@ export const applyNodeChanges = async (manager, savedNodes) => {
     const warning = buildDeferredApplyWarning(error.message);
     manager.store.appendLog(`[CoreManager] Auto-apply skipped: ${error.message}`);
     return {
-      nodes: await manager.getNodeRecords(),
+      nodes: await getFastNodeRecords(manager),
       restartRequired: false,
       autoRestarted: false,
       warning,
@@ -28,18 +61,18 @@ export const applyNodeChanges = async (manager, savedNodes) => {
     };
   }
 
-  const core = await manager.restart();
+  const core = await manager.restart(buildFastRestartOptions(options.waitNodeIds));
   return {
-    nodes: await manager.getNodeRecords(),
+    nodes: await getFastNodeRecords(manager),
     restartRequired: false,
     autoRestarted: true,
     core
   };
 };
 
-export const queueNodeChangesApply = async (manager, savedNodes) => {
+export const queueNodeChangesApply = async (manager, savedNodes, options = {}) => {
   if (manager.state.status !== 'running') {
-    const nodes = await manager.getNodeRecords();
+    const nodes = await getFastNodeRecords(manager);
     return {
       nodes,
       restartRequired: false,
@@ -50,6 +83,7 @@ export const queueNodeChangesApply = async (manager, savedNodes) => {
   }
 
   manager._nodeApplyPendingNodes = Array.isArray(savedNodes) ? [...savedNodes] : [];
+  mergePendingWaitNodeIds(manager, options.waitNodeIds);
   manager._nodeApplyLastError = null;
   manager._nodeApplyLastFailedAt = null;
 
@@ -59,12 +93,10 @@ export const queueNodeChangesApply = async (manager, savedNodes) => {
     manager._nodeApplyLastStartedAt = new Date().toISOString();
   }
 
-  const nodes = await manager.getNodeRecords();
+  const nodes = await getFastNodeRecords(manager);
 
   if (shouldStartApply) {
-    setTimeout(() => {
-      void manager.runNodeChangesApplyQueue();
-    }, 0);
+    scheduleApplyQueue(manager);
   }
 
   return {
@@ -80,7 +112,9 @@ export const queueNodeChangesApply = async (manager, savedNodes) => {
 export const runNodeChangesApplyQueue = async (manager) => {
   while (manager._nodeApplyPendingNodes) {
     const nodes = manager._nodeApplyPendingNodes;
+    const waitNodeIds = normalizeWaitNodeIds(manager._nodeApplyPendingWaitNodeIds);
     manager._nodeApplyPendingNodes = null;
+    manager._nodeApplyPendingWaitNodeIds = null;
 
     if (manager.state.status !== 'running') {
       continue;
@@ -92,7 +126,7 @@ export const runNodeChangesApplyQueue = async (manager) => {
         continue;
       }
       if (manager.state.status === 'running') {
-        await manager.restart();
+        await manager.restart(buildFastRestartOptions(waitNodeIds));
         manager._nodeApplyLastAppliedAt = new Date().toISOString();
         manager.store.appendLog('[CoreManager] Queued node changes applied to running core');
       }
@@ -110,9 +144,7 @@ export const runNodeChangesApplyQueue = async (manager) => {
   if (manager._nodeApplyPendingNodes) {
     manager._nodeApplyRunning = true;
     manager._nodeApplyLastStartedAt = new Date().toISOString();
-    setTimeout(() => {
-      void manager.runNodeChangesApplyQueue();
-    }, 0);
+    scheduleApplyQueue(manager);
   }
 };
 
@@ -145,7 +177,7 @@ export const shouldApplyNodeRuntimeChanges = (manager, previousNodes, nextNodes)
 
 export const buildSavedNodeChangeResult = async (manager) => {
   return {
-    nodes: await manager.getNodeRecords(),
+    nodes: await getFastNodeRecords(manager),
     restartRequired: false,
     autoRestarted: false,
     applyPending: false,

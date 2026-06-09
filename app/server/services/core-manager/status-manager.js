@@ -254,7 +254,27 @@ export const getTrafficSnapshot = async (manager) => {
   };
 };
 
-export const getNodeRecords = async (manager) => {
+const applyNodeCountryOverrides = (manager, nodes = []) => nodes.map((node) => {
+  const countryCodeOverride = normalizeCountryCode(node.countryCodeOverride);
+  if (!countryCodeOverride) {
+    return {
+      ...node,
+      countryOverridden: false
+    };
+  }
+
+  return {
+    ...node,
+    countryCode: countryCodeOverride,
+    countryName: manager.resolveCountryName(countryCodeOverride) || node.countryName || countryCodeOverride,
+    flagEmoji: geoFlagFromCountryCode(countryCodeOverride),
+    countryCodeOverride,
+    countryOverridden: true
+  };
+});
+
+export const getNodeRecords = async (manager, options = {}) => {
+  const { enrichGeoIp = true } = options;
   const settings = manager.getSettingsSnapshot();
   const nodes = manager.store.getNodes();
 
@@ -277,25 +297,12 @@ export const getNodeRecords = async (manager) => {
     isRunning: manager.state.status === 'running'
   }));
 
-  const enriched = await manager.geoIpService.enrichNodes(records);
-  return enriched.map((node) => {
-    const countryCodeOverride = normalizeCountryCode(node.countryCodeOverride);
-    if (!countryCodeOverride) {
-      return {
-        ...node,
-        countryOverridden: false
-      };
-    }
+  if (!enrichGeoIp) {
+    return applyNodeCountryOverrides(manager, records);
+  }
 
-    return {
-      ...node,
-      countryCode: countryCodeOverride,
-      countryName: manager.resolveCountryName(countryCodeOverride) || node.countryName || countryCodeOverride,
-      flagEmoji: geoFlagFromCountryCode(countryCodeOverride),
-      countryCodeOverride,
-      countryOverridden: true
-    };
-  });
+  const enriched = await manager.geoIpService.enrichNodes(records);
+  return applyNodeCountryOverrides(manager, enriched);
 };
 
 export const resolveCountryName = (countryCode) => {

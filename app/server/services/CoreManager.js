@@ -137,6 +137,8 @@ export class CoreManager {
     });
 
     this._nodeApplyPendingNodes = null;
+    this._nodeApplyPendingWaitNodeIds = null;
+    this._nodeApplyTimer = null;
     this._nodeApplyRunning = false;
     this._nodeApplyLastError = null;
     this._nodeApplyLastAppliedAt = null;
@@ -485,8 +487,8 @@ export class CoreManager {
     return statusManager.getTrafficSnapshot(this);
   }
 
-  async getNodeRecords() {
-    return statusManager.getNodeRecords(this);
+  async getNodeRecords(options = {}) {
+    return statusManager.getNodeRecords(this, options);
   }
 
   resolveCountryName(countryCode) {
@@ -505,12 +507,12 @@ export class CoreManager {
     return nodeManager.normalizeFrontProxyRefs(this, nodes);
   }
 
-  async applyNodeChanges(savedNodes) {
-    return nodeManager.applyNodeChanges(this, savedNodes);
+  async applyNodeChanges(savedNodes, options = {}) {
+    return nodeManager.applyNodeChanges(this, savedNodes, options);
   }
 
-  async queueNodeChangesApply(savedNodes) {
-    return nodeManager.queueNodeChangesApply(this, savedNodes);
+  async queueNodeChangesApply(savedNodes, options = {}) {
+    return nodeManager.queueNodeChangesApply(this, savedNodes, options);
   }
 
   async runNodeChangesApplyQueue() {
@@ -657,16 +659,16 @@ export class CoreManager {
     return lifecycleManager.bindProcessState(this);
   }
 
-  async start() {
-    return lifecycleManager.start(this);
+  async start(options = {}) {
+    return lifecycleManager.start(this, options);
   }
 
   async stop() {
     return lifecycleManager.stop(this);
   }
 
-  async restart() {
-    return lifecycleManager.restart(this);
+  async restart(options = {}) {
+    return lifecycleManager.restart(this, options);
   }
 
   async testNode(nodeId) {

@@ -15,6 +15,9 @@ const summarizeProcessOutput = (...chunks) => stripAnsi(chunks.join('\n'))
   .slice(-3)
   .join(' | ');
 
+const STOP_FORCE_TIMEOUT_MS = 800;
+const STOP_RESOLVE_TIMEOUT_MS = 2000;
+
 export const resolveExecutablePath = (explicitPath) => {
   if (!explicitPath) {
     throw new Error('ProxyService.start requires a resolved sing-box executable path');
@@ -159,8 +162,37 @@ export const waitForPortReady = (context, port, timeoutMs = 15000, host = contex
   });
 };
 
-export const waitForRuntimeReady = async (context, runtime = {}, host = context.proxyListen, processRef = context.proxyProcess) => {
-  const ports = new Set((context.nodes || []).map((node) => context.getLocalPort(node.id)).filter(Boolean));
+const normalizeNodeIdList = (nodeIds = []) => [...new Set(
+  (Array.isArray(nodeIds) ? nodeIds : [nodeIds])
+    .map((nodeId) => String(nodeId || '').trim())
+    .filter(Boolean)
+)];
+
+export const collectRuntimeReadyPorts = (context, runtime = {}, options = {}) => {
+  const ports = new Set();
+  const waitForAllNodePorts = options.waitForAllNodePorts !== false;
+  const waitNodeIds = normalizeNodeIdList(options.waitNodeIds);
+  const addNodePort = (nodeId) => {
+    if (!nodeId) {
+      return;
+    }
+    const port = context.getLocalPort(nodeId);
+    if (port) {
+      ports.add(port);
+    }
+  };
+
+  if (waitForAllNodePorts) {
+    for (const node of context.nodes || []) {
+      addNodePort(node?.id);
+    }
+  } else {
+    for (const nodeId of waitNodeIds) {
+      addNodePort(nodeId);
+    }
+    addNodePort(runtime.activeNodeId);
+    addNodePort(runtime.systemDefaultNodeId);
+  }
 
   if (runtime.systemProxyEnabled && runtime.systemProxySocksPort) {
     ports.add(runtime.systemProxySocksPort);
@@ -170,11 +202,18 @@ export const waitForRuntimeReady = async (context, runtime = {}, host = context.
     ports.add(runtime.systemProxyHttpPort);
   }
 
-  if (!ports.size) {
+  return [...ports];
+};
+
+export const waitForRuntimeReady = async (context, runtime = {}, host = context.proxyListen, processRef = context.proxyProcess, options = {}) => {
+  const ports = collectRuntimeReadyPorts(context, runtime, options);
+
+  if (!ports.length) {
     return;
   }
 
-  await Promise.all([...ports].map((port) => waitForPortReady(context, port, 15000, host, processRef)));
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 15000;
+  await Promise.all(ports.map((port) => waitForPortReady(context, port, timeoutMs, host, processRef)));
 };
 
 export const reserveEphemeralPort = async (context, host = resolveLoopbackHost(context.proxyListen)) => {
@@ -249,9 +288,9 @@ export const stopProcess = async (processRef) => {
       } catch {
         finish();
       }
-    }, 1500);
+    }, STOP_FORCE_TIMEOUT_MS);
 
-    resolveTimer = setTimeout(finish, 4000);
+    resolveTimer = setTimeout(finish, STOP_RESOLVE_TIMEOUT_MS);
   });
 };
 
@@ -275,7 +314,9 @@ export const startProxyRuntime = async (context, options = {}) => {
   const config = context.generateConfig(runtimeOptions);
   const execPath = resolveExecutablePath(options.binPath);
   context.executablePath = execPath;
-  await validateConfig(context, config, { binPath: execPath });
+  if (!options.skipValidation) {
+    await validateConfig(context, config, { binPath: execPath });
+  }
   writeConfig(config, context.configPath);
   buildRoutingObservabilityLines(runtimeOptions, config)
     .forEach((line) => context.log.log(line));
@@ -299,7 +340,11 @@ export const startProxyRuntime = async (context, options = {}) => {
     context.log.error(`[ProxyService] Failed to start sing-box process: ${error.message}`);
   });
 
-  await waitForRuntimeReady(context, runtimeOptions, context.proxyListen, context.proxyProcess);
+  await waitForRuntimeReady(context, runtimeOptions, context.proxyListen, context.proxyProcess, {
+    waitForAllNodePorts: options.waitForAllNodePorts,
+    waitNodeIds: options.waitNodeIds,
+    timeoutMs: options.readyTimeoutMs
+  });
 
   return {
     started: true,

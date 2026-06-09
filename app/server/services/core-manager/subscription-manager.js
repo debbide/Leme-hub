@@ -186,7 +186,10 @@ export const syncSubscription = async (manager, input) => {
     ...(groupName ? { group: groupName } : {})
   }))));
 
-  const applied = await manager.queueNodeChangesApply(savedNodes);
+  const subscriptionNodeIds = savedNodes
+    .filter((node) => node.subscriptionUrl === url)
+    .map((node) => node.id);
+  const applied = await manager.queueNodeChangesApply(savedNodes, { waitNodeIds: subscriptionNodeIds });
   const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('；') || null;
   const subscription = updateSubscriptionRecord(manager, {
     id: existingRecord?.id,

@@ -174,6 +174,37 @@ test('generates unified system proxy inbounds for rule routing mode', () => {
   assert.equal(config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('system-socks') && rule.outbound === ACTIVE_NODE_SELECTOR_TAG), true);
 });
 
+test('runtime readiness can wait only critical node ports', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080, local_port: 21000 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081, local_port: 21001 },
+    { id: 'n3', type: 'socks', server: '127.0.0.3', port: 1082, local_port: 21002 }
+  ]);
+
+  const ports = service.collectRuntimeReadyPorts({
+    activeNodeId: 'n1',
+    systemDefaultNodeId: 'n2',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 18999,
+    systemProxySocksPort: 18998
+  }, {
+    waitForAllNodePorts: false,
+    waitNodeIds: ['n3']
+  });
+
+  assert.deepEqual(new Set(ports), new Set([21000, 21001, 21002, 18998, 18999]));
+
+  const activeOnlyPorts = service.collectRuntimeReadyPorts({
+    activeNodeId: 'n1',
+    systemDefaultNodeId: 'n1'
+  }, {
+    waitForAllNodePorts: false
+  });
+
+  assert.deepEqual(activeOnlyPorts, [21000]);
+});
+
 test('skips reserved system proxy ports when assigning node local ports', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd(), basePort: 20099 });
   service.setNodes([

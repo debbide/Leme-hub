@@ -91,6 +91,10 @@ export const mergeAndSaveNodes = (manager, incomingNodes) => {
   return manager.saveNodes(mergeUniqueNodes(manager.store.getNodes(), incomingNodes));
 };
 
+const getNodeIds = (nodes = []) => (Array.isArray(nodes) ? nodes : [])
+  .map((node) => String(node?.id || '').trim())
+  .filter(Boolean);
+
 export const importProxyLink = async (manager, link, group = null) => {
   const normalizedLink = manager.proxyService.normalizeManualImportContent
     ? manager.proxyService.normalizeManualImportContent(link)
@@ -116,7 +120,7 @@ export const importProxyLink = async (manager, link, group = null) => {
   const existingNodes = manager.store.getNodes();
   const duplicateCount = countPotentialDuplicateNodes(existingNodes, validNodes);
   const savedNodes = manager.saveNodes(appendNodes(existingNodes, validNodes));
-  const applied = await manager.queueNodeChangesApply(savedNodes);
+  const applied = await manager.queueNodeChangesApply(savedNodes, { waitNodeIds: getNodeIds(validNodes) });
   const warning = [applied.warning, buildInvalidNodeWarning(invalidNodes)].filter(Boolean).join('; ') || null;
   return {
     node: applied.nodes.find((item) => item.id === validNodes[0].id),
@@ -140,7 +144,7 @@ export const importRawNode = async (manager, rawNode) => {
   }
 
   const savedNodes = manager.saveNodes(nextNodes);
-  return manager.queueNodeChangesApply(savedNodes);
+  return manager.queueNodeChangesApply(savedNodes, { waitNodeIds: getNodeIds(addedNodes) });
 };
 
 export const updateNode = async (manager, nodeId, patch) => {
@@ -186,7 +190,7 @@ export const updateNode = async (manager, nodeId, patch) => {
 
   const savedNodes = manager.saveNodes(nodes);
   const applied = shouldApplyRuntimeChanges
-    ? await manager.queueNodeChangesApply(savedNodes)
+    ? await manager.queueNodeChangesApply(savedNodes, { waitNodeIds: [nodeId] })
     : await manager.buildSavedNodeChangeResult();
   return {
     node: applied.nodes.find((item) => item.id === nodeId),

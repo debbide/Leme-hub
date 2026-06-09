@@ -46,7 +46,7 @@ export const bindProcessState = (manager) => {
   });
 };
 
-export const start = async (manager) => {
+export const start = async (manager, options = {}) => {
   let binary = null;
 
   try {
@@ -60,7 +60,11 @@ export const start = async (manager) => {
     manager.proxyService.setNodes(nodes);
     const result = await manager.proxyService.start({
       binPath: binary.executablePath,
-      runtime: manager.getRuntimeOptions(settings, nodes)
+      runtime: manager.getRuntimeOptions(settings, nodes),
+      skipValidation: !!options.skipValidation,
+      waitForAllNodePorts: options.waitForAllNodePorts,
+      waitNodeIds: options.waitNodeIds,
+      readyTimeoutMs: options.readyTimeoutMs
     });
     let systemProxy = null;
     if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled) {
@@ -174,7 +178,7 @@ export const stop = async (manager) => {
   return manager.getStatus();
 };
 
-export const restart = async (manager) => {
+export const restart = async (manager, options = {}) => {
   await manager.stop();
-  return manager.start();
+  return manager.start(options);
 };

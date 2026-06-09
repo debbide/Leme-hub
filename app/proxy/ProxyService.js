@@ -45,6 +45,7 @@ import {
   startProxyRuntime,
   stopProcess as stopRuntimeProcess,
   stopProxyRuntime,
+  collectRuntimeReadyPorts as collectRuntimeReadyPortsForContext,
   validateConfig as validateRuntimeConfig,
   waitForPortReady as waitForRuntimePortReady,
   waitForRuntimeReady as waitForRuntimeReadyForContext,
@@ -158,8 +159,12 @@ export class ProxyService {
     return waitForRuntimePortReady(this, port, timeoutMs, host, processRef);
   }
 
-  async waitForRuntimeReady(runtime = {}, host = this.proxyListen, processRef = this.proxyProcess) {
-    return waitForRuntimeReadyForContext(this, runtime, host, processRef);
+  collectRuntimeReadyPorts(runtime = {}, options = {}) {
+    return collectRuntimeReadyPortsForContext(this, runtime, options);
+  }
+
+  async waitForRuntimeReady(runtime = {}, host = this.proxyListen, processRef = this.proxyProcess, options = {}) {
+    return waitForRuntimeReadyForContext(this, runtime, host, processRef, options);
   }
 
   async reserveEphemeralPort(host = resolveLoopbackHost(this.proxyListen)) {
