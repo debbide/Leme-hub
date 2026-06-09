@@ -1,5 +1,15 @@
 import { escapeHtml } from './utils.js';
 
+const setButtonLabel = (button, label) => {
+  if (!button) return;
+  const labelEl = button.querySelector?.('[data-button-label]');
+  if (labelEl) {
+    labelEl.textContent = label;
+    return;
+  }
+  button.textContent = label;
+};
+
 export const renderGroupTabs = ({
   groupTabsEl,
   nodesData,
@@ -102,8 +112,10 @@ export const renderGroupTabs = ({
         ${tab.deleteable ? `<button class="group-tab-action-btn group-delete-btn" data-group="${safeKey}" title="删除" aria-label="删除分组"><i class="ph ph-trash"></i></button>` : ''}
       </span>
     ` : '';
-    const badge = tab.managedBySubscription ? `<span class="group-tab-badge is-${tab.subscriptionStatus || 'idle'}">${escapeHtml(tab.subscriptionLabel || '订阅')}</span>` : '';
-    return `<button type="button" class="group-tab${isActive ? ' active' : ''}${tab.managedBySubscription ? ' is-subscription' : ''}" data-key="${safeKey}" title="${safeTitle}">${safeLabel}${badge}<span class="group-tab-count">${safeCount}</span>${actions}</button>`;
+    const badge = tab.managedBySubscription
+      ? `<span class="group-tab-badge is-${tab.subscriptionStatus || 'idle'}" title="${escapeHtml(tab.subscriptionLabel || '订阅')}" aria-label="${escapeHtml(tab.subscriptionLabel || '订阅')}"><i class="ph ph-broadcast"></i></span>`
+      : '';
+    return `<button type="button" class="group-tab${isActive ? ' active' : ''}${tab.managedBySubscription ? ' is-subscription' : ''}" data-key="${safeKey}" title="${safeTitle}"><span class="group-tab-name">${safeLabel}</span>${badge}<span class="group-tab-count">${safeCount}</span>${actions}</button>`;
   }).join('');
 
   if (groupTabsEl.dataset && !groupTabsEl.dataset.wheelBound) {
@@ -300,7 +312,7 @@ export const testAllNodes = async ({
 
   if (testAllBtn) {
     testAllBtn.disabled = true;
-    testAllBtn.textContent = `测试 0/${targetNodes.length}...`;
+    setButtonLabel(testAllBtn, `测试 0/${targetNodes.length}...`);
   }
 
   targetNodes.forEach((node) => {
@@ -313,7 +325,7 @@ export const testAllNodes = async ({
       ...result,
       elapsedMs: getLatencyTestingElapsed?.(result.id)
     });
-    if (testAllBtn) testAllBtn.textContent = `测试 ${done}/${targetNodes.length}...`;
+    setButtonLabel(testAllBtn, `测试 ${done}/${targetNodes.length}...`);
     setNodeTestingActionState?.(result.id, false);
   };
 
@@ -372,7 +384,7 @@ export const testAllNodes = async ({
     targetNodes.forEach((node) => setNodeTestingActionState?.(node.id, false));
     if (testAllBtn) {
       testAllBtn.disabled = false;
-      testAllBtn.textContent = '批量测试';
+      setButtonLabel(testAllBtn, '批量测试');
     }
   }
 };

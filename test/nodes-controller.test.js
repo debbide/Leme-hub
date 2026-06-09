@@ -52,7 +52,7 @@ test('renderGroupTabs folds subscription status into compact group tabs', () => 
   });
 
   assert.match(html, /group-tab is-subscription/u);
-  assert.match(html, /group-tab-badge is-error">失败/u);
+  assert.match(html, /group-tab-badge is-error" title="失败" aria-label="失败"><i class="ph ph-broadcast"><\/i>/u);
   assert.match(html, /title="订阅分组：Feed，点击查看订阅详情"/u);
   assert.doesNotMatch(html, /group-delete-btn/u);
 });
@@ -67,7 +67,7 @@ test('renderGroupTabs resets removed active groups and escapes group labels', ()
   assert.equal(state.activeGroupTab, null);
   assert.equal(state.currentGroup, null);
   assert.match(html, /class="group-tab active" data-key="" title="查看全部节点"/u);
-  assert.match(html, />全部<span class="group-tab-count">1<\/span>/u);
+  assert.match(html, /<span class="group-tab-name">全部<\/span><span class="group-tab-count">1<\/span>/u);
   assert.match(html, /Feed &lt;A&gt;/u);
   assert.doesNotMatch(html, /Feed <A>/u);
 });
@@ -100,7 +100,7 @@ test('renderGroupTabs marks refreshing subscriptions without expanding the tab c
     isSubscriptionRefreshing: (id) => id === 'sub-1',
   });
 
-  assert.match(html, /group-tab-badge is-syncing">刷新中/u);
+  assert.match(html, /group-tab-badge is-syncing" title="刷新中" aria-label="刷新中"><i class="ph ph-broadcast"><\/i>/u);
   assert.doesNotMatch(html, /https?:\/\//u);
 });
 

@@ -151,10 +151,18 @@
           <div class="page-shell proxies-shell">
           <div class="proxy-card full-card">
             <!-- Header Section -->
-            <header class="card-header">
-              <div class="header-titles">
-                <h1 style="display:flex; align-items:center;">代理节点管理 <span id="core-status-indicator" class="status-dot tooltip" title="引擎状态查询中..."></span></h1>
-                <p>管理您的接入分发节点 (支持 WS/TLS、 Reality、 VMess 等)</p>
+            <header class="card-header proxy-management-header">
+              <div class="header-titles proxy-header-title">
+                <h1>代理节点管理</h1>
+                <p>节点库、订阅分组和本地出口</p>
+              </div>
+              <div class="proxy-header-meta">
+                <div class="node-count" id="node-count-label">0 个节点</div>
+                <div id="nodes-apply-status" class="nodes-apply-status dashboard-apply-status is-idle hidden">节点配置：已同步</div>
+                <div class="core-status-chip">
+                  <span id="core-status-indicator" class="status-dot tooltip" title="引擎状态查询中..."></span>
+                  <span>核心</span>
+                </div>
               </div>
             </header>
 
@@ -178,6 +186,7 @@
 
             <!-- Group Tabs -->
             <div class="group-tabs-bar">
+              <div class="group-tabs-label">分组</div>
               <div class="group-tabs" id="group-tabs"></div>
               <button id="add-group-btn" type="button" class="group-tab-add" title="新建分组">+</button>
             </div>
@@ -194,21 +203,32 @@
               <button type="button" class="btn-danger" id="bulk-delete-btn">批量删除</button>
               <button type="button" class="cancel-btn" id="bulk-cancel-btn">取消选择</button>
             </div>
-            <div id="nodes-apply-status" class="nodes-apply-status dashboard-apply-status is-idle hidden">节点配置：已同步</div>
 
             <!-- Toolbar Section -->
             <div class="toolbar section-toolbar proxies-toolbar">
-              <div class="toolbar-block toolbar-block-primary">
-                <div style="display:flex;align-items:center;gap:0.5rem;flex:1;">
-                <div class="node-count" id="node-count-label">节点数: 0</div>
-                <input type="text" id="node-search" class="node-search-input" placeholder="搜索节点名 / 地址..." autocomplete="off">
-                </div>
+              <div class="toolbar-block toolbar-block-primary proxy-search-block">
+                <label class="proxy-search-box" for="node-search">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input type="text" id="node-search" class="node-search-input" placeholder="搜索节点名 / 地址..." autocomplete="off">
+                </label>
               </div>
-              <div class="btn-group toolbar-actions-strong">
-                <button id="test-all" type="button">批量测试</button>
-                <button id="show-import" type="button">导入链接</button>
-                <button id="show-sync" type="button">同步订阅</button>
-                <button id="manual-add" type="button">手动添加</button>
+              <div class="btn-group toolbar-actions-strong proxy-toolbar-actions">
+                <button id="manual-add" type="button" class="btn-primary proxy-primary-action">
+                  <i class="ph ph-plus"></i>
+                  <span>添加节点</span>
+                </button>
+                <button id="show-import" type="button" class="btn-outline proxy-action-btn">
+                  <i class="ph ph-link"></i>
+                  <span>导入链接</span>
+                </button>
+                <button id="show-sync" type="button" class="btn-outline proxy-action-btn">
+                  <i class="ph ph-cloud-arrow-down"></i>
+                  <span>同步订阅</span>
+                </button>
+                <button id="test-all" type="button" class="btn-outline proxy-action-btn">
+                  <i class="ph ph-activity"></i>
+                  <span data-button-label>批量测试</span>
+                </button>
               </div>
             </div>
 

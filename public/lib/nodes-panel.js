@@ -490,7 +490,7 @@ export const createNodesPanelController = ({
       nodesState.classList.remove('hidden');
       nodesEmpty.classList.remove('hidden');
       nodesList.classList.add('hidden');
-      nodeCountLabel.textContent = '节点数 0';
+      nodeCountLabel.textContent = '0 个节点';
       return;
     }
 
@@ -515,7 +515,7 @@ export const createNodesPanelController = ({
     if (visibleNodes.length === 0) {
       nodesState.classList.remove('hidden');
       nodesList.classList.add('hidden');
-      nodeCountLabel.textContent = `节点数 ${nodesData.length}`;
+      nodeCountLabel.textContent = `${nodesData.length} 个节点`;
       if (query) {
         nodesSearchEmpty?.classList.remove('hidden');
       } else {
@@ -526,7 +526,9 @@ export const createNodesPanelController = ({
 
     nodesState.classList.add('hidden');
     nodesList.classList.remove('hidden');
-    nodeCountLabel.textContent = `节点数 ${nodesData.length}（显示 ${visibleNodes.length}）`;
+    nodeCountLabel.textContent = visibleNodes.length === nodesData.length
+      ? `${nodesData.length} 个节点`
+      : `${nodesData.length} 个节点 · 显示 ${visibleNodes.length}`;
 
     nodesTbody.innerHTML = visibleNodes.map((node) => renderNodeRow({
       node,
