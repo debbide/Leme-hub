@@ -4693,6 +4693,51 @@ button:active:not(:disabled):not(.node-row-float-btn),
   }
 }
 
+/* Dashboard vertical fill: stretch telemetry instead of adding log noise */
+.dashboard-layout {
+  height: 100%;
+}
+
+.dashboard-control-grid {
+  align-items: stretch;
+}
+
+.dashboard-runtime-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dashboard-runtime-panel .dashboard-speed-tile {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dashboard-runtime-panel .speed-sparkline {
+  height: auto;
+  min-height: 170px;
+  align-items: stretch;
+  padding: 0.55rem;
+}
+
+.dashboard-runtime-panel .speed-sparkline span {
+  align-self: end;
+}
+
+@media (max-height: 760px) {
+  .dashboard-runtime-panel .speed-sparkline {
+    min-height: 120px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .dashboard-layout {
+    height: auto;
+  }
+
+  .dashboard-runtime-panel .speed-sparkline {
+    min-height: 150px;
+  }
+}
+
 /* Proxy node management refresh */
 .proxy-management-header {
   display: grid;
