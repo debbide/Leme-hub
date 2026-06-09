@@ -4736,8 +4736,8 @@ button:active:not(:disabled):not(.node-row-float-btn),
 .dashboard-node-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 1.05rem;
   min-width: 0;
 }
 
@@ -4747,13 +4747,13 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 .node-row-left {
-  flex: 0 0 auto;
+  flex: 0 0 190px;
 }
 
 .node-row-right {
-  flex: 1 1 auto;
+  flex: 0 1 420px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .dashboard-node-panel .dashboard-panel-head {
@@ -4778,16 +4778,16 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 .node-row-right .fixed-width-select {
-  width: min(100%, 420px);
+  width: 100%;
   max-width: 420px;
   min-height: 40px;
 }
 
 .dashboard-node-panel > .dashboard-auto-switch-panel {
   margin-top: 0;
-  padding: 0.68rem 0 0;
+  padding: 0.58rem 0 0;
   border: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -4801,17 +4801,17 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 .auto-switch-flex-row {
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1.1rem;
 }
 
 .auto-switch-actions {
-  flex: 1 1 auto;
-  gap: 1rem;
+  flex: 0 1 780px;
+  gap: 0.95rem;
 }
 
 .dashboard-node-panel .dashboard-auto-switch-head {
-  flex: 0 0 auto;
+  flex: 0 0 190px;
   min-width: 190px;
 }
 
@@ -4821,7 +4821,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
 
 .dashboard-node-panel .dashboard-auto-switch-grid {
   flex: 1 1 auto;
-  max-width: 560px;
+  max-width: 540px;
   grid-template-columns: minmax(0, 1fr) minmax(120px, 140px);
   gap: 0.56rem;
   align-items: end;
