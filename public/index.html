@@ -74,9 +74,11 @@
             <div class="dashboard-layout">
               <section class="dashboard-status-strip">
                 <div class="dashboard-power-block">
-                  <button id="master-switch" class="master-switch off" title="开启或关闭系统代理">
-                    <span class="switch-icon">⏻</span>
-                  </button>
+                  <div class="dashboard-power-orbit">
+                    <button id="master-switch" class="master-switch off" title="开启或关闭系统代理">
+                      <span class="switch-icon">⏻</span>
+                    </button>
+                  </div>
                   <div class="dashboard-power-copy">
                     <span class="stat-label">代理状态</span>
                     <h2 id="master-status-text">系统代理已关闭</h2>
@@ -150,8 +152,11 @@
                   </div>
                   <div class="dashboard-speed-tile">
                     <div class="speed-tile-head">
-                      <span class="stat-label">实时速率</span>
-                      <span class="speed-value" id="dash-speed-value">-- KB/s</span>
+                      <div>
+                        <span class="stat-label">实时速率</span>
+                        <span class="speed-value" id="dash-speed-value">-- KB/s</span>
+                      </div>
+                      <span class="speed-chip">Live</span>
                     </div>
                     <div class="speed-sparkline" aria-hidden="true">
                       <span style="height:30%"></span>
@@ -171,18 +176,18 @@
                 </div>
               </section>
 
-              <section class="dashboard-feedback-grid">
-                <div class="dashboard-feedback-card">
+              <section class="dashboard-feedback-row">
+                <div class="dashboard-feedback-badge">
                   <span class="stat-label">链路状态</span>
                   <strong id="dash-link-summary">等待核心状态</strong>
                   <p id="dash-link-detail">启动后会显示系统代理出口和主节点关系。</p>
                 </div>
-                <div class="dashboard-feedback-card">
+                <div class="dashboard-feedback-badge">
                   <span class="stat-label">自动切换</span>
                   <strong id="dash-auto-switch-summary">未启用</strong>
                   <p id="dash-auto-switch-detail">选择节点组后可按时间自动切换出口。</p>
                 </div>
-                <div class="dashboard-feedback-card">
+                <div class="dashboard-feedback-badge">
                   <span class="stat-label">配置同步</span>
                   <strong id="dash-config-summary">已同步</strong>
                   <p id="dash-config-detail">当前没有待应用的节点变更。</p>
