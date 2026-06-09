@@ -102,20 +102,29 @@
 
               <section class="dashboard-control-grid">
                 <div class="dashboard-panel dashboard-node-panel">
-                  <div class="dashboard-panel-head">
-                    <div>
+                  <div class="dashboard-node-row main-node-row">
+                    <div class="node-row-left">
+                      <div class="dashboard-panel-head">
+                        <div class="node-titles">
                       <span class="stat-label">主节点</span>
                       <h3>手动出口</h3>
                     </div>
                     <div id="dash-node-apply-status" class="dashboard-apply-status is-idle">节点配置：已同步</div>
                   </div>
-                  <select id="dash-active-node-select" class="dash-node-select">
+                    </div>
+                    <div class="node-row-right">
+                      <select id="dash-active-node-select" class="dash-node-select fixed-width-select">
                     <option value="">载入中...</option>
-                  </select>
+                      </select>
+                    </div>
+                  </div>
                   <section class="dashboard-auto-switch-panel">
+                    <div class="auto-switch-flex-row">
+                      <div class="auto-switch-actions">
                     <div class="dashboard-auto-switch-head">
-                      <label class="dashboard-auto-switch-toggle" for="dash-system-auto-switch-enabled">
+                      <label class="dashboard-auto-switch-toggle cyber-toggle" for="dash-system-auto-switch-enabled">
                         <input type="checkbox" id="dash-system-auto-switch-enabled">
+                        <span class="cyber-slider" aria-hidden="true"></span>
                         <span>系统代理自动切换</span>
                       </label>
                       <span class="dashboard-auto-switch-hint">固定 18999 入口，按时间在节点组内随机切换</span>
@@ -123,18 +132,20 @@
                     <div class="dashboard-auto-switch-grid">
                       <label class="dashboard-auto-switch-field">
                         <span>节点组</span>
-                        <select id="dash-system-auto-switch-group" class="dash-node-select">
+                        <select id="dash-system-auto-switch-group" class="dash-node-select compact-select">
                           <option value="">请选择节点组</option>
                         </select>
                       </label>
                       <label class="dashboard-auto-switch-field">
                         <span>切换间隔（分钟）</span>
-                        <input id="dash-system-auto-switch-interval" class="dashboard-auto-switch-input" type="number" min="1" step="1" value="10">
+                        <input id="dash-system-auto-switch-interval" class="dashboard-auto-switch-input compact-input" type="number" min="1" step="1" value="10">
                       </label>
                     </div>
-                    <div class="dashboard-auto-switch-meta">
+                      </div>
+                    <div class="dashboard-auto-switch-meta auto-switch-status-text">
                       <span id="dash-system-auto-switch-current">系统代理出口：--</span>
                       <span id="dash-system-auto-switch-next">下次切换：--</span>
+                    </div>
                     </div>
                   </section>
                 </div>
