@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   renderNodeApplyStatus,
   renderSystemProxyAutoSwitchControls,
-  renderSystemProxyNodeOptions
+  renderSystemProxyNodeOptions,
+  updateCoreStatus
 } from '../public/lib/dashboard-system.js';
 
 const createSelect = () => ({
@@ -48,6 +49,113 @@ test('renderSystemProxyAutoSwitchControls separates system proxy outlet from act
 
   assert.equal(current.textContent, '系统代理出口：System Node · 主节点：Manual Node');
   assert.equal(next.textContent, '下次切换：未启用');
+});
+
+test('renderSystemProxyAutoSwitchControls updates dashboard auto switch summary', () => {
+  const summary = { textContent: '' };
+  const detail = { textContent: '' };
+  const count = { textContent: '' };
+
+  renderSystemProxyAutoSwitchControls({
+    proxyProfile: {
+      nodeGroups: [
+        { id: 'g1', name: 'Fallback', selectedNodeId: 'n1' },
+        { id: 'g2', name: 'Video', selectedNodeId: 'n2' }
+      ],
+      systemProxyAutoSwitch: {
+        enabled: true,
+        groupId: 'g2',
+        intervalSec: 300,
+        nextAt: '2026-06-09T12:00:00.000Z'
+      }
+    },
+    dashAutoSwitchSummary: summary,
+    dashAutoSwitchDetail: detail,
+    dashNodeGroupCount: count
+  });
+
+  assert.equal(summary.textContent, 'Video · 5 分钟');
+  assert.match(detail.textContent, /^下次切换：/u);
+  assert.equal(count.textContent, '2 组');
+});
+
+test('updateCoreStatus fills dashboard summary cards from proxy profile', () => {
+  const currentOutlet = { textContent: '' };
+  const proxyMode = { textContent: '' };
+  const linkSummary = { textContent: '' };
+  const linkDetail = { textContent: '' };
+  const configSummary = { textContent: '' };
+  const configDetail = { textContent: '' };
+  const coreStatusIndicator = {
+    className: '',
+    classList: { add() {} },
+    title: ''
+  };
+  const dashText = { textContent: '', className: '' };
+  const dashSwitch = {
+    classList: {
+      add() {},
+      remove() {}
+    }
+  };
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      getElementById(id) {
+        return {
+          'master-switch': dashSwitch,
+          'master-status-text': dashText
+        }[id] || null;
+      }
+    }
+  });
+
+  try {
+    updateCoreStatus({
+      core: {
+        status: 'running',
+        systemProxy: { enabled: true },
+        proxy: {
+          mode: 'global',
+          activeNode: { id: 'n1', name: 'Manual' },
+          systemDefaultNode: { id: 'n2', name: 'Auto Exit' },
+          systemProxyEnabled: true,
+          systemProxyAutoSwitch: { enabled: false }
+        },
+        nodeApply: { state: 'applied', lastAppliedAt: '2026-06-09T12:00:00.000Z' }
+      },
+      setCurrentCoreState: () => {},
+      coreStatusIndicator,
+      renderRoutingModeBanner: () => {},
+      getCurrentCoreState: () => ({}),
+      getUptimeTimer: () => null,
+      setUptimeTimer: () => {},
+      renderProxyEndpoints: () => {},
+      renderSystemProxyAutoSwitchControls: () => {},
+      renderNodeApplyStatus: () => {},
+      dashCurrentOutlet: currentOutlet,
+      dashProxyMode: proxyMode,
+      dashLinkSummary: linkSummary,
+      dashLinkDetail: linkDetail,
+      dashConfigSummary: configSummary,
+      dashConfigDetail: configDetail
+    });
+
+    assert.equal(currentOutlet.textContent, 'Auto Exit');
+    assert.equal(proxyMode.textContent, '全局接管');
+    assert.equal(linkSummary.textContent, '系统代理 → Auto Exit');
+    assert.match(linkDetail.textContent, /Manual/u);
+    assert.match(configSummary.textContent, /^已应用/u);
+    assert.equal(configDetail.textContent, '最新节点配置已应用到核心。');
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, 'document', documentDescriptor);
+    } else {
+      delete globalThis.document;
+    }
+  }
 });
 
 test('renderNodeApplyStatus exposes background apply progress and failures', () => {

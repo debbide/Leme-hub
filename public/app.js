@@ -47,6 +47,16 @@ const dashSystemAutoSwitchNext = document.querySelector('#dash-system-auto-switc
 const dashNodeApplyStatus = document.querySelector('#dash-node-apply-status');
 const dashUptime = document.querySelector('#dash-uptime');
 const dashSpeedValue = document.querySelector('#dash-speed-value');
+const dashCurrentOutlet = document.querySelector('#dash-current-outlet');
+const dashProxyEndpoint = document.querySelector('#dash-proxy-endpoint');
+const dashProxyMode = document.querySelector('#dash-proxy-mode');
+const dashNodeGroupCount = document.querySelector('#dash-node-group-count');
+const dashLinkSummary = document.querySelector('#dash-link-summary');
+const dashLinkDetail = document.querySelector('#dash-link-detail');
+const dashAutoSwitchSummary = document.querySelector('#dash-auto-switch-summary');
+const dashAutoSwitchDetail = document.querySelector('#dash-auto-switch-detail');
+const dashConfigSummary = document.querySelector('#dash-config-summary');
+const dashConfigDetail = document.querySelector('#dash-config-detail');
 const sidebarDefaultProxy = document.querySelector('#sidebar-default-proxy');
 const routingGeoIpNote = document.querySelector('#routing-geoip-note');
 const geoIpRefreshBtn = document.querySelector('#geoip-refresh-btn');
@@ -296,6 +306,7 @@ const syncNodeMutationFeedback = (payload, successMessage) => {
 const renderProxyEndpoints = (proxyProfile = {}) => renderProxyEndpointsView({
   proxyProfile,
   sidebarDefaultProxy,
+  dashProxyEndpoint,
 });
 
 const renderSystemProxyAutoSwitchControls = (proxyProfile = {}) => renderSystemProxyAutoSwitchControlsView({
@@ -305,6 +316,9 @@ const renderSystemProxyAutoSwitchControls = (proxyProfile = {}) => renderSystemP
   dashSystemAutoSwitchIntervalInput,
   dashSystemAutoSwitchCurrent,
   dashSystemAutoSwitchNext,
+  dashAutoSwitchSummary,
+  dashAutoSwitchDetail,
+  dashNodeGroupCount,
 });
 
 const getNodeApplyResultKey = (nodeApply) => [
@@ -381,6 +395,12 @@ const updateCoreStatus = (core) => updateCoreStatusView({
   getUptimeTimer: () => uptimeTimer,
   setUptimeTimer: (value) => { uptimeTimer = value; },
   dashUptime,
+  dashCurrentOutlet,
+  dashProxyMode,
+  dashLinkSummary,
+  dashLinkDetail,
+  dashConfigSummary,
+  dashConfigDetail,
   renderProxyEndpoints,
   renderSystemProxyAutoSwitchControls,
   renderNodeApplyStatus,

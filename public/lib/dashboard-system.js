@@ -16,6 +16,33 @@ const formatDateTime = (value) => {
 
 const getNodeLabel = (node) => node?.name || node?.server || node?.id || '--';
 
+const ROUTING_MODE_LABELS = {
+  rule: '规则分流',
+  global: '全局接管',
+  direct: '直连退出'
+};
+
+const setText = (element, value) => {
+  if (element) element.textContent = value;
+};
+
+const summarizeAutoSwitch = (autoSwitch = {}, nodeGroups = []) => {
+  if (!autoSwitch.enabled) {
+    return {
+      summary: '未启用',
+      detail: nodeGroups.length ? '选择节点组后可按时间自动切换出口。' : '暂无可用节点组。'
+    };
+  }
+
+  const group = nodeGroups.find((item) => item.id === autoSwitch.groupId);
+  const groupName = group?.name || autoSwitch.groupId || '未选择节点组';
+  const intervalMinutes = Math.max(1, Math.round((Number(autoSwitch.intervalSec) || 600) / 60));
+  return {
+    summary: `${groupName} · ${intervalMinutes} 分钟`,
+    detail: `下次切换：${formatDateTime(autoSwitch.nextAt)}`
+  };
+};
+
 export const renderSystemProxyNodeOptions = ({ dashActiveNodeSelect, nodes, activeNodeId }) => {
   if (!dashActiveNodeSelect) return;
 
@@ -32,7 +59,7 @@ export const renderSystemProxyNodeOptions = ({ dashActiveNodeSelect, nodes, acti
   dashActiveNodeSelect.value = currentValue;
 };
 
-export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy }) => {
+export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy, dashProxyEndpoint }) => {
   const listenHost = proxyProfile.listenHost || '127.0.0.1';
   const defaultEndpoint = proxyProfile.systemDefaultEndpoint || {
     protocol: 'http',
@@ -43,6 +70,7 @@ export const renderProxyEndpoints = ({ proxyProfile = {}, sidebarDefaultProxy })
   if (sidebarDefaultProxy) {
     sidebarDefaultProxy.textContent = defaultEndpoint.url;
   }
+  setText(dashProxyEndpoint, defaultEndpoint.url);
 };
 
 export const renderSystemProxyAutoSwitchControls = ({
@@ -51,7 +79,10 @@ export const renderSystemProxyAutoSwitchControls = ({
   dashSystemAutoSwitchGroupSelect,
   dashSystemAutoSwitchIntervalInput,
   dashSystemAutoSwitchCurrent,
-  dashSystemAutoSwitchNext
+  dashSystemAutoSwitchNext,
+  dashAutoSwitchSummary,
+  dashAutoSwitchDetail,
+  dashNodeGroupCount
 }) => {
   const autoSwitch = proxyProfile.systemProxyAutoSwitch || {};
   const nodeGroups = Array.isArray(proxyProfile.nodeGroups)
@@ -91,6 +122,11 @@ export const renderSystemProxyAutoSwitchControls = ({
       ? `下次切换：${formatDateTime(autoSwitch.nextAt)}`
       : '下次切换：未启用';
   }
+
+  const autoSummary = summarizeAutoSwitch(autoSwitch, nodeGroups);
+  setText(dashAutoSwitchSummary, autoSummary.summary);
+  setText(dashAutoSwitchDetail, autoSummary.detail);
+  setText(dashNodeGroupCount, `${nodeGroups.length} 组`);
 };
 
 export const formatRate = (bytesPerSec) => {
@@ -226,6 +262,63 @@ export const renderNodeApplyStatus = ({ nodeApply, dashNodeApplyStatus }) => {
   dashNodeApplyStatus.title = '当前没有待应用的节点变更';
 };
 
+const renderDashboardSummaries = ({
+  core,
+  systemProxy,
+  proxyProfile,
+  dashCurrentOutlet,
+  dashProxyMode,
+  dashLinkSummary,
+  dashLinkDetail,
+  dashConfigSummary,
+  dashConfigDetail
+}) => {
+  const autoSwitch = proxyProfile.systemProxyAutoSwitch || {};
+  const outletNode = autoSwitch.enabled
+    ? autoSwitch.effectiveNode || proxyProfile.systemDefaultNode || proxyProfile.activeNode
+    : proxyProfile.systemDefaultNode || proxyProfile.activeNode;
+  const activeNode = proxyProfile.activeNode;
+  const outletName = getNodeLabel(outletNode);
+  const activeName = getNodeLabel(activeNode);
+  const mode = proxyProfile.mode || 'rule';
+  const modeLabel = ROUTING_MODE_LABELS[mode] || mode;
+  const nodeApply = core.nodeApply || {};
+
+  setText(dashCurrentOutlet, outletName);
+  setText(dashProxyMode, modeLabel);
+
+  if (core.status !== 'running') {
+    setText(dashLinkSummary, '核心未运行');
+    setText(dashLinkDetail, systemProxy.enabled ? '检测到系统代理被外部占用。' : '开启后会显示当前系统代理出口。');
+  } else if (systemProxy.enabled) {
+    setText(dashLinkSummary, `系统代理 → ${outletName}`);
+    setText(dashLinkDetail, autoSwitch.enabled
+      ? `自动切换已接管出口，主节点为 ${activeName}。`
+      : `当前跟随主节点 ${activeName}。`);
+  } else if (proxyProfile.systemProxyEnabled) {
+    setText(dashLinkSummary, `统一入口 → ${outletName}`);
+    setText(dashLinkDetail, '核心已运行，可通过本地入口手动使用代理。');
+  } else {
+    setText(dashLinkSummary, '核心运行中');
+    setText(dashLinkDetail, '系统代理未接管，统一入口未开启。');
+  }
+
+  if (nodeApply.state === 'applying') {
+    setText(dashConfigSummary, '正在应用');
+    setText(dashConfigDetail, '节点已保存，正在后台校验并重启核心。');
+  } else if (nodeApply.state === 'failed') {
+    setText(dashConfigSummary, '应用失败');
+    setText(dashConfigDetail, nodeApply.lastError || '节点保存成功，但应用到核心失败。');
+  } else if (nodeApply.state === 'applied') {
+    const time = formatApplyTime(nodeApply.lastAppliedAt);
+    setText(dashConfigSummary, time ? `已应用 ${time}` : '已应用');
+    setText(dashConfigDetail, '最新节点配置已应用到核心。');
+  } else {
+    setText(dashConfigSummary, '已同步');
+    setText(dashConfigDetail, '当前没有待应用的节点变更。');
+  }
+};
+
 export const updateCoreStatus = ({
   core,
   setCurrentCoreState,
@@ -238,6 +331,12 @@ export const updateCoreStatus = ({
   getUptimeTimer,
   setUptimeTimer,
   dashUptime,
+  dashCurrentOutlet,
+  dashProxyMode,
+  dashLinkSummary,
+  dashLinkDetail,
+  dashConfigSummary,
+  dashConfigDetail,
   renderProxyEndpoints,
   renderSystemProxyAutoSwitchControls,
   renderNodeApplyStatus,
@@ -258,6 +357,17 @@ export const updateCoreStatus = ({
   if (typeof renderNodeApplyStatus === 'function') {
     renderNodeApplyStatus(core.nodeApply || null);
   }
+  renderDashboardSummaries({
+    core,
+    systemProxy,
+    proxyProfile,
+    dashCurrentOutlet,
+    dashProxyMode,
+    dashLinkSummary,
+    dashLinkDetail,
+    dashConfigSummary,
+    dashConfigDetail
+  });
 
   if (systemProxyModeSelect && proxyProfile.mode) {
     systemProxyModeSelect.value = proxyProfile.mode;

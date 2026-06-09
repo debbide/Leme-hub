@@ -71,77 +71,123 @@
         <!-- DASHBOARD VIEW -->
         <section id="dashboard-view" class="view active">
           <div class="page-shell dashboard-shell">
-            <div class="dashboard-hero">
-              <div class="dashboard-core-grid">
-                <section class="dashboard-hero-card">
-                  <div class="hero-switch-col">
-                    <div class="power-ring">
-                      <button id="master-switch" class="master-switch off">
-                        <span class="switch-icon">⏻</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="hero-meta-col">
-                    <span class="hero-meta-label">主节点</span>
-                    <select id="dash-active-node-select" class="dash-node-select">
-                      <option value="">载入中...</option>
-                    </select>
-                    <section class="dashboard-auto-switch-panel">
-                      <div class="dashboard-auto-switch-head">
-                        <label class="dashboard-auto-switch-toggle" for="dash-system-auto-switch-enabled">
-                          <input type="checkbox" id="dash-system-auto-switch-enabled">
-                          <span>系统代理自动切换</span>
-                        </label>
-                        <span class="dashboard-auto-switch-hint">固定 18999 入口，按时间在节点组内随机切换</span>
-                      </div>
-                      <div class="dashboard-auto-switch-grid">
-                        <label class="dashboard-auto-switch-field">
-                          <span>节点组</span>
-                          <select id="dash-system-auto-switch-group" class="dash-node-select">
-                            <option value="">请选择节点组</option>
-                          </select>
-                        </label>
-                        <label class="dashboard-auto-switch-field">
-                          <span>切换间隔（分钟）</span>
-                          <input id="dash-system-auto-switch-interval" class="dashboard-auto-switch-input" type="number" min="1" step="1" value="10">
-                        </label>
-                      </div>
-                      <div class="dashboard-auto-switch-meta">
-                        <span id="dash-system-auto-switch-current">系统代理出口：--</span>
-                        <span id="dash-system-auto-switch-next">下次切换：--</span>
-                      </div>
-                    </section>
-                    <div id="dash-node-apply-status" class="dashboard-apply-status is-idle">节点配置：已同步</div>
+            <div class="dashboard-layout">
+              <section class="dashboard-status-strip">
+                <div class="dashboard-power-block">
+                  <button id="master-switch" class="master-switch off" title="开启或关闭系统代理">
+                    <span class="switch-icon">⏻</span>
+                  </button>
+                  <div class="dashboard-power-copy">
+                    <span class="stat-label">代理状态</span>
                     <h2 id="master-status-text">系统代理已关闭</h2>
                   </div>
-                </section>
-
-                <section class="dashboard-tile">
-                  <span class="stat-label">运行时间</span>
-                  <span class="stat-value" id="dash-uptime">00:00:00</span>
-                </section>
-
-                <section class="dashboard-tile dashboard-speed-tile">
-                  <div class="speed-tile-head">
-                    <span class="stat-label">实时下载速率</span>
-                    <span class="speed-value" id="dash-speed-value">-- KB/s</span>
+                </div>
+                <div class="dashboard-status-metrics">
+                  <div class="dashboard-mini-stat">
+                    <span class="stat-label">当前出口</span>
+                    <strong id="dash-current-outlet">--</strong>
                   </div>
-                  <div class="speed-sparkline" aria-hidden="true">
-                    <span style="height:30%"></span>
-                    <span style="height:45%"></span>
-                    <span style="height:38%"></span>
-                    <span style="height:62%"></span>
-                    <span style="height:55%"></span>
-                    <span style="height:68%"></span>
-                    <span style="height:52%"></span>
-                    <span style="height:74%"></span>
-                    <span style="height:60%"></span>
-                    <span style="height:70%"></span>
-                    <span style="height:48%"></span>
-                    <span style="height:58%"></span>
+                  <div class="dashboard-mini-stat">
+                    <span class="stat-label">代理入口</span>
+                    <strong id="dash-proxy-endpoint">http://127.0.0.1:18999</strong>
                   </div>
-                </section>
-              </div>
+                  <div class="dashboard-mini-stat">
+                    <span class="stat-label">代理模式</span>
+                    <strong id="dash-proxy-mode">规则分流</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section class="dashboard-control-grid">
+                <div class="dashboard-panel dashboard-node-panel">
+                  <div class="dashboard-panel-head">
+                    <div>
+                      <span class="stat-label">主节点</span>
+                      <h3>手动出口</h3>
+                    </div>
+                    <div id="dash-node-apply-status" class="dashboard-apply-status is-idle">节点配置：已同步</div>
+                  </div>
+                  <select id="dash-active-node-select" class="dash-node-select">
+                    <option value="">载入中...</option>
+                  </select>
+                  <section class="dashboard-auto-switch-panel">
+                    <div class="dashboard-auto-switch-head">
+                      <label class="dashboard-auto-switch-toggle" for="dash-system-auto-switch-enabled">
+                        <input type="checkbox" id="dash-system-auto-switch-enabled">
+                        <span>系统代理自动切换</span>
+                      </label>
+                      <span class="dashboard-auto-switch-hint">固定 18999 入口，按时间在节点组内随机切换</span>
+                    </div>
+                    <div class="dashboard-auto-switch-grid">
+                      <label class="dashboard-auto-switch-field">
+                        <span>节点组</span>
+                        <select id="dash-system-auto-switch-group" class="dash-node-select">
+                          <option value="">请选择节点组</option>
+                        </select>
+                      </label>
+                      <label class="dashboard-auto-switch-field">
+                        <span>切换间隔（分钟）</span>
+                        <input id="dash-system-auto-switch-interval" class="dashboard-auto-switch-input" type="number" min="1" step="1" value="10">
+                      </label>
+                    </div>
+                    <div class="dashboard-auto-switch-meta">
+                      <span id="dash-system-auto-switch-current">系统代理出口：--</span>
+                      <span id="dash-system-auto-switch-next">下次切换：--</span>
+                    </div>
+                  </section>
+                </div>
+
+                <div class="dashboard-panel dashboard-runtime-panel">
+                  <div class="dashboard-runtime-cards">
+                    <div class="dashboard-tile">
+                      <span class="stat-label">运行时间</span>
+                      <span class="stat-value" id="dash-uptime">00:00:00</span>
+                    </div>
+                    <div class="dashboard-tile">
+                      <span class="stat-label">节点组</span>
+                      <span class="stat-value dashboard-muted-value" id="dash-node-group-count">--</span>
+                    </div>
+                  </div>
+                  <div class="dashboard-speed-tile">
+                    <div class="speed-tile-head">
+                      <span class="stat-label">实时速率</span>
+                      <span class="speed-value" id="dash-speed-value">-- KB/s</span>
+                    </div>
+                    <div class="speed-sparkline" aria-hidden="true">
+                      <span style="height:30%"></span>
+                      <span style="height:45%"></span>
+                      <span style="height:38%"></span>
+                      <span style="height:62%"></span>
+                      <span style="height:55%"></span>
+                      <span style="height:68%"></span>
+                      <span style="height:52%"></span>
+                      <span style="height:74%"></span>
+                      <span style="height:60%"></span>
+                      <span style="height:70%"></span>
+                      <span style="height:48%"></span>
+                      <span style="height:58%"></span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="dashboard-feedback-grid">
+                <div class="dashboard-feedback-card">
+                  <span class="stat-label">链路状态</span>
+                  <strong id="dash-link-summary">等待核心状态</strong>
+                  <p id="dash-link-detail">启动后会显示系统代理出口和主节点关系。</p>
+                </div>
+                <div class="dashboard-feedback-card">
+                  <span class="stat-label">自动切换</span>
+                  <strong id="dash-auto-switch-summary">未启用</strong>
+                  <p id="dash-auto-switch-detail">选择节点组后可按时间自动切换出口。</p>
+                </div>
+                <div class="dashboard-feedback-card">
+                  <span class="stat-label">配置同步</span>
+                  <strong id="dash-config-summary">已同步</strong>
+                  <p id="dash-config-detail">当前没有待应用的节点变更。</p>
+                </div>
+              </section>
             </div>
           </div>
         </section>
