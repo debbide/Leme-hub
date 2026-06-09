@@ -374,6 +374,7 @@ body.desktop-shell .titlebar-controls {
 /* MAIN CONTENT */
 .main-content {
   flex: 1;
+  min-height: 0;
   background: var(--bg-main);
   position: relative;
   overflow-y: auto;
@@ -4694,15 +4695,34 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 /* Dashboard vertical fill: stretch telemetry instead of adding log noise */
-.dashboard-layout {
+#dashboard-view.view.active {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.dashboard-shell {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-layout {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
 }
 
 .dashboard-control-grid {
   align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
 .dashboard-runtime-panel {
+  align-self: stretch;
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -4730,7 +4750,11 @@ button:active:not(:disabled):not(.node-row-float-btn),
 
 @media (max-width: 1180px) {
   .dashboard-layout {
-    height: auto;
+    height: 100%;
+  }
+
+  .dashboard-control-grid {
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .dashboard-runtime-panel .speed-sparkline {
