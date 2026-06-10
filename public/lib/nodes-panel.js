@@ -141,12 +141,17 @@ export const createNodesPanelController = ({
   const switchActiveNode = async (nodeId) => {
     if (getCurrentCoreState()?.proxy?.activeNodeId === nodeId) return;
     try {
-      await requestJson('/api/system/settings', {
+      const payload = await requestJson('/api/system/settings', {
         method: 'PUT',
         body: JSON.stringify({ activeNodeId: nodeId })
       });
+      const coreData = payload.core || payload;
+      if (payload.core) {
+        updateCoreStatus(coreData);
+        renderSystemProxyNodeOptions(nodesData, coreData.proxy?.activeNodeId);
+      }
+      refreshNodesView();
       showToast('主节点已切换，旧连接已断开', 'success');
-      loadNodes();
     } catch (error) {
       showToast(`节点切换失败: ${error.message}`, 'error');
     }

@@ -30,11 +30,11 @@ export const loadNodesData = async ({
     setSubscriptionsData(payload.subscriptions || []);
     setGeoIpStatus(payload.geoIp || null);
     clearSelectedNodeIds();
+    if (payload.core) updateCoreStatus(payload.core);
     renderGroupTabs();
     renderSubscriptions();
     renderNodesElement();
     renderGeoIpStatus(payload.geoIp || null);
-    updateCoreStatus(payload.core);
     renderSystemProxyNodeOptions(payload.nodes || [], payload.core?.proxy?.activeNodeId);
   } catch (error) {
     nodesState.classList.remove('hidden');
