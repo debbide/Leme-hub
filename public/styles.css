@@ -5241,3 +5241,369 @@ button:active:not(:disabled):not(.node-row-float-btn),
     width: 100%;
   }
 }
+
+/* Unified matte slate theme for non-dashboard pages */
+:root {
+  --surface-app: #0f172a;
+  --surface-panel: rgba(30, 41, 59, 0.82);
+  --surface-panel-solid: #1e293b;
+  --surface-panel-raised: rgba(39, 52, 73, 0.72);
+  --surface-panel-inset: rgba(15, 23, 42, 0.52);
+  --surface-panel-hover: rgba(51, 65, 85, 0.62);
+  --surface-border: rgba(148, 163, 184, 0.14);
+  --surface-border-strong: rgba(148, 163, 184, 0.22);
+  --surface-highlight: rgba(59, 130, 246, 0.11);
+  --surface-highlight-soft: rgba(59, 130, 246, 0.06);
+  --surface-shadow: 0 16px 36px rgba(0, 0, 0, 0.26);
+  --surface-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --control-surface: rgba(15, 23, 42, 0.58);
+  --control-surface-hover: rgba(30, 41, 59, 0.86);
+}
+
+option,
+optgroup {
+  background-color: var(--surface-panel-solid);
+}
+
+.titlebar,
+.sidebar {
+  background:
+    linear-gradient(180deg, rgba(22, 32, 50, 0.98), rgba(15, 23, 42, 0.98)),
+    var(--bg-sidebar);
+  border-color: var(--surface-border);
+}
+
+.main-content {
+  background:
+    radial-gradient(900px circle at 18% -8%, rgba(59, 130, 246, 0.09), transparent 58%),
+    var(--surface-app);
+}
+
+.proxy-card {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.82), rgba(15, 23, 42, 0.76)),
+    var(--surface-panel-solid);
+  border-color: var(--surface-border) !important;
+  box-shadow: var(--surface-shadow), var(--surface-inset-highlight) !important;
+}
+
+.card-header,
+.proxy-management-header {
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.075), rgba(15, 23, 42, 0.18)),
+    rgba(30, 41, 59, 0.58);
+  border-bottom-color: var(--surface-border);
+}
+
+.card-footer {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.9));
+  border-top-color: var(--surface-border);
+}
+
+.toolbar,
+.section-toolbar,
+.proxies-toolbar,
+.routing-toolbar,
+.group-tabs-bar,
+.subscription-detail-panel,
+.action-form {
+  background: rgba(15, 23, 42, 0.34);
+  border-color: var(--surface-border);
+}
+
+.subscription-detail-panel {
+  border-top: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.proxy-search-box,
+.routing-mode-banner,
+.routing-section,
+.node-group-card,
+.node-group-node-card,
+.routing-unified-row,
+.routing-hit-card,
+.routing-log-summary-card,
+.routing-observability,
+.node-form-section,
+.state-msg {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.64), rgba(15, 23, 42, 0.48)),
+    var(--surface-panel);
+  border-color: var(--surface-border);
+  box-shadow: var(--surface-inset-highlight);
+}
+
+.routing-section:hover,
+.node-group-card:hover,
+.node-group-node-card-select:hover,
+.routing-unified-row:hover,
+.routing-hit-card:hover {
+  background:
+    linear-gradient(180deg, rgba(51, 65, 85, 0.62), rgba(15, 23, 42, 0.5)),
+    var(--surface-panel-hover);
+  border-color: rgba(59, 130, 246, 0.26);
+}
+
+.routing-section-header,
+.observability-header,
+.routing-log-toolbar,
+.routing-unified-header,
+.routing-unified-subrows,
+.routing-ruleset-entries,
+.node-group-card .routing-rule-card,
+.routing-ruleset-card,
+.routing-rule-card,
+.route-item,
+th,
+td {
+  border-color: var(--surface-border);
+}
+
+.observability-header,
+.routing-log-toolbar,
+.routing-unified-header {
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.observability-content {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.68), rgba(15, 23, 42, 0.84));
+}
+
+.routing-log-line {
+  color: rgba(203, 213, 225, 0.76);
+  border-left-color: rgba(148, 163, 184, 0.18);
+}
+
+.routing-hit-host,
+.routing-hit-detail-meta,
+.routing-log-result-count,
+.observability-status,
+.node-count,
+.core-status-chip,
+.node-group-health-pill,
+.node-group-node-latency,
+.routing-chip,
+.routing-runtime-pill,
+.group-tab-count,
+.uwp-loopback-status {
+  background: rgba(15, 23, 42, 0.46);
+  border-color: var(--surface-border);
+}
+
+.routing-input,
+.routing-select,
+.route-select,
+.system-proxy-mode,
+.system-proxy-node,
+.modal-field-input,
+.settings-input,
+.text-input,
+.json-editor,
+.node-search-input,
+.routing-log-search-input,
+.node-groups-search-input,
+.node-groups-interval-select,
+.move-group-select {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.68), rgba(15, 23, 42, 0.54));
+  border-color: var(--surface-border-strong);
+  color: var(--text-main);
+  box-shadow: var(--surface-inset-highlight), 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+
+.routing-input:hover,
+.routing-select:hover,
+.route-select:hover,
+.system-proxy-mode:hover,
+.system-proxy-node:hover,
+.modal-field-input:hover,
+.settings-input:hover,
+.text-input:hover,
+.json-editor:hover,
+.node-search-input:hover,
+.routing-log-search-input:hover,
+.node-groups-search-input:hover,
+.node-groups-interval-select:hover,
+.move-group-select:hover {
+  background: var(--control-surface-hover);
+  border-color: rgba(59, 130, 246, 0.34);
+}
+
+.routing-input:focus,
+.routing-select:focus,
+.route-select:focus,
+.system-proxy-mode:focus,
+.system-proxy-node:focus,
+.modal-field-input:focus,
+.settings-input:focus,
+.text-input:focus,
+.json-editor:focus,
+.node-search-input:focus,
+.routing-log-search-input:focus,
+.node-groups-search-input:focus,
+.node-groups-interval-select:focus,
+.move-group-select:focus {
+  border-color: rgba(59, 130, 246, 0.62);
+  box-shadow: var(--focus-ring), var(--surface-inset-highlight);
+}
+
+button:not(.node-row-float-btn):not(.master-switch):not(.modal-close-btn):not(.toast-close):not(.node-group-node-test-fab):not(.node-group-country-override-fab):not(.routing-log-search-clear),
+.btn-outline,
+.proxy-action-btn,
+.node-form-inline-btn,
+.group-tab-action-btn,
+.group-tab-add,
+.routing-log-view-btn {
+  background:
+    linear-gradient(180deg, rgba(51, 65, 85, 0.54), rgba(15, 23, 42, 0.42));
+  border-color: var(--surface-border-strong);
+}
+
+button:hover:not(:disabled):not(.node-row-float-btn):not(.master-switch):not(.modal-close-btn):not(.toast-close):not(.node-group-node-test-fab):not(.node-group-country-override-fab):not(.routing-log-search-clear),
+.btn-outline:hover:not(:disabled),
+.proxy-action-btn:hover:not(:disabled),
+.node-form-inline-btn:hover,
+.group-tab-action-btn:hover,
+.group-tab-add:hover,
+.routing-log-view-btn:hover {
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.16), rgba(30, 41, 59, 0.7));
+  border-color: rgba(59, 130, 246, 0.38);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #4f8df8 0%, var(--accent-base) 100%);
+  border-color: rgba(59, 130, 246, 0.64);
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.18), var(--surface-inset-highlight);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, #60a5fa 0%, var(--accent-hover) 100%);
+  border-color: rgba(59, 130, 246, 0.78);
+}
+
+.route-item {
+  background: transparent;
+}
+
+.route-item:hover,
+tr:hover {
+  background: var(--surface-highlight-soft);
+}
+
+.route-item:focus-within,
+tr.active-row {
+  background: rgba(16, 185, 129, 0.075);
+  box-shadow: inset 2px 0 0 var(--accent-green);
+}
+
+th {
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.group-header-row {
+  background: rgba(15, 23, 42, 0.74);
+}
+
+.group-tabs-bar {
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.group-tab,
+.group-tab-add {
+  background: rgba(15, 23, 42, 0.42);
+  border-color: var(--surface-border);
+}
+
+.group-tab:hover,
+.group-tab-add:hover {
+  background: rgba(30, 41, 59, 0.72);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.group-tab.active {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.42);
+}
+
+.routing-mode-banner.is-active {
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.13), rgba(15, 23, 42, 0.48));
+  border-color: rgba(16, 185, 129, 0.32);
+}
+
+.routing-mode-banner.is-inactive {
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.13), rgba(15, 23, 42, 0.48));
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.routing-mode-banner.is-direct {
+  background:
+    linear-gradient(180deg, rgba(244, 63, 94, 0.12), rgba(15, 23, 42, 0.48));
+  border-color: rgba(244, 63, 94, 0.28);
+}
+
+.routing-chip.is-builtin {
+  color: #bfdbfe;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.log-action-proxy,
+.routing-log-highlight {
+  color: #fde68a;
+}
+
+.modal {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.98));
+  border-color: var(--surface-border);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.44), var(--surface-inset-highlight);
+}
+
+.modal-header,
+.modal-footer {
+  border-color: var(--surface-border);
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.node-form-advanced-section {
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.cyber-slider {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.62));
+  border-color: var(--surface-border-strong);
+}
+
+input:checked + .cyber-slider {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.52);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+input:checked + .cyber-slider:before {
+  background: linear-gradient(135deg, #ecfeff 0%, #34d399 100%);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.58);
+}
+
+.toast {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+  border-color: var(--surface-border);
+}
+
+.toast.success {
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.16), rgba(15, 23, 42, 0.98));
+}
+
+.toast.error {
+  background:
+    linear-gradient(180deg, rgba(244, 63, 94, 0.15), rgba(15, 23, 42, 0.98));
+}
