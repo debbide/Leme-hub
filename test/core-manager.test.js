@@ -1379,6 +1379,138 @@ test('updateSettings allows explicit empty routing clears', async () => {
   assert.equal(result.settings.rulesets.length, 0);
 });
 
+test('updateSettings preserves routing fields during system proxy toggles', async () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [],
+    customRules: [{ id: 'rule-legacy', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: 'office' }],
+    rulesets: [{ id: 'rs-legacy', kind: 'builtin', presetId: 'telegram', name: 'Telegram', enabled: true, target: 'direct', entries: [], note: '' }]
+  });
+  const manager = new CoreManager(createPaths(), store);
+
+  const enabledResult = await manager.updateSettings({ systemProxyEnabled: true });
+  const disabledResult = await manager.updateSettings({ systemProxyEnabled: false });
+
+  assert.equal(enabledResult.settings.routingItems.length, 2);
+  assert.equal(disabledResult.settings.routingItems.length, 2);
+
+  const persisted = store.getSettings();
+  assert.equal(Array.isArray(persisted.routingItems), true);
+  assert.equal(persisted.routingItems.length, 0);
+  assert.equal(persisted.customRules.length, 1);
+  assert.equal(persisted.customRules[0].value, 'corp.local');
+  assert.equal(persisted.rulesets.length, 1);
+  assert.equal(persisted.rulesets[0].presetId, 'telegram');
+
+  const snapshot = manager.getSettingsSnapshot();
+  assert.equal(snapshot.routingItems.length, 2);
+});
+
+test('updateSettings preserves unified routingItems during system proxy toggles', async () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [
+      { id: 'rule-existing', kind: 'rule', type: 'domain_keyword', value: 'linkvertise', action: 'direct', note: '' }
+    ],
+    customRules: [{ id: 'rule-existing', type: 'domain_keyword', value: 'linkvertise', action: 'direct', note: '' }],
+    rulesets: []
+  });
+  const manager = new CoreManager(createPaths(), store);
+
+  await manager.updateSettings({ systemProxyEnabled: true });
+  await manager.updateSettings({ systemProxyEnabled: false });
+
+  const persisted = store.getSettings();
+  assert.equal(persisted.routingItems.length, 1);
+  assert.equal(persisted.routingItems[0].value, 'linkvertise');
+  assert.equal(persisted.customRules.length, 1);
+  assert.equal(persisted.customRules[0].value, 'linkvertise');
+});
+
+test('main switch cycle preserves routing settings', async () => {
+  const store = createStore();
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [],
+    customRules: [{ id: 'rule-legacy', type: 'domain_suffix', value: 'login.live.com', action: 'direct', note: '' }],
+    rulesets: [{ id: 'rs-legacy', kind: 'builtin', presetId: 'microsoft', name: 'Microsoft', enabled: true, target: 'direct', entries: [], note: '' }]
+  });
+  const paths = createPaths();
+  const manager = new CoreManager(paths, store);
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    start: async () => ({ configPath: paths.configPath, executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe' }),
+    stop: async () => {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.systemProxyManager = {
+    apply: async ({ host, httpPort, socksPort }) => ({
+      enabled: true,
+      mode: 'manual',
+      provider: 'mock',
+      http: { host, port: httpPort },
+      socks: { host, port: socksPort },
+      supported: true,
+      lastError: null
+    }),
+    disable: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  await manager.updateSettings({ systemProxyEnabled: true });
+  await manager.disableSystemProxy();
+  await manager.updateSettings({ systemProxyEnabled: false });
+  await manager.stop();
+  await manager.updateSettings({ routingMode: 'rule', systemProxyEnabled: true });
+  await manager.start();
+
+  const persisted = store.getSettings();
+  assert.equal(persisted.routingItems.length, 0);
+  assert.equal(persisted.customRules.length, 1);
+  assert.equal(persisted.customRules[0].value, 'login.live.com');
+  assert.equal(persisted.rulesets.length, 1);
+  assert.equal(persisted.rulesets[0].presetId, 'microsoft');
+  assert.equal(manager.getSettingsSnapshot().routingItems.length, 2);
+});
+
 test('updateSettings keeps node group routing items when the group is temporarily empty', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 

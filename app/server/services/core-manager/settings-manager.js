@@ -107,7 +107,14 @@ export const getSettingsSnapshot = (manager) => {
 };
 
 export const updateSettings = async (manager, patch, options = {}) => {
+  const persistedSettings = manager.store.getSettings();
   const current = manager.getSettingsSnapshot();
+  const hasPatchRoutingItems = Object.prototype.hasOwnProperty.call(patch, 'routingItems');
+  const hasPatchCustomRules = Object.prototype.hasOwnProperty.call(patch, 'customRules');
+  const hasPatchRulesets = Object.prototype.hasOwnProperty.call(patch, 'rulesets');
+  const hasPatchLegacyRouting = hasPatchCustomRules || hasPatchRulesets;
+  const hasPatchNodeGroups = Object.prototype.hasOwnProperty.call(patch, 'nodeGroups');
+  const preservePersistedRouting = !hasPatchRoutingItems && !hasPatchLegacyRouting && !hasPatchNodeGroups;
   const next = {
     ...current,
     ...patch
@@ -246,10 +253,6 @@ export const updateSettings = async (manager, patch, options = {}) => {
   let routingItems;
   let customRules;
   let rulesets;
-  const hasPatchRoutingItems = Object.prototype.hasOwnProperty.call(patch, 'routingItems');
-  const hasPatchCustomRules = Object.prototype.hasOwnProperty.call(patch, 'customRules');
-  const hasPatchRulesets = Object.prototype.hasOwnProperty.call(patch, 'rulesets');
-  const hasPatchLegacyRouting = hasPatchCustomRules || hasPatchRulesets;
 
   const normalizeLegacyRoutingPatch = () => {
     const legacyCustomRules = hasPatchCustomRules
@@ -270,7 +273,11 @@ export const updateSettings = async (manager, patch, options = {}) => {
     };
   };
 
-  if (hasPatchRoutingItems) {
+  if (preservePersistedRouting) {
+    routingItems = Array.isArray(persistedSettings.routingItems) ? persistedSettings.routingItems : current.routingItems;
+    customRules = Array.isArray(persistedSettings.customRules) ? persistedSettings.customRules : current.customRules;
+    rulesets = Array.isArray(persistedSettings.rulesets) ? persistedSettings.rulesets : current.rulesets;
+  } else if (hasPatchRoutingItems) {
     const normalizedRoutingItems = normalizeRoutingItems(next.routingItems, nodeGroups);
     if (hasPatchLegacyRouting) {
       const legacy = normalizeLegacyRoutingPatch();
@@ -406,8 +413,9 @@ export const updateSettings = async (manager, patch, options = {}) => {
     core = await manager.restart();
   }
 
+  const snapshot = manager.getSettingsSnapshot();
   return {
-    settings: { ...saved },
+    settings: { ...snapshot },
     proxy: manager.getProxyProfile(),
     restartRequired: hasRuntimeChanges && !shouldAutoRestart && !hotSwitchedActiveNode ? manager.getRestartRequired() : false,
     autoRestarted: shouldAutoRestart,
