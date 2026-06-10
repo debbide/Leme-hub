@@ -225,6 +225,12 @@ export const createNodesPanelController = ({
         return;
       }
 
+      closeOpenNodeMenus();
+    });
+
+    nodesTbody.addEventListener('dblclick', async (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target) return;
       const row = target.closest('.node-row');
       if (!row || !nodesTbody.contains(row)) return;
       if (target.closest('.node-check-cell') || target.closest('.node-action-menu') || target.closest('.node-row-float-btn')) return;

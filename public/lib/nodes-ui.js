@@ -59,7 +59,7 @@ export const renderNodeRow = ({
       `;
 
   return `
-    <tr data-id="${escapeHtml(node.id)}" class="node-row ${activeClass}">
+    <tr data-id="${escapeHtml(node.id)}" class="node-row ${activeClass}" title="双击切换为主节点">
       <td class="node-check-cell"><input type="checkbox" class="node-checkbox" data-id="${escapeHtml(node.id)}"></td>
       <td><span class="pill pill-protocol">${escapeHtml(protText)}</span>${activeBadge}</td>
       <td>
