@@ -241,6 +241,8 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
           ...(hasLegacyRules ? { customRules: body.rules } : {}),
           ...(hasCustomRules ? { customRules: body.customRules } : {}),
           ...(hasRulesets ? { rulesets: body.rulesets } : {})
+        }, {
+          allowEmptyRoutingClear: body.allowEmptyRoutingClear === true
         });
         return {
           status: 200,

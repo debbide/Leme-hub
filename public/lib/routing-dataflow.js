@@ -93,6 +93,7 @@ export const saveRoutingRulesData = async ({
   setRoutingDirty,
   renderRoutingRules,
   showToast,
+  showConfirmModal,
   setRoutingSavingState,
   updateRoutingSaveState,
   requestJson,
@@ -151,12 +152,24 @@ export const saveRoutingRulesData = async ({
       rulesets: normalizedRulesets,
       orderedRows: routingRowOrder,
     });
+    const allowEmptyRoutingClear = normalizedRoutingItems.length === 0
+      ? typeof showConfirmModal === 'function'
+        ? await showConfirmModal('清空分流配置', '当前保存结果为空，会删除全部分流规则。确认继续吗？')
+        : confirm('当前保存结果为空，会删除全部分流规则。确认继续吗？')
+      : false;
+    if (normalizedRoutingItems.length === 0 && !allowEmptyRoutingClear) {
+      setRoutingDirty(true);
+      renderRoutingRules();
+      showToast('已取消清空分流配置', 'info');
+      return;
+    }
     const payload = await requestJson('/api/system/rules', {
       method: 'PUT',
       body: JSON.stringify({
         routingItems: normalizedRoutingItems,
         customRules: normalized,
         rulesets: normalizedRulesets,
+        allowEmptyRoutingClear,
       })
     });
     const nextRules = (payload.customRules || payload.rules || []).filter((rule) => rule && typeof rule === 'object').map((rule) => createRoutingRuleDraft(rule));

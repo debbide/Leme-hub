@@ -330,6 +330,7 @@ test('system routes expose ruleset database status and refresh endpoint', async 
 
 test('system rules routes expose rules and save result payload', async () => {
   let settingsSnapshot = { customRules: [{ id: 'rule-1', type: 'domain', value: 'example.com', action: 'direct', note: '' }], rulesets: [{ id: 'rs-ai', kind: 'builtin', presetId: 'ai-services', target: 'default', nodeId: null, enabled: true, entries: [], name: 'AI', note: '' }] };
+  let lastUpdateOptions = null;
   const routes = createSystemRoutes({
     store: {},
     paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
@@ -337,18 +338,21 @@ test('system rules routes expose rules and save result payload', async () => {
       getSettingsSnapshot: () => settingsSnapshot,
       getBuiltinRulesets: () => [{ id: 'ai-services', name: 'AI Services', entries: [] }],
       getStatus: () => ({ status: 'running', proxy: { mode: 'custom' } }),
-      updateSettings: async ({ customRules, rulesets }) => ({
-        settings: (settingsSnapshot = {
-          customRules: customRules || settingsSnapshot.customRules,
-          rulesets: rulesets || settingsSnapshot.rulesets
-        }),
-        rules: settingsSnapshot.customRules,
-        customRules: settingsSnapshot.customRules,
-        rulesets: settingsSnapshot.rulesets,
-        autoRestarted: true,
-        restartRequired: false,
-        proxy: { mode: 'custom' }
-      })
+      updateSettings: async ({ customRules, rulesets }, options = {}) => {
+        lastUpdateOptions = options;
+        return {
+          settings: (settingsSnapshot = {
+            customRules: customRules || settingsSnapshot.customRules,
+            rulesets: rulesets || settingsSnapshot.rulesets
+          }),
+          rules: settingsSnapshot.customRules,
+          customRules: settingsSnapshot.customRules,
+          rulesets: settingsSnapshot.rulesets,
+          autoRestarted: true,
+          restartRequired: false,
+          proxy: { mode: 'custom' }
+        };
+      }
     }
   });
 
@@ -368,4 +372,16 @@ test('system rules routes expose rules and save result payload', async () => {
   assert.equal(putResponse.body.customRules[0].type, 'domain_suffix');
   assert.equal(putResponse.body.rulesets[0].presetId, 'dev-services');
   assert.equal(putResponse.body.autoRestarted, true);
+  assert.equal(lastUpdateOptions.allowEmptyRoutingClear, false);
+
+  await routes['PUT /api/system/rules']({
+    body: {
+      routingItems: [],
+      customRules: [],
+      rulesets: [],
+      allowEmptyRoutingClear: true
+    }
+  });
+
+  assert.equal(lastUpdateOptions.allowEmptyRoutingClear, true);
 });

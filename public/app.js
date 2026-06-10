@@ -538,6 +538,7 @@ const routingController = createRoutingController({
   routingRuleModalError,
   requestJson,
   showToast,
+  showConfirmModal,
   updateCoreStatus,
   runCoreAction: (action) => runCoreAction(action),
   getCurrentCoreState: () => currentCoreState,

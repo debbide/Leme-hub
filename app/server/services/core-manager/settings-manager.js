@@ -246,13 +246,52 @@ export const updateSettings = async (manager, patch, options = {}) => {
   let routingItems;
   let customRules;
   let rulesets;
+  const hasPatchRoutingItems = Object.prototype.hasOwnProperty.call(patch, 'routingItems');
+  const hasPatchCustomRules = Object.prototype.hasOwnProperty.call(patch, 'customRules');
+  const hasPatchRulesets = Object.prototype.hasOwnProperty.call(patch, 'rulesets');
+  const hasPatchLegacyRouting = hasPatchCustomRules || hasPatchRulesets;
 
-  if (Object.prototype.hasOwnProperty.call(patch, 'routingItems')) {
-    routingItems = normalizeRoutingItems(next.routingItems, nodeGroups);
-    const legacy = routingItemsToLegacySettings(routingItems);
-    customRules = legacy.customRules;
-    rulesets = legacy.rulesets;
-  } else if (Object.prototype.hasOwnProperty.call(patch, 'customRules') || Object.prototype.hasOwnProperty.call(patch, 'rulesets')) {
+  const normalizeLegacyRoutingPatch = () => {
+    const legacyCustomRules = hasPatchCustomRules
+      ? normalizeCustomRules(next.customRules || [], nodeGroups)
+      : current.customRules;
+    const legacyRulesets = hasPatchRulesets
+      ? normalizeRulesets(next.rulesets || [], nodeGroups)
+      : current.rulesets;
+    const legacyRoutingItems = normalizeRoutingItems(
+      legacyRoutingItemsFromSettings({ customRules: legacyCustomRules, rulesets: legacyRulesets }, nodeGroups),
+      nodeGroups
+    );
+
+    return {
+      routingItems: legacyRoutingItems,
+      customRules: legacyCustomRules,
+      rulesets: legacyRulesets
+    };
+  };
+
+  if (hasPatchRoutingItems) {
+    const normalizedRoutingItems = normalizeRoutingItems(next.routingItems, nodeGroups);
+    if (hasPatchLegacyRouting) {
+      const legacy = normalizeLegacyRoutingPatch();
+      if (legacy.routingItems.length > normalizedRoutingItems.length) {
+        manager.store.appendLog(`[CoreManager] Ignored stale routingItems payload with ${normalizedRoutingItems.length} item(s); legacy routing fields contain ${legacy.routingItems.length} item(s)`);
+        routingItems = legacy.routingItems;
+        customRules = legacy.customRules;
+        rulesets = legacy.rulesets;
+      } else {
+        routingItems = normalizedRoutingItems;
+        const legacyFromItems = routingItemsToLegacySettings(routingItems);
+        customRules = legacyFromItems.customRules;
+        rulesets = legacyFromItems.rulesets;
+      }
+    } else {
+      routingItems = normalizedRoutingItems;
+      const legacy = routingItemsToLegacySettings(routingItems);
+      customRules = legacy.customRules;
+      rulesets = legacy.rulesets;
+    }
+  } else if (hasPatchLegacyRouting) {
     customRules = Array.isArray(next.customRules)
       ? normalizeCustomRules(next.customRules, nodeGroups)
       : current.customRules;
@@ -264,6 +303,18 @@ export const updateSettings = async (manager, patch, options = {}) => {
     routingItems = Array.isArray(next.routingItems)
       ? normalizeRoutingItems(next.routingItems, nodeGroups)
       : current.routingItems;
+    const legacy = routingItemsToLegacySettings(routingItems);
+    customRules = legacy.customRules;
+    rulesets = legacy.rulesets;
+  }
+
+  if ((hasPatchRoutingItems || hasPatchLegacyRouting)
+    && !options.allowEmptyRoutingClear
+    && Array.isArray(current.routingItems)
+    && current.routingItems.length > 0
+    && routingItems.length === 0) {
+    manager.store.appendLog(`[CoreManager] Refused empty routing payload that would clear ${current.routingItems.length} existing item(s)`);
+    routingItems = current.routingItems;
     const legacy = routingItemsToLegacySettings(routingItems);
     customRules = legacy.customRules;
     rulesets = legacy.rulesets;

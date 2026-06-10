@@ -1323,6 +1323,62 @@ test('getSettingsSnapshot returns repaired settings without saving during reads'
   assert.equal(store.getSaveCalls().length, 0);
 });
 
+test('updateSettings does not let stale empty routingItems wipe legacy routing payloads', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  const result = await manager.updateSettings({
+    routingItems: [],
+    customRules: [{ id: 'rule-legacy', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: 'office' }],
+    rulesets: [{ id: 'rs-legacy', kind: 'builtin', presetId: 'youtube', name: 'YouTube', enabled: true, target: 'direct', entries: [], note: '' }]
+  });
+
+  assert.equal(result.settings.customRules.length, 1);
+  assert.equal(result.settings.customRules[0].value, 'corp.local');
+  assert.equal(result.settings.rulesets.length, 1);
+  assert.equal(result.settings.rulesets[0].presetId, 'youtube');
+  assert.equal(result.settings.routingItems.length, 2);
+});
+
+test('updateSettings refuses accidental empty routing saves when routing already exists', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await manager.updateSettings({
+    routingItems: [
+      { id: 'rule-existing', kind: 'rule', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }
+    ]
+  });
+
+  const result = await manager.updateSettings({
+    routingItems: [],
+    customRules: [],
+    rulesets: []
+  });
+
+  assert.equal(result.settings.routingItems.length, 1);
+  assert.equal(result.settings.customRules.length, 1);
+  assert.equal(result.settings.customRules[0].value, 'corp.local');
+});
+
+test('updateSettings allows explicit empty routing clears', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+
+  await manager.updateSettings({
+    routingItems: [
+      { id: 'rule-existing', kind: 'rule', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }
+    ]
+  });
+
+  const result = await manager.updateSettings({
+    routingItems: [],
+    customRules: [],
+    rulesets: []
+  }, { allowEmptyRoutingClear: true });
+
+  assert.equal(result.settings.routingItems.length, 0);
+  assert.equal(result.settings.customRules.length, 0);
+  assert.equal(result.settings.rulesets.length, 0);
+});
+
 test('updateSettings keeps node group routing items when the group is temporarily empty', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
