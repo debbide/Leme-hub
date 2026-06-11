@@ -119,6 +119,24 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
   return normalized;
 };
 
+const hasRoutingPayload = (settings = {}) => ['routingItems', 'customRules', 'rulesets']
+  .some((key) => Array.isArray(settings[key]) && settings[key].length > 0);
+
+const preserveRoutingPayloadOnEmptySave = (currentSettings, nextSettings, options = {}) => {
+  if (options.allowEmptyRoutingClear === true
+    || !hasRoutingPayload(currentSettings)
+    || hasRoutingPayload(nextSettings)) {
+    return nextSettings;
+  }
+
+  return {
+    ...nextSettings,
+    routingItems: Array.isArray(currentSettings.routingItems) ? currentSettings.routingItems : [],
+    customRules: Array.isArray(currentSettings.customRules) ? currentSettings.customRules : [],
+    rulesets: Array.isArray(currentSettings.rulesets) ? currentSettings.rulesets : []
+  };
+};
+
 export class ConfigStore {
   constructor(paths, options = {}) {
     this.paths = paths;
@@ -222,7 +240,16 @@ export class ConfigStore {
 
   saveSettings(settings, options = {}) {
     const backup = options.backup !== false;
-    return this.writeJson(this.paths.settingsPath, normalizeSettings(this.paths, settings, this.options), { backup });
+    const currentSettings = this.getSettings();
+    const normalizedSettings = normalizeSettings(this.paths, {
+      ...currentSettings,
+      ...settings
+    }, this.options);
+    const safeSettings = preserveRoutingPayloadOnEmptySave(currentSettings, normalizedSettings, options);
+    if (safeSettings !== normalizedSettings) {
+      this.appendLog('[ConfigStore] Preserved existing routing settings from an empty save payload');
+    }
+    return this.writeJson(this.paths.settingsPath, safeSettings, { backup });
   }
 
   rotateLogs() {

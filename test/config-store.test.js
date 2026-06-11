@@ -146,3 +146,49 @@ test('can save maintenance settings without rotating backups', () => {
   assert.equal(fs.existsSync(`${paths.settingsPath}.bak.2`), false);
   assert.equal(store.getSettings().routingMode, 'direct');
 });
+
+test('preserves routing settings when a partial save carries empty routing fields', () => {
+  const paths = createPaths();
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [{ id: 'rule-1', kind: 'rule', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    customRules: [{ id: 'rule-1', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    rulesets: []
+  });
+  store.saveSettings({
+    nodeGroupLatencyCache: { updatedAt: '2026-06-11T00:00:00.000Z', results: {} },
+    routingItems: [],
+    customRules: [],
+    rulesets: []
+  }, { backup: false });
+
+  const settings = store.getSettings();
+  assert.equal(settings.routingItems.length, 1);
+  assert.equal(settings.customRules.length, 1);
+  assert.equal(settings.customRules[0].value, 'corp.local');
+});
+
+test('allows explicit routing clears through save options', () => {
+  const paths = createPaths();
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [{ id: 'rule-1', kind: 'rule', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    customRules: [{ id: 'rule-1', type: 'domain_suffix', value: 'corp.local', action: 'direct', note: '' }],
+    rulesets: []
+  });
+  store.saveSettings({
+    ...store.getSettings(),
+    routingItems: [],
+    customRules: [],
+    rulesets: []
+  }, { allowEmptyRoutingClear: true });
+
+  const settings = store.getSettings();
+  assert.equal(settings.routingItems.length, 0);
+  assert.equal(settings.customRules.length, 0);
+  assert.equal(settings.rulesets.length, 0);
+});

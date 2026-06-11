@@ -374,7 +374,10 @@ export const updateSettings = async (manager, patch, options = {}) => {
     systemProxyAutoSwitchGroupId: systemProxyAutoSwitch.groupId,
     systemProxyAutoSwitchIntervalSec: systemProxyAutoSwitch.intervalSec,
     systemProxyAutoSwitchLastAt: systemProxyAutoSwitchLastAt
-  }, { backup: shouldBackupSettingsPatch(patch, options) });
+  }, {
+    backup: shouldBackupSettingsPatch(patch, options),
+    allowEmptyRoutingClear: options.allowEmptyRoutingClear === true
+  });
   if (systemProxyCaptureWillBeDisabled) {
     const disabledProxy = await manager.systemProxyManager.disable();
     manager.state.systemProxy = manager.buildSystemProxyState(disabledProxy);
