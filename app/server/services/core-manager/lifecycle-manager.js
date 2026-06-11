@@ -1,11 +1,23 @@
 export const bindProcessState = (manager) => {
-  if (!manager.proxyService.proxyProcess) {
+  const boundProcess = manager.proxyService.proxyProcess;
+  if (!boundProcess) {
     return;
   }
 
-  manager.proxyService.proxyProcess.once('exit', async (code, signal) => {
+  boundProcess.once('exit', async (code, signal) => {
+    if (manager._expectedCoreExitProcess === boundProcess) {
+      return;
+    }
+    if (manager.proxyService.proxyProcess !== boundProcess) {
+      return;
+    }
+
     const wasRunning = manager.state.status === 'running';
     await manager.cleanupSystemProxyAfterExit();
+    if (manager.proxyService.proxyProcess !== boundProcess) {
+      return;
+    }
+
     const isClean = code === 0 || signal === 'SIGTERM';
     manager.state = {
       ...manager.state,
@@ -48,6 +60,7 @@ export const bindProcessState = (manager) => {
 
 export const start = async (manager, options = {}) => {
   let binary = null;
+  let replacedProcess = null;
 
   try {
     if (manager._autoRestartTimer) {
@@ -58,14 +71,25 @@ export const start = async (manager, options = {}) => {
     binary = await manager.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
     const nodes = manager.store.getNodes();
     manager.proxyService.setNodes(nodes);
-    const result = await manager.proxyService.start({
-      binPath: binary.executablePath,
-      runtime: manager.getRuntimeOptions(settings, nodes),
-      skipValidation: !!options.skipValidation,
-      waitForAllNodePorts: options.waitForAllNodePorts,
-      waitNodeIds: options.waitNodeIds,
-      readyTimeoutMs: options.readyTimeoutMs
-    });
+    replacedProcess = manager.proxyService.proxyProcess || null;
+    if (replacedProcess) {
+      manager._expectedCoreExitProcess = replacedProcess;
+    }
+    let result;
+    try {
+      result = await manager.proxyService.start({
+        binPath: binary.executablePath,
+        runtime: manager.getRuntimeOptions(settings, nodes),
+        skipValidation: !!options.skipValidation,
+        waitForAllNodePorts: options.waitForAllNodePorts,
+        waitNodeIds: options.waitNodeIds,
+        readyTimeoutMs: options.readyTimeoutMs
+      });
+    } finally {
+      if (manager._expectedCoreExitProcess === replacedProcess) {
+        manager._expectedCoreExitProcess = null;
+      }
+    }
     let systemProxy = null;
     if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled) {
       systemProxy = await manager.systemProxyManager.apply({
@@ -141,7 +165,17 @@ export const stop = async (manager) => {
     clearTimeout(manager._autoRestartTimer);
     manager._autoRestartTimer = null;
   }
-  await manager.proxyService.stop();
+  const stoppingProcess = manager.proxyService.proxyProcess || null;
+  if (stoppingProcess) {
+    manager._expectedCoreExitProcess = stoppingProcess;
+  }
+  try {
+    await manager.proxyService.stop();
+  } finally {
+    if (manager._expectedCoreExitProcess === stoppingProcess) {
+      manager._expectedCoreExitProcess = null;
+    }
+  }
   const settings = manager.getSettingsSnapshot();
   let systemProxy = null;
   if (settings.systemProxyCaptureEnabled) {
@@ -179,6 +213,6 @@ export const stop = async (manager) => {
 };
 
 export const restart = async (manager, options = {}) => {
-  await manager.stop();
-  return manager.start(options);
+  await stop(manager);
+  return start(manager, options);
 };

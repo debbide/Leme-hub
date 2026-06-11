@@ -1944,3 +1944,29 @@ test('stop waits for existing sing-box process to exit before resolving', async 
   assert.equal(fakeProcess.killed, true);
   assert.ok(elapsed >= 20);
 });
+
+test('stop still waits when the process already received a kill signal', async () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  const fakeProcess = new EventEmitter();
+  let killCalls = 0;
+  fakeProcess.exitCode = null;
+  fakeProcess.killed = true;
+  fakeProcess.kill = () => {
+    killCalls += 1;
+    return true;
+  };
+  setTimeout(() => {
+    fakeProcess.exitCode = 0;
+    fakeProcess.emit('exit', 0, null);
+  }, 30);
+
+  service.proxyProcess = fakeProcess;
+
+  const startedAt = Date.now();
+  await service.stop();
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(service.proxyProcess, null);
+  assert.equal(killCalls, 0);
+  assert.ok(elapsed >= 20);
+});

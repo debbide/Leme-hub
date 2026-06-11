@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { EventEmitter } from 'node:events';
 
 import { assignStableLocalPorts, CoreManager } from '../app/server/services/CoreManager.js';
 import { ACTIVE_NODE_SELECTOR_TAG } from '../app/proxy/ProxyService.js';
@@ -289,6 +290,110 @@ test('start rolls back proxy process when system proxy apply fails', async () =>
 
   await assert.rejects(() => manager.start(), /apply failed/);
   assert.deepEqual(calls, ['stop']);
+});
+
+test('core lifecycle operations run one at a time', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  let activeStarts = 0;
+  let maxActiveStarts = 0;
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    start: async ({ binPath }) => {
+      activeStarts += 1;
+      maxActiveStarts = Math.max(maxActiveStarts, activeStarts);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      activeStarts -= 1;
+      return { configPath: createPaths().configPath, executablePath: binPath };
+    },
+    stop: async () => {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.systemProxyManager = {
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  await Promise.all([manager.start(), manager.start()]);
+
+  assert.equal(maxActiveStarts, 1);
+  assert.equal(manager.getStatus().status, 'running');
+});
+
+test('restart uses the lifecycle queue without re-entering it', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const calls = [];
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: null,
+    setNodes: () => calls.push('setNodes'),
+    start: async ({ binPath }) => {
+      calls.push('start');
+      return { configPath: createPaths().configPath, executablePath: binPath };
+    },
+    stop: async () => calls.push('stop'),
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.systemProxyManager = {
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  await manager.restart();
+
+  assert.deepEqual(calls, ['stop', 'setNodes', 'start']);
+  assert.equal(manager.getStatus().status, 'running');
 });
 
 test('server mode keeps unified proxy entry enabled without auto-applying system proxy capture', async () => {
@@ -2011,6 +2116,56 @@ test('unexpected process exit disables system proxy when desired', async () => {
 
   assert.equal(manager.getStatus().status, 'error');
   assert.equal(manager.getStatus().systemProxy.enabled, false);
+});
+
+test('stale process exit does not overwrite the current running state', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const oldProcess = new EventEmitter();
+  const newProcess = new EventEmitter();
+  manager.state.status = 'running';
+  manager.state.startedAt = '2026-01-01T00:00:00.000Z';
+  manager.state.executablePath = 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe';
+  manager.proxyService = {
+    proxyProcess: oldProcess,
+    setNodes() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  let disableCalls = 0;
+  manager.systemProxyManager = {
+    disable: async () => {
+      disableCalls += 1;
+      return {
+        enabled: false,
+        mode: 'off',
+        provider: 'mock',
+        http: null,
+        socks: null,
+        supported: true,
+        lastError: null
+      };
+    },
+    getStatus: async () => ({
+      enabled: true,
+      mode: 'manual',
+      provider: 'mock',
+      http: { host: '127.0.0.1', port: 18999 },
+      socks: null,
+      supported: true,
+      lastError: null
+    }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+
+  manager.bindProcessState();
+  manager.proxyService.proxyProcess = newProcess;
+  oldProcess.emit('exit', 2, null);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(disableCalls, 0);
+  assert.equal(manager.getStatus().status, 'running');
+  assert.equal(manager.getStatus().startedAt, '2026-01-01T00:00:00.000Z');
 });
 
 test('stop clears managed proxy leftovers even when capture preference is off', async () => {

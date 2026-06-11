@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
@@ -16,7 +16,10 @@ const summarizeProcessOutput = (...chunks) => stripAnsi(chunks.join('\n'))
   .join(' | ');
 
 const STOP_FORCE_TIMEOUT_MS = 800;
-const STOP_RESOLVE_TIMEOUT_MS = 2000;
+const STOP_RESOLVE_TIMEOUT_MS = 5000;
+const STALE_PROCESS_CLEANUP_TIMEOUT_MS = 2500;
+
+const escapePowerShellSingleQuotedString = (value) => String(value).replace(/'/g, "''");
 
 export const resolveExecutablePath = (explicitPath) => {
   if (!explicitPath) {
@@ -250,36 +253,40 @@ export const reserveEphemeralPort = async (context, host = resolveLoopbackHost(c
 
 export const stopProcess = async (processRef) => {
   if (!processRef) {
-    return;
+    return { exited: true, alreadyExited: true, timedOut: false };
   }
 
-  if (processRef.exitCode !== null || processRef.killed) {
-    return;
+  const isExited = () => (processRef.exitCode !== null && processRef.exitCode !== undefined)
+    || (processRef.signalCode !== null && processRef.signalCode !== undefined);
+  if (isExited()) {
+    return { exited: true, alreadyExited: true, timedOut: false };
   }
 
-  await new Promise((resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     let forceTimer = null;
     let resolveTimer = null;
 
-    const finish = () => {
+    const finish = (result = null) => {
       if (settled) {
         return;
       }
       settled = true;
       if (forceTimer) clearTimeout(forceTimer);
       if (resolveTimer) clearTimeout(resolveTimer);
-      resolve();
+      resolve(result || { exited: true, alreadyExited: false, timedOut: false });
     };
 
-    processRef.once('exit', finish);
-    processRef.once('close', finish);
+    processRef.once('exit', () => finish());
+    processRef.once('close', () => finish());
 
-    try {
-      processRef.kill();
-    } catch {
-      finish();
-      return;
+    if (!processRef.killed) {
+      try {
+        processRef.kill();
+      } catch {
+        finish();
+        return;
+      }
     }
 
     forceTimer = setTimeout(() => {
@@ -290,7 +297,9 @@ export const stopProcess = async (processRef) => {
       }
     }, STOP_FORCE_TIMEOUT_MS);
 
-    resolveTimer = setTimeout(finish, STOP_RESOLVE_TIMEOUT_MS);
+    resolveTimer = setTimeout(() => {
+      finish({ exited: isExited(), alreadyExited: false, timedOut: !isExited() });
+    }, STOP_RESOLVE_TIMEOUT_MS);
   });
 };
 
@@ -300,8 +309,67 @@ export const stopProxyRuntime = async (context) => {
   }
 
   const processRef = context.proxyProcess;
-  context.proxyProcess = null;
-  await stopProcess(processRef);
+  if (context.proxyProcess === processRef) {
+    context.proxyProcess = null;
+  }
+  const result = await stopProcess(processRef);
+  if (result?.timedOut) {
+    if (!context.proxyProcess) {
+      context.proxyProcess = processRef;
+    }
+    throw new Error('Timed out waiting for existing sing-box process to exit');
+  }
+};
+
+export const cleanupStaleRuntimeProcesses = async (context, options = {}) => {
+  if (process.platform !== 'win32' || options.enabled === false) {
+    return [];
+  }
+
+  const targetConfigPath = path.resolve(context.configPath);
+  const escapedTarget = escapePowerShellSingleQuotedString(targetConfigPath);
+  const script = [
+    `$target = '${escapedTarget}'`,
+    "$processes = Get-CimInstance Win32_Process -Filter \"Name = 'sing-box.exe'\"",
+    '$processes | Where-Object {',
+    '  $_.CommandLine -and $_.CommandLine.IndexOf($target, [System.StringComparison]::OrdinalIgnoreCase) -ge 0',
+    '} | ForEach-Object {',
+    '  try {',
+    '    Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop',
+    '    [string]$_.ProcessId',
+    '  } catch {}',
+    '}'
+  ].join('\n');
+
+  return new Promise((resolve) => {
+    execFile('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script
+    ], {
+      timeout: Number.isFinite(options.timeoutMs) ? options.timeoutMs : STALE_PROCESS_CLEANUP_TIMEOUT_MS,
+      windowsHide: true
+    }, (error, stdout) => {
+      if (error) {
+        context.log.warn?.(`[ProxyService] Failed to clean stale sing-box processes: ${error.message}`);
+        resolve([]);
+        return;
+      }
+
+      const killedPids = stdout
+        .split(/\r?\n/u)
+        .map((line) => Number.parseInt(line.trim(), 10))
+        .filter((pid) => Number.isInteger(pid) && pid > 0);
+
+      if (killedPids.length) {
+        context.log.warn?.(`[ProxyService] Cleaned stale sing-box process(es): ${killedPids.join(', ')}`);
+      }
+      resolve(killedPids);
+    });
+  });
 };
 
 export const startProxyRuntime = async (context, options = {}) => {
@@ -321,6 +389,7 @@ export const startProxyRuntime = async (context, options = {}) => {
   buildRoutingObservabilityLines(runtimeOptions, config)
     .forEach((line) => context.log.log(line));
   await stopProxyRuntime(context);
+  await cleanupStaleRuntimeProcesses(context, { enabled: options.cleanupStaleProcesses !== false });
 
   context.proxyProcess = spawn(execPath, ['run', '-c', context.configPath]);
 

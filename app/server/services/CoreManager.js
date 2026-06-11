@@ -147,6 +147,8 @@ export class CoreManager {
 
     this._restartAttempts = 0;
     this._autoRestartTimer = null;
+    this._expectedCoreExitProcess = null;
+    this._lifecycleQueue = Promise.resolve();
 
     this._nodeGroupAutoTestBusy = false;
     this._nodeGroupLatencySwitchState = new Map();
@@ -659,16 +661,22 @@ export class CoreManager {
     return lifecycleManager.bindProcessState(this);
   }
 
+  queueLifecycleTask(task) {
+    const run = this._lifecycleQueue.catch(() => {}).then(task);
+    this._lifecycleQueue = run.catch(() => {});
+    return run;
+  }
+
   async start(options = {}) {
-    return lifecycleManager.start(this, options);
+    return this.queueLifecycleTask(() => lifecycleManager.start(this, options));
   }
 
   async stop() {
-    return lifecycleManager.stop(this);
+    return this.queueLifecycleTask(() => lifecycleManager.stop(this));
   }
 
   async restart(options = {}) {
-    return lifecycleManager.restart(this, options);
+    return this.queueLifecycleTask(() => lifecycleManager.restart(this, options));
   }
 
   async testNode(nodeId) {
