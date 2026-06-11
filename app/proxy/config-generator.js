@@ -195,7 +195,7 @@ export const generateProxyConfig = (context, options = {}) => {
   });
 
   return {
-    log: { level: proxyMode === 'rule' ? 'debug' : 'info' },
+    log: { level: 'warn' },
     inbounds,
     outbounds: [
       ...outbounds,
