@@ -27,3 +27,11 @@ curl -fsSL -o /tmp/install-server.sh https://github.com/debbide/Leme-hub/release
 - 自动注册 `systemd` 服务 `leme-hub-server`
 
 安装完成后，如果监听地址是 `0.0.0.0`，可以直接通过 `http://服务器IP:51888` 用浏览器访问控制面板。
+
+## Third-Party Components
+
+Leme Hub can download and run the sing-box proxy core. sing-box is an
+independent open-source project licensed under GPL-3.0-or-later, developed by
+SagerNet and contributors. Leme Hub is not an official sing-box project.
+
+See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for details.
