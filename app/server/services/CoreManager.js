@@ -251,8 +251,8 @@ export class CoreManager {
     return selectorManager.closeRunningConnections(this, reason);
   }
 
-  async applyRunningActiveNodeSelector(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes()) {
-    return selectorManager.applyRunningActiveNodeSelector(this, settings, nodes);
+  async applyRunningActiveNodeSelector(settings = this.getSettingsSnapshot(), nodes = this.store.getNodes(), options = {}) {
+    return selectorManager.applyRunningActiveNodeSelector(this, settings, nodes, options);
   }
 
   getEffectiveNodeGroupNodeIds(group, nodes = this.store.getNodes()) {

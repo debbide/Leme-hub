@@ -1957,7 +1957,7 @@ test('testNodeGroups can test resolved auto country groups', async () => {
   assert.equal(store.getSaveCalls()[0].options.backup, false);
 });
 
-test('runNodeGroupAutoTestTick tests groups and switches selector to the faster node', async () => {
+test('runNodeGroupAutoTestTick switches group selector to the faster node without changing active node', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
     { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
@@ -1989,10 +1989,12 @@ test('runNodeGroupAutoTestTick tests groups and switches selector to the faster 
   const settings = manager.getSettingsSnapshot();
 
   assert.equal(tested, true);
+  assert.equal(settings.activeNodeId, 'n1');
   assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
   assert.equal(settings.nodeGroupLatencyCache.updatedAt !== null, true);
   assert.equal(settings.nodeGroupLatencyCache.results.n2.latencyMs, 110);
   assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === 'grp-g1' && entry[2] === 'out-n2'), true);
+  assert.equal(selectorCalls.some((entry) => Array.isArray(entry) && entry[0] === 'setSelector' && entry[1] === ACTIVE_NODE_SELECTOR_TAG), false);
 });
 
 test('applySystemProxy uses current unified proxy ports', async () => {
@@ -2224,6 +2226,8 @@ test('updateSettings hot switches the active node without restarting when core i
     closeAllConnections: async () => calls.push('closeAllConnections'),
     setListenHost() {}
   };
+  const logs = [];
+  manager.store.appendLog = (message) => logs.push(message);
   let restarted = false;
   manager.restart = async () => {
     restarted = true;
@@ -2240,6 +2244,7 @@ test('updateSettings hot switches the active node without restarting when core i
   assert.equal(result.autoRestarted, false);
   assert.equal(result.restartRequired, false);
   assert.equal(result.proxy.activeNodeId, 'n2');
+  assert.equal(logs.some((message) => message.includes('Active node change source=unknown old=n1') && message.includes('new=n2')), true);
 });
 
 test('updateSettings auto restarts when custom rules change while core is running', async () => {

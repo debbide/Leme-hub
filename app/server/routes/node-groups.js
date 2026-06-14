@@ -62,7 +62,7 @@ export function createNodeGroupRoutes({ coreManager }) {
           : body?.id
             ? [body.id]
             : [];
-        return json({ ok: true, ...await coreManager.testNodeGroups(ids, { autoStartCore: false }), nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
+        return json({ ok: true, ...await coreManager.testNodeGroups(ids, { autoStartCore: false, applySelection: body?.applySelection !== false }), nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() });
       } catch (error) {
         return json({ ok: false, error: error.message, nodeGroups: await getNodeGroups(), nodeGroupTesting: getNodeGroupTesting(), core: coreManager.getStatus() }, error.status || 500);
       }

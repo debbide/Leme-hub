@@ -195,7 +195,10 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
       }
 
       try {
-        const result = await coreManager.updateSettings(body);
+        const { activeNodeChangeSource, ...settingsPatch } = body;
+        const result = await coreManager.updateSettings(settingsPatch, {
+          activeNodeChangeSource
+        });
         return {
           status: 200,
           body: { ok: true, ...result, core: coreManager.getStatus() }

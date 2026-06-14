@@ -96,12 +96,19 @@ export const bindSystemEvents = ({
   }
 
   if (dashActiveNodeSelect) {
+    dashActiveNodeSelect.addEventListener('wheel', (event) => {
+      if (document.activeElement === dashActiveNodeSelect) {
+        event.preventDefault();
+        dashActiveNodeSelect.blur();
+      }
+    }, { passive: false });
+
     dashActiveNodeSelect.addEventListener('change', async (event) => {
       const activeNodeId = event.target.value || null;
       try {
         const payload = await requestJson('/api/system/settings', {
           method: 'PUT',
-          body: JSON.stringify({ activeNodeId })
+          body: JSON.stringify({ activeNodeId, activeNodeChangeSource: 'dashboard-active-node-select' })
         });
         const coreData = payload.core || payload;
         updateCoreStatus(coreData);

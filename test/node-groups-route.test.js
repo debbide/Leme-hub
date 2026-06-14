@@ -18,7 +18,7 @@ test('node group routes expose CRUD endpoints', async () => {
     deleteNodeGroup: async (id) => { nodeGroups = nodeGroups.filter((g) => g.id !== id); return {}; },
     updateNodeGroupNodes: async (id, ids) => { nodeGroups = nodeGroups.map((g) => g.id === id ? { ...g, nodeIds: ids, selectedNodeId: ids[0] || null } : g); return {}; },
     selectNodeGroupNode: async (id, selectedNodeId) => { nodeGroups = nodeGroups.map((g) => g.id === id ? { ...g, selectedNodeId } : g); return {}; },
-    testNodeGroups: async (ids) => ({ results: [{ id: 'n1', ok: true, latencyMs: 100 }], testedIds: ids })
+    testNodeGroups: async (ids, options) => ({ results: [{ id: 'n1', ok: true, latencyMs: 100 }], testedIds: ids, testOptions: options })
   };
   const routes = createNodeGroupRoutes({ coreManager });
 
@@ -35,6 +35,7 @@ test('node group routes expose CRUD endpoints', async () => {
   assert.deepEqual(reordered.body.groupSortOrder, ['g2', 'g1']);
   assert.equal(reordered.body.nodeGroups[0].id, 'g2');
   assert.equal(tested.body.results[0].latencyMs, 100);
+  assert.equal(tested.body.testOptions.applySelection, true);
   assert.equal(removed.body.nodeGroups[0].name, 'JP Main');
   assert.equal(removed.body.nodeGroups[0].note, 'main route');
 });

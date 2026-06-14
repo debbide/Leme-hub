@@ -33,6 +33,19 @@ const shouldBackupSettingsPatch = (patch = {}, options = {}) => {
   return !keys.length || keys.some((key) => !MAINTENANCE_SETTINGS_KEYS.has(key));
 };
 
+const formatNodeForLog = (nodeId, nodes = []) => {
+  const id = String(nodeId || '').trim();
+  if (!id) return '-';
+  const node = nodes.find((item) => item?.id === id);
+  const name = String(node?.name || node?.server || '').trim();
+  return name ? `${id} (${name})` : id;
+};
+
+const normalizeActiveNodeChangeSource = (value) => {
+  const source = String(value || '').trim();
+  return source || 'unknown';
+};
+
 export const getSettingsSnapshot = (manager) => {
   const settings = manager.store.getSettings();
   const normalizedSubscriptions = Array.isArray(settings.subscriptions)
@@ -343,7 +356,12 @@ export const updateSettings = async (manager, patch, options = {}) => {
     throw createHttpError('systemProxyHttpPort conflicts with manual proxy ports', 400);
   }
 
+  const previousActiveNodeId = manager.resolveActiveNodeId(current, nodes);
   const activeNodeId = manager.resolveActiveNodeId(next, nodes);
+  const hasPatchActiveNodeId = Object.prototype.hasOwnProperty.call(patch, 'activeNodeId');
+  const requestedActiveNodeId = hasPatchActiveNodeId
+    ? (patch.activeNodeId == null ? null : String(patch.activeNodeId).trim() || null)
+    : undefined;
   let autoStart = manager.state.autoStart;
   if (Object.prototype.hasOwnProperty.call(patch, 'autoStart')) {
     autoStart = patch.autoStart
@@ -378,6 +396,9 @@ export const updateSettings = async (manager, patch, options = {}) => {
     backup: shouldBackupSettingsPatch(patch, options),
     allowEmptyRoutingClear: options.allowEmptyRoutingClear === true
   });
+  if (hasPatchActiveNodeId && previousActiveNodeId !== activeNodeId) {
+    manager.store.appendLog(`[CoreManager] Active node change source=${normalizeActiveNodeChangeSource(options.activeNodeChangeSource)} old=${formatNodeForLog(previousActiveNodeId, nodes)} new=${formatNodeForLog(activeNodeId, nodes)} requested=${formatNodeForLog(requestedActiveNodeId, nodes)}`);
+  }
   if (systemProxyCaptureWillBeDisabled) {
     const disabledProxy = await manager.systemProxyManager.disable();
     manager.state.systemProxy = manager.buildSystemProxyState(disabledProxy);
@@ -405,7 +426,9 @@ export const updateSettings = async (manager, patch, options = {}) => {
   let core = manager.getStatus();
   if (shouldHotSwitchActiveNode) {
     try {
-      await manager.applyRunningActiveNodeSelector(saved, nodes);
+      await manager.applyRunningActiveNodeSelector(saved, nodes, {
+        reason: 'active node switch'
+      });
       hotSwitchedActiveNode = true;
     } catch (error) {
       manager.store.appendLog(`[CoreManager] Active selector hot-switch failed, falling back to restart: ${error.message}`);

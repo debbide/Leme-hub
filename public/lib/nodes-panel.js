@@ -143,7 +143,7 @@ export const createNodesPanelController = ({
     try {
       const payload = await requestJson('/api/system/settings', {
         method: 'PUT',
-        body: JSON.stringify({ activeNodeId: nodeId })
+        body: JSON.stringify({ activeNodeId: nodeId, activeNodeChangeSource: 'nodes-list-dblclick' })
       });
       const coreData = payload.core || payload;
       if (payload.core) {

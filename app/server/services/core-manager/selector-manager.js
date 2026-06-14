@@ -81,15 +81,17 @@ export const closeRunningConnections = async (manager, reason = 'selector switch
 
 };
 
-export const applyRunningActiveNodeSelector = async (manager, settings = manager.getSettingsSnapshot(), nodes = manager.store.getNodes()) => {
+export const applyRunningActiveNodeSelector = async (manager, settings = manager.getSettingsSnapshot(), nodes = manager.store.getNodes(), options = {}) => {
   const target = manager.getActiveNodeSelectorTarget(settings, nodes);
   if (!target) {
     return false;
   }
 
   await manager.clashApiService.setSelector(target.groupTag, target.outboundTag);
-  await manager.closeRunningConnections('active node switch');
-  manager.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag}`);
+  if (options.closeConnections !== false) {
+    await manager.closeRunningConnections(options.reason || 'active node switch');
+  }
+  manager.store.appendLog(`[CoreManager] Selector ${target.groupTag} -> ${target.outboundTag} (${options.reason || 'active node switch'})`);
   return true;
 
 };
@@ -130,7 +132,10 @@ export const syncRunningSelectors = async (manager, settings = manager.getSettin
 
   await manager.clashApiService.waitUntilReady();
   let appliedCount = 0;
-  if (activeSelectorTarget && await manager.applyRunningActiveNodeSelector(settings, nodes)) {
+  if (activeSelectorTarget && await manager.applyRunningActiveNodeSelector(settings, nodes, {
+    closeConnections: false,
+    reason: 'selector sync'
+  })) {
     appliedCount += 1;
   }
   for (const group of selectableGroups) {
