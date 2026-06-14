@@ -24,6 +24,13 @@ const MAINTENANCE_SETTINGS_KEYS = new Set([
   'systemProxyAutoSwitchLastAt'
 ]);
 
+export const ACTIVE_NODE_CHANGE_SOURCES = new Set([
+  'dashboard-active-node-select',
+  'nodes-list-dblclick'
+]);
+
+export const isAllowedActiveNodeChangeSource = (value) => ACTIVE_NODE_CHANGE_SOURCES.has(String(value || '').trim());
+
 const shouldBackupSettingsPatch = (patch = {}, options = {}) => {
   if (Object.prototype.hasOwnProperty.call(options, 'backup')) {
     return options.backup !== false;
@@ -356,12 +363,17 @@ export const updateSettings = async (manager, patch, options = {}) => {
     throw createHttpError('systemProxyHttpPort conflicts with manual proxy ports', 400);
   }
 
-  const previousActiveNodeId = manager.resolveActiveNodeId(current, nodes);
-  const activeNodeId = manager.resolveActiveNodeId(next, nodes);
   const hasPatchActiveNodeId = Object.prototype.hasOwnProperty.call(patch, 'activeNodeId');
   const requestedActiveNodeId = hasPatchActiveNodeId
     ? (patch.activeNodeId == null ? null : String(patch.activeNodeId).trim() || null)
     : undefined;
+  if (hasPatchActiveNodeId && options.requireActiveNodeChangeSource === true && !isAllowedActiveNodeChangeSource(options.activeNodeChangeSource)) {
+    throw createHttpError('activeNodeId can only be changed by an explicit active node switch action', 400);
+  }
+  const previousActiveNodeId = manager.resolveActiveNodeId(current, nodes);
+  const activeNodeId = hasPatchActiveNodeId
+    ? manager.resolveActiveNodeId({ ...next, activeNodeId: requestedActiveNodeId }, nodes)
+    : (current.activeNodeId == null ? null : String(current.activeNodeId).trim() || null);
   let autoStart = manager.state.autoStart;
   if (Object.prototype.hasOwnProperty.call(patch, 'autoStart')) {
     autoStart = patch.autoStart

@@ -1,3 +1,5 @@
+import { isAllowedActiveNodeChangeSource } from '../services/core-manager/settings-manager.js';
+
 const unsupportedUwpLoopback = {
   supported: false,
   packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe',
@@ -196,8 +198,15 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
 
       try {
         const { activeNodeChangeSource, ...settingsPatch } = body;
+        if (Object.prototype.hasOwnProperty.call(settingsPatch, 'activeNodeId') && !isAllowedActiveNodeChangeSource(activeNodeChangeSource)) {
+          return {
+            status: 400,
+            body: { ok: false, error: 'activeNodeId can only be changed by an explicit active node switch action' }
+          };
+        }
         const result = await coreManager.updateSettings(settingsPatch, {
-          activeNodeChangeSource
+          activeNodeChangeSource,
+          requireActiveNodeChangeSource: true
         });
         return {
           status: 200,

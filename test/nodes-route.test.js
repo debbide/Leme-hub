@@ -272,6 +272,44 @@ test('system status keeps loading when UWP loopback detection fails', async () =
   assert.equal(statusResponse.body.uwpLoopback.lastError, '需要管理员权限');
 });
 
+test('system settings route requires an explicit source for active node changes', async () => {
+  let updateCalls = 0;
+  let lastOptions = null;
+  const routes = createSystemRoutes({
+    store: {},
+    paths: { root: 'E:/repo', publicDir: 'E:/repo/public', dataDir: 'E:/repo/data', logsDir: 'E:/repo/logs' },
+    coreManager: {
+      getStatus: () => ({ status: 'running' }),
+      updateSettings: async (patch, options = {}) => {
+        updateCalls += 1;
+        lastOptions = options;
+        return {
+          settings: patch,
+          proxy: { activeNodeId: patch.activeNodeId },
+          restartRequired: false,
+          autoRestarted: false,
+          core: { status: 'running' }
+        };
+      }
+    }
+  });
+
+  const rejected = await routes['PUT /api/system/settings']({
+    body: { activeNodeId: 'n2' }
+  });
+  const allowed = await routes['PUT /api/system/settings']({
+    body: { activeNodeId: 'n2', activeNodeChangeSource: 'nodes-list-dblclick' }
+  });
+
+  assert.equal(rejected.status, 400);
+  assert.equal(updateCalls, 1);
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(lastOptions, {
+    activeNodeChangeSource: 'nodes-list-dblclick',
+    requireActiveNodeChangeSource: true
+  });
+});
+
 test('system UWP loopback action returns post-check failure status', async () => {
   const routes = createSystemRoutes({
     store: {},

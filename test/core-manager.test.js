@@ -978,6 +978,25 @@ test('updateSettings persists proxy mode and active node profile', async () => {
   assert.equal(result.proxy.unifiedSocksPort, 20100);
 });
 
+test('updateSettings preserves active node id during unrelated settings saves', async () => {
+  const store = createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },
+    { id: 'n2', type: 'socks', server: 'two.example', port: 1081 }
+  ]);
+  const manager = new CoreManager(createPaths(), store);
+
+  const nullActiveResult = await manager.updateSettings({ speedtestUrl: 'https://example.com/generate_204' });
+
+  assert.equal(nullActiveResult.settings.activeNodeId, null);
+  assert.equal(store.getSettings().activeNodeId, null);
+
+  store.saveSettings({ ...store.getSettings(), activeNodeId: 'n2' });
+  const existingActiveResult = await manager.updateSettings({ dnsStrategy: 'ipv4_only' });
+
+  assert.equal(existingActiveResult.settings.activeNodeId, 'n2');
+  assert.equal(existingActiveResult.proxy.activeNodeId, 'n2');
+});
+
 test('desktop mode keeps system proxy capture aligned with unified proxy toggle', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
@@ -1989,7 +2008,8 @@ test('runNodeGroupAutoTestTick switches group selector to the faster node withou
   const settings = manager.getSettingsSnapshot();
 
   assert.equal(tested, true);
-  assert.equal(settings.activeNodeId, 'n1');
+  assert.equal(settings.activeNodeId, null);
+  assert.equal(manager.resolveActiveNodeId(settings, manager.store.getNodes()), 'n1');
   assert.equal(settings.nodeGroups[0].selectedNodeId, 'n2');
   assert.equal(settings.nodeGroupLatencyCache.updatedAt !== null, true);
   assert.equal(settings.nodeGroupLatencyCache.results.n2.latencyMs, 110);
