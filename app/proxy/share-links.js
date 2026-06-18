@@ -10,7 +10,7 @@ const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('b
 const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
 
 const buildQuery = (params) => {
-  const search = new URLSearchParams();
+  const parts = [];
   for (const [key, rawValue] of Object.entries(params || {})) {
     if (rawValue === undefined || rawValue === null || rawValue === '') {
       continue;
@@ -18,15 +18,15 @@ const buildQuery = (params) => {
 
     if (typeof rawValue === 'boolean') {
       if (rawValue) {
-        search.set(key, '1');
+        parts.push(`${encodeURIComponent(key)}=1`);
       }
       continue;
     }
 
-    search.set(key, String(rawValue));
+    const encoded = encodeURIComponent(String(rawValue)).replace(/%2C/gi, ',');
+    parts.push(`${encodeURIComponent(key)}=${encoded}`);
   }
-  const text = search.toString();
-  return text ? `?${text}` : '';
+  return parts.length ? `?${parts.join('&')}` : '';
 };
 
 export const toShareLink = (node) => {
@@ -56,9 +56,9 @@ export const toShareLink = (node) => {
       host: node.wsHost || '',
       path: node.transport === 'grpc' ? (node.serviceName || '') : (node.wsPath || ''),
       tls: vmessTls ? 'tls' : '',
-      sni: node.sni || '',
+      sni: node.sni || node.wsHost || (vmessTls ? serverHost : ''),
       alpn: node.alpn || '',
-      fp: node.fp || ''
+      fp: node.fp || (vmessTls ? 'chrome' : '')
     };
     return `vmess://${toBase64(JSON.stringify(payload))}`;
   }
@@ -82,7 +82,7 @@ export const toShareLink = (node) => {
     }
     const query = buildQuery({
       security: node.security || (node.tls ? 'tls' : undefined),
-      type: node.transport && node.transport !== 'tcp' ? node.transport : undefined,
+      type: node.transport || 'tcp',
       host: node.wsHost || undefined,
       path: node.wsPath || undefined,
       serviceName: node.serviceName || undefined,
@@ -98,7 +98,8 @@ export const toShareLink = (node) => {
     if (!node.uuid) {
       return null;
     }
-    const vlessSecurity = nodeUsesReality(node)
+    const isReality = nodeUsesReality(node);
+    const vlessSecurity = isReality
       ? 'reality'
       : nodeUsesTls(node)
         ? 'tls'
@@ -106,17 +107,16 @@ export const toShareLink = (node) => {
     const query = buildQuery({
       encryption: 'none',
       security: vlessSecurity,
-      type: node.transport && node.transport !== 'tcp' ? node.transport : undefined,
+      type: node.transport || 'tcp',
       host: node.wsHost || undefined,
       path: node.wsPath || undefined,
       serviceName: node.serviceName || undefined,
-      sni: node.sni || undefined,
+      sni: node.sni || (vlessSecurity ? serverHost : undefined),
       alpn: node.alpn || undefined,
-      fp: node.fp || undefined,
+      fp: node.fp || (vlessSecurity ? 'chrome' : undefined),
       pbk: node.pbk || undefined,
-      sid: node.sid || undefined,
+      sid: isReality ? (node.sid || '') : undefined,
       flow: node.flow || undefined,
-      packet_encoding: node.packet_encoding || undefined,
       allowInsecure: node.insecure ? '1' : undefined
     });
     return `vless://${encodeURIComponent(node.uuid)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;

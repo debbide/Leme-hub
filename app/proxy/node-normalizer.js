@@ -77,6 +77,11 @@ export const normalizeConfigNode = (node, index = 0) => {
   if (normalized.type === 'vless' && nodeUsesReality({ ...node, ...normalized })) {
     normalized.tls = true;
     normalized.security = 'reality';
+    normalized.sni = normalized.sni || normalized.server;
+  } else if (normalized.type === 'vless' && (normalized.tls || String(normalized.security || '').toLowerCase() === 'tls')) {
+    normalized.tls = true;
+    normalized.security = normalized.security || 'tls';
+    normalized.sni = normalized.sni || normalized.server;
   }
 
   if (normalized.type === 'vmess' && VMESS_TLS_SECURITY_MODES.has(String(normalized.security || '').trim().toLowerCase())) {

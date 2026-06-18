@@ -1031,7 +1031,7 @@ test('toShareLink serializes vless nodes', () => {
     name: 'edge'
   });
 
-  assert.equal(link, 'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?encryption=none&security=tls&type=ws&host=cdn.example&path=%2Fws&sni=cdn.example#edge');
+  assert.equal(link, 'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?encryption=none&security=tls&type=ws&host=cdn.example&path=%2Fws&sni=cdn.example&fp=chrome#edge');
 });
 
 test('toShareLink serializes shadowsocks nodes with plugin options', () => {
