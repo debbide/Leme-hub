@@ -111,7 +111,7 @@ export const toShareLink = (node) => {
       host: node.wsHost || undefined,
       path: node.wsPath || undefined,
       serviceName: node.serviceName || undefined,
-      sni: node.sni || (vlessSecurity ? serverHost : undefined),
+      sni: node.sni || node.wsHost || (vlessSecurity ? serverHost : undefined),
       alpn: node.alpn || undefined,
       fp: node.fp || (vlessSecurity ? 'chrome' : undefined),
       pbk: node.pbk || undefined,
