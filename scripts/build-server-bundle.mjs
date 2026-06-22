@@ -12,7 +12,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node20',
-  outfile: path.join(serverDistDir, 'server-bundle.cjs'),
+  outfile: path.join(serverDistDir, 'server-bundle.js'),
   banner: {
     js: "const path = require('path'); process.env.LEME_MODE = process.env.LEME_MODE || 'server'; process.env.LEME_PROJECT_ROOT = process.env.LEME_PROJECT_ROOT || path.resolve(__dirname, '..');"
   },
@@ -27,7 +27,7 @@ fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   name: 'leme-hub-server',
   version: packageJson.version,
   private: true,
-  bin: 'server-bundle.cjs',
+  bin: 'server-bundle.js',
   pkg: {
     assets: ['public/**/*']
   }
