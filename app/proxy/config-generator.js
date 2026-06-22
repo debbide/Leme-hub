@@ -111,8 +111,6 @@ export const generateProxyConfig = (context, options = {}) => {
   } = options;
 
   const validNodes = filterValidNodes(context);
-  context.nodes = validNodes;
-  context.updatePortMap();
 
   const validNodeMap = new Map(validNodes.map((node) => [node.id, node]));
   const validNodeIdSet = new Set(validNodeMap.keys());
