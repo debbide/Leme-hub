@@ -23,6 +23,7 @@ await build({
 
 // Copy public/ alongside the bundle so pkg can embed it reliably
 fs.cpSync('public', path.join(serverDistDir, 'public'), { recursive: true });
+fs.writeFileSync(path.join(serverDistDir, '.npmignore'), '');
 fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   name: 'leme-hub-server',
   version: packageJson.version,
