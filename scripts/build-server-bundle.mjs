@@ -3,7 +3,7 @@ import path from 'path';
 import { build } from 'esbuild';
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-const serverDistDir = 'dist/server';
+const serverDistDir = 'dist/leme-hub-server';
 const serverPackageJsonPath = path.join(serverDistDir, 'package.json');
 
 await build({
