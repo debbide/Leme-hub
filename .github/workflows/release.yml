@@ -126,7 +126,7 @@ jobs:
       - name: Collect Linux server binaries
         run: |
           mkdir -p release-assets/server
-          find dist/server -maxdepth 1 -type f ! -name '*.cjs' | while read -r file; do
+          find dist/leme-hub-server -maxdepth 1 -type f ! -name '*.cjs' | while read -r file; do
             name="$(basename "$file")"
             case "$name" in
               *arm64)
