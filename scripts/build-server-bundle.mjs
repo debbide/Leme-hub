@@ -29,6 +29,7 @@ fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   private: true,
   bin: 'server-bundle.js',
   pkg: {
+    scripts: ['server-bundle.js'],
     assets: ['public/**/*']
   }
 }, null, 2) + '\n');
