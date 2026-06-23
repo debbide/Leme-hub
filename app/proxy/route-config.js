@@ -200,7 +200,8 @@ export const buildRouteConfig = ({
         tag,
         format: item.format || 'binary',
         url: item.url,
-        download_detour: 'direct'
+        download_detour: 'direct',
+        update_interval: '24h'
       });
       orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
       orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });

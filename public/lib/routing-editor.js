@@ -236,14 +236,7 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
             <button type="button" class="btn-outline routing-add-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">新增条目</button>
           </div>
         </div>` : ''}
-      ${ruleset.kind === 'remote' ? `
-        <div class="routing-unified-subrows">
-          <label class="routing-field routing-unified-field">
-            <span class="routing-field-label">链接</span>
-            <input class="routing-input ${rulesetErrors.url ? 'has-error' : ''}" data-ruleset-field="url" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.url || '')}" placeholder="https://...">
-            <span class="routing-field-error">${escapeHtml(rulesetErrors.url || '')}</span>
-          </label>
-        </div>` : ''}
+      ${ruleset.kind === 'remote' ? `` : ''}
     </div>`;
 };
 

@@ -219,6 +219,9 @@ export const renderRulesetRuntimeMeta = ({ ruleset, routingBuiltinRulesets, rule
     return '<span class="routing-runtime-pill is-inline is-muted">无效规则集</span>';
   }
 
+  if (ruleset.kind === 'remote') {
+    return '<span class="routing-runtime-pill is-inline is-ready">在线订阅</span>';
+  }
   if (ruleset.kind !== 'builtin') {
     return '<span class="routing-runtime-pill is-inline">inline</span>';
   }
