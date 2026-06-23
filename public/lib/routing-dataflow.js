@@ -130,6 +130,8 @@ export const saveRoutingRulesData = async ({
     nodeId: ruleset.target === 'node' ? String(ruleset.nodeId || '').trim() : null,
     groupId: ruleset.target === 'node_group' ? String(ruleset.groupId || '').trim() : null,
     entries: ruleset.kind === 'custom' ? (ruleset.entries || []).map((entry) => normalizeRoutingRulesetEntry(entry)) : [],
+    url: ruleset.kind === 'remote' ? String(ruleset.url || '').trim() : null,
+    format: ruleset.kind === 'remote' ? ruleset.format || 'binary' : null,
     note: String(ruleset.note || '').trim()
   }));
   const nextRulesetErrors = buildRoutingRulesetErrors(normalizedRulesets);
