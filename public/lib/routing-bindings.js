@@ -2,6 +2,7 @@ export const bindRoutingEvents = ({
   routingAddRuleBtn,
   openRoutingRuleModal,
   routingAddRulesetBtn,
+  routingAddRemoteRulesetBtn,
   createRoutingRulesetDraft,
   createRoutingRulesetEntryDraft,
   getRoutingRulesets,
@@ -60,6 +61,16 @@ export const bindRoutingEvents = ({
     if (!canEditRouting()) return;
     const rulesets = getRoutingRulesets();
     const nextRulesets = [...rulesets, createRoutingRulesetDraft({ kind: 'custom', name: `自定义规则集 ${rulesets.length + 1}`, entries: [createRoutingRulesetEntryDraft()] })];
+    setRoutingRulesets(nextRulesets);
+    setRoutingRulesetErrors(buildRoutingRulesetErrors(nextRulesets));
+    setRoutingDirty(true);
+    renderRoutingRules();
+  });
+
+  routingAddRemoteRulesetBtn?.addEventListener('click', () => {
+    if (!canEditRouting()) return;
+    const rulesets = getRoutingRulesets();
+    const nextRulesets = [...rulesets, createRoutingRulesetDraft({ kind: 'remote', name: `远程订阅 ${rulesets.length + 1}` })];
     setRoutingRulesets(nextRulesets);
     setRoutingRulesetErrors(buildRoutingRulesetErrors(nextRulesets));
     setRoutingDirty(true);
