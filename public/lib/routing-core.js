@@ -51,13 +51,15 @@ export const createRoutingRulesetEntryDraft = (entry = {}) => ({
 
 export const createRoutingRulesetDraft = (ruleset = {}) => ({
   id: ruleset.id || `ruleset-${Date.now()}-${routingRulesetCounter++}`,
-  kind: ['builtin', 'custom'].includes(ruleset.kind) ? ruleset.kind : 'custom',
+  kind: ['builtin', 'custom', 'remote'].includes(ruleset.kind) ? ruleset.kind : 'custom',
   presetId: ruleset.presetId || '',
   name: String(ruleset.name || ''),
   enabled: ruleset.enabled !== false,
   target: ROUTING_RULESET_TARGETS.includes(ruleset.target) ? ruleset.target : 'default',
   nodeId: ruleset.nodeId || '',
   groupId: ruleset.groupId || '',
+  url: ruleset.url || '',
+  format: ruleset.format || 'binary',
   remoteRuleSetIds: Array.isArray(ruleset.remoteRuleSetIds) ? [...ruleset.remoteRuleSetIds] : [],
   entries: Array.isArray(ruleset.entries) ? ruleset.entries.map((entry) => createRoutingRulesetEntryDraft(entry)) : [],
   note: String(ruleset.note || '')
@@ -134,7 +136,7 @@ export const normalizeRoutingRulesetEntry = (entry) => ({
 
 export const validateRoutingRuleset = (ruleset) => {
   const errors = {};
-  if (!['builtin', 'custom'].includes(ruleset.kind)) {
+  if (!['builtin', 'custom', 'remote'].includes(ruleset.kind)) {
     errors.kind = '规则集类型无效';
   }
   if (!ROUTING_RULESET_TARGETS.includes(ruleset.target)) {
@@ -149,6 +151,14 @@ export const validateRoutingRuleset = (ruleset) => {
   if (ruleset.kind === 'builtin') {
     if (!String(ruleset.presetId || '').trim()) {
       errors.presetId = '请选择内置规则集';
+    }
+  } else if (ruleset.kind === 'remote') {
+    const url = String(ruleset.url || '').trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      errors.url = '请输入有效的 http/https 链接';
+    }
+    if (!['binary', 'source'].includes(ruleset.format)) {
+      errors.format = '格式必须为 binary 或 source';
     }
   } else {
     if (!String(ruleset.name || '').trim()) {

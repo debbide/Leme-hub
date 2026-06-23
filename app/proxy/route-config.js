@@ -185,6 +185,28 @@ export const buildRouteConfig = ({
       return;
     }
 
+    if (item.kind === 'remote') {
+      const outbound = buildRulesetOutbound(item);
+      const tag = `usr-rs-${item.id || index + 1}`;
+      registerRoutingHit(tag, {
+        kind: 'ruleset',
+        name: item.name || item.url,
+        target: outbound,
+        descriptor: item.url,
+        rulesetId: item.id || null
+      });
+      orderedInlineRuleSets.push({
+        type: 'remote',
+        tag,
+        format: item.format || 'binary',
+        url: item.url,
+        download_detour: 'direct'
+      });
+      orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
+      orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      return;
+    }
+
     if (item.kind === 'custom_entry') {
       const outbound = buildRulesetOutbound(item);
       const rulesetTagBase = item.rulesetId || item.id || index + 1;

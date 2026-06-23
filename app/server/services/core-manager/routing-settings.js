@@ -370,7 +370,31 @@ const normalizeRuleset = (ruleset, index, nodeGroups = []) => {
     };
   }
 
-  if (!Array.isArray(ruleset.entries) || !ruleset.entries.length) {
+  if (kind === 'remote') {
+    const url = String(ruleset.url || '').trim();
+    const format = String(ruleset.format || 'binary').trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw createHttpError(`rulesets[${index}] remote ruleset requires a valid http/https url`, 400);
+    }
+    if (!['binary', 'source'].includes(format)) {
+      throw createHttpError(`rulesets[${index}] remote ruleset format must be binary or source`, 400);
+    }
+    return {
+      id,
+      kind,
+      name: String(ruleset.name || '').trim() || url,
+      enabled: ruleset.enabled !== false,
+      target,
+      nodeId,
+      groupId,
+      url,
+      format,
+      entries: [],
+      note: typeof ruleset.note === 'string' ? ruleset.note.trim() : ''
+    };
+  }
+
+  if (kind !== 'custom' || !Array.isArray(ruleset.entries) || !ruleset.entries.length) {
     throw createHttpError(`rulesets[${index}] custom entries must be a non-empty array`, 400);
   }
 

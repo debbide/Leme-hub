@@ -168,12 +168,17 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
           <button type="button" class="btn-outline routing-action-btn routing-ruleset-move-down-btn" data-ruleset-id="${escapeHtml(ruleset.id)}" ${row.isLast ? 'disabled' : ''}>↓</button>
         </div>
         <div class="routing-unified-type">
-          <span class="routing-chip ${ruleset.kind === 'builtin' ? 'is-builtin' : 'is-custom'}">${ruleset.kind === 'builtin' ? '内置' : '自定义'}</span>
+          ${ruleset.kind === 'builtin' 
+            ? `<span class="routing-chip is-builtin">内置</span>`
+            : `<select class="routing-select routing-chip is-custom" data-ruleset-field="kind" data-ruleset-id="${escapeHtml(ruleset.id)}">
+                 <option value="custom" ${ruleset.kind === 'custom' ? 'selected' : ''}>自定义</option>
+                 <option value="remote" ${ruleset.kind === 'remote' ? 'selected' : ''}>远程</option>
+               </select>`}
           <span class="routing-chip">规则集</span>
         </div>
         <label class="routing-field routing-unified-field routing-unified-match">
           <span class="routing-field-label">名称</span>
-          <input class="routing-input ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind === 'custom' ? '' : 'readonly'}>
+          <input class="routing-input ${rulesetErrors.name ? 'has-error' : ''}" data-ruleset-field="name" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.name)}" ${ruleset.kind !== 'builtin' ? '' : 'readonly'}>
           <span class="routing-field-error">${escapeHtml(rulesetErrors.name || rulesetErrors.presetId || '')}</span>
         </label>
         <div class="routing-unified-gap" aria-hidden="true"></div>
@@ -231,6 +236,23 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
           <div class="routing-ruleset-entry-actions">
             <button type="button" class="btn-outline routing-add-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">新增条目</button>
           </div>
+        </div>` : ''}
+      ${ruleset.kind === 'remote' ? `
+        <div class="routing-unified-subrows">
+          <label class="routing-field routing-unified-field">
+            <span class="routing-field-label">链接</span>
+            <input class="routing-input ${rulesetErrors.url ? 'has-error' : ''}" data-ruleset-field="url" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.url || '')}" placeholder="https://...">
+            <span class="routing-field-error">${escapeHtml(rulesetErrors.url || '')}</span>
+          </label>
+          <div class="routing-unified-gap" aria-hidden="true"></div>
+          <label class="routing-field routing-unified-field">
+            <span class="routing-field-label">格式</span>
+            <select class="routing-select ${rulesetErrors.format ? 'has-error' : ''}" data-ruleset-field="format" data-ruleset-id="${escapeHtml(ruleset.id)}">
+              <option value="binary" ${ruleset.format === 'binary' ? 'selected' : ''}>Binary</option>
+              <option value="source" ${ruleset.format === 'source' ? 'selected' : ''}>Source</option>
+            </select>
+            <span class="routing-field-error">${escapeHtml(rulesetErrors.format || '')}</span>
+          </label>
         </div>` : ''}
     </div>`;
 };
