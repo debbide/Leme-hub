@@ -1053,6 +1053,34 @@
         </div>
       </div>
     </div>
+    <!-- Routing Remote Ruleset Modal -->
+    <div id="routing-remote-ruleset-modal" class="modal-overlay">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h2 class="modal-title" id="routing-remote-ruleset-modal-title">添加远程订阅规则</h2>
+          <button type="button" class="btn-icon modal-close-btn" id="routing-remote-ruleset-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-top:0.5rem;">
+            <label>
+              <span class="modal-field-label">规则集名称</span>
+              <input type="text" id="routing-remote-ruleset-modal-name" class="modal-field-input" placeholder="例如 Discord 或 自定义分流" autocomplete="off">
+            </label>
+          </div>
+          <div style="margin-top:0.9rem;">
+            <label>
+              <span class="modal-field-label">订阅链接</span>
+              <input type="text" id="routing-remote-ruleset-modal-url" class="modal-field-input" placeholder="例如 https://example.com/ruleset.srs" autocomplete="off">
+            </label>
+          </div>
+          <p id="routing-remote-ruleset-modal-error" class="state-msg error hidden" style="margin-top:0.9rem;"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="routing-remote-ruleset-modal-cancel">取消</button>
+          <button type="button" class="btn-primary" id="routing-remote-ruleset-modal-confirm">确认保存</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Bubble Toast Container -->
     <div id="toast-container" class="toast-container"></div>

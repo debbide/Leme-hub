@@ -28,6 +28,12 @@ export const bindRoutingEvents = ({
   routingRuleModalClose,
   closeRoutingRuleModal,
   routingRuleModalCancel,
+  routingRemoteRulesetModalConfirm,
+  submitRoutingRemoteRulesetModal,
+  routingRemoteRulesetModalClose,
+  closeRoutingRemoteRulesetModal,
+  routingRemoteRulesetModalCancel,
+  openRoutingRemoteRulesetModal,
   routingRuleModalAction,
   routingRuleModalNode,
   getNodeGroups,
@@ -58,12 +64,7 @@ export const bindRoutingEvents = ({
 
   routingAddRulesetBtn?.addEventListener('click', () => {
     if (!canEditRouting()) return;
-    const rulesets = getRoutingRulesets();
-    const nextRulesets = [...rulesets, createRoutingRulesetDraft({ kind: 'remote', name: `远程订阅 ${rulesets.length + 1}` })];
-    setRoutingRulesets(nextRulesets);
-    setRoutingRulesetErrors(buildRoutingRulesetErrors(nextRulesets));
-    setRoutingDirty(true);
-    renderRoutingRules();
+    openRoutingRemoteRulesetModal();
   });
 
   routingSaveBtn?.addEventListener('click', saveRoutingRules);
@@ -110,6 +111,10 @@ export const bindRoutingEvents = ({
   routingRuleModalConfirm?.addEventListener('click', submitRoutingRuleModal);
   routingRuleModalClose?.addEventListener('click', closeRoutingRuleModal);
   routingRuleModalCancel?.addEventListener('click', closeRoutingRuleModal);
+
+  routingRemoteRulesetModalConfirm?.addEventListener('click', submitRoutingRemoteRulesetModal);
+  routingRemoteRulesetModalClose?.addEventListener('click', closeRoutingRemoteRulesetModal);
+  routingRemoteRulesetModalCancel?.addEventListener('click', closeRoutingRemoteRulesetModal);
   routingRuleModalAction?.addEventListener('change', () => {
     if (routingRuleModalNode) {
       if (routingRuleModalAction.value === 'node_group') {

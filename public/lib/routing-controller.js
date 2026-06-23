@@ -33,6 +33,10 @@ export const createRoutingController = ({
   routingRuleModalValue,
   routingRuleModalNote,
   routingRuleModalError,
+  routingRemoteRulesetModal,
+  routingRemoteRulesetModalName,
+  routingRemoteRulesetModalUrl,
+  routingRemoteRulesetModalError,
   requestJson,
   showToast,
   showConfirmModal,
@@ -71,6 +75,7 @@ export const createRoutingController = ({
   let routingLogViewMode = 'stats';
   let routingBuiltinRulesets = [];
   let editingRoutingRuleId = null;
+  let editingRoutingRemoteRulesetId = null;
 
   const updateRoutingSaveState = () => {
     if (!routingSaveBtn) return;
@@ -222,6 +227,61 @@ export const createRoutingController = ({
     closeRoutingRuleModal,
     renderRoutingRules,
   });
+  const openRoutingRemoteRulesetModal = (ruleset = null) => {
+    if (!routingRemoteRulesetModal) return;
+    editingRoutingRemoteRulesetId = ruleset?.id || null;
+    routingRemoteRulesetModalName.value = ruleset?.name || '';
+    routingRemoteRulesetModalUrl.value = ruleset?.url || '';
+    routingRemoteRulesetModalError.textContent = '';
+    routingRemoteRulesetModalError.classList.add('hidden');
+    routingRemoteRulesetModal.classList.add('active');
+  };
+
+  const closeRoutingRemoteRulesetModal = () => {
+    if (!routingRemoteRulesetModal) return;
+    editingRoutingRemoteRulesetId = null;
+    routingRemoteRulesetModal.classList.remove('active');
+  };
+
+  const submitRoutingRemoteRulesetModal = () => {
+    if (!routingRemoteRulesetModal) return;
+    const name = routingRemoteRulesetModalName.value.trim();
+    const url = routingRemoteRulesetModalUrl.value.trim();
+
+    if (!url) {
+      routingRemoteRulesetModalError.textContent = '请输入订阅链接';
+      routingRemoteRulesetModalError.classList.remove('hidden');
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      routingRemoteRulesetModalError.textContent = '订阅链接格式不正确';
+      routingRemoteRulesetModalError.classList.remove('hidden');
+      return;
+    }
+
+    if (editingRoutingRemoteRulesetId) {
+      const ruleset = routingRulesets.find((item) => item.id === editingRoutingRemoteRulesetId);
+      if (ruleset) {
+        ruleset.name = name;
+        ruleset.url = url;
+      }
+    } else {
+      const draft = createRoutingRulesetDraft({ 
+        kind: 'remote', 
+        name: name || `远程订阅 ${routingRulesets.length + 1}`,
+        url: url 
+      });
+      routingRulesets.push(draft);
+      routingRowOrder.push({ kind: 'ruleset', id: draft.id });
+    }
+    
+    routingRulesetErrors = buildRoutingRulesetErrors(routingRulesets);
+    routingDirty = true;
+    
+    closeRoutingRemoteRulesetModal();
+    renderRoutingRules();
+    showToast(editingRoutingRemoteRulesetId ? '已更新远程规则集' : '已添加远程规则集', 'success');
+  };
 
   const enableRuleRoutingFlow = async ({ enableSystemProxy = false } = {}) => {
     const patch = { routingMode: 'rule' };
@@ -353,6 +413,10 @@ export const createRoutingController = ({
         routingDirty = true;
         renderRoutingRules();
       },
+      onRulesetEdit: (rulesetId) => {
+        const ruleset = routingRulesets.find((item) => item.id === rulesetId);
+        if (ruleset) openRoutingRemoteRulesetModal(ruleset);
+      },
       onRulesetMove: (rulesetId, offset) => moveRoutingRuleset(rulesetId, offset),
       onRulesetAddEntry: (rulesetId) => {
         const ruleset = routingRulesets.find((item) => item.id === rulesetId);
@@ -459,6 +523,9 @@ export const createRoutingController = ({
       setRoutingObservabilityEntries: (value) => { routingObservabilityEntries = value || []; },
       setRoutingSavedFlashUntil: (value) => { routingSavedFlashUntil = value; },
       getRoutingMode,
+      openRoutingRemoteRulesetModal,
+      closeRoutingRemoteRulesetModal,
+      submitRoutingRemoteRulesetModal,
     });
   };
 

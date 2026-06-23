@@ -208,6 +208,7 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
           <div class="routing-ruleset-runtime-inline">${renderRulesetRuntimeMeta({ ruleset, routingBuiltinRulesets: row.routingBuiltinRulesets, rulesetDatabaseStatus: row.rulesetDatabaseStatus, escapeHtml })}</div>
         </div>
         <div class="routing-unified-actions">
+          ${ruleset.kind === 'remote' ? `<button type="button" class="btn-outline routing-edit-ruleset-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">编辑链接</button>` : ''}
           <button type="button" class="btn-outline routing-delete-ruleset-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">删除</button>
         </div>
       </div>
@@ -235,11 +236,6 @@ const renderRulesetRow = ({ row, escapeHtml, renderRulesetRuntimeMeta }) => {
           <div class="routing-ruleset-entry-actions">
             <button type="button" class="btn-outline routing-add-ruleset-entry-btn" data-ruleset-id="${escapeHtml(ruleset.id)}">新增条目</button>
           </div>
-        </div>` : ''}
-      ${ruleset.kind === 'remote' ? `
-        <div class="routing-unified-subrows" style="padding: 4px 12px; background: transparent; border-top: 1px dashed var(--border-color); display: flex; flex-direction: column; gap: 4px;">
-          <input class="routing-input" style="border: none; background: transparent; padding: 0; height: auto; font-family: monospace; font-size: 13px; color: var(--text-muted);" data-ruleset-field="url" data-ruleset-id="${escapeHtml(ruleset.id)}" value="${escapeHtml(ruleset.url || '')}" placeholder="在此输入远程订阅链接 (https://...)" autocomplete="off">
-          ${rulesetErrors.url ? `<div class="routing-field-error">${escapeHtml(rulesetErrors.url)}</div>` : ''}
         </div>` : ''}
     </div>`;
 };
@@ -269,6 +265,7 @@ export const renderRoutingRules = ({
   onRuleEdit,
   onRulesetFieldChange,
   onRulesetDelete,
+  onRulesetEdit,
   onRulesetMove,
   onRulesetAddEntry,
   onRulesetEntryFieldChange,
@@ -357,6 +354,10 @@ export const renderRoutingRules = ({
 
     routingRulesContainer.querySelectorAll('[data-ruleset-field]').forEach((input) => {
       input.addEventListener('change', (event) => onRulesetFieldChange(input, event));
+    });
+
+    routingRulesContainer.querySelectorAll('.routing-edit-ruleset-btn').forEach((button) => {
+      button.addEventListener('click', () => onRulesetEdit(button.dataset.rulesetId));
     });
 
     routingRulesContainer.querySelectorAll('.routing-delete-ruleset-btn').forEach((button) => {

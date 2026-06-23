@@ -108,6 +108,13 @@ const routingRuleModalError = document.querySelector('#routing-rule-modal-error'
 const routingRuleModalConfirm = document.querySelector('#routing-rule-modal-confirm');
 const routingRuleModalClose = document.querySelector('#routing-rule-modal-close');
 const routingRuleModalCancel = document.querySelector('#routing-rule-modal-cancel');
+const routingRemoteRulesetModal = document.querySelector('#routing-remote-ruleset-modal');
+const routingRemoteRulesetModalName = document.querySelector('#routing-remote-ruleset-modal-name');
+const routingRemoteRulesetModalUrl = document.querySelector('#routing-remote-ruleset-modal-url');
+const routingRemoteRulesetModalError = document.querySelector('#routing-remote-ruleset-modal-error');
+const routingRemoteRulesetModalConfirm = document.querySelector('#routing-remote-ruleset-modal-confirm');
+const routingRemoteRulesetModalClose = document.querySelector('#routing-remote-ruleset-modal-close');
+const routingRemoteRulesetModalCancel = document.querySelector('#routing-remote-ruleset-modal-cancel');
 const rulesetDbRefreshBtn = document.querySelector('#ruleset-db-refresh-btn');
 const routingDbStatus = document.querySelector('#routing-db-status');
 const routingDbNote = document.querySelector('#routing-db-note');
@@ -536,6 +543,10 @@ const routingController = createRoutingController({
   routingRuleModalValue,
   routingRuleModalNote,
   routingRuleModalError,
+  routingRemoteRulesetModal,
+  routingRemoteRulesetModalName,
+  routingRemoteRulesetModalUrl,
+  routingRemoteRulesetModalError,
   requestJson,
   showToast,
   showConfirmModal,
@@ -757,6 +768,12 @@ bindRoutingEvents({
   routingRuleModalClose,
   closeRoutingRuleModal: () => routingController.closeRoutingRuleModal(),
   routingRuleModalCancel,
+  routingRemoteRulesetModalConfirm,
+  submitRoutingRemoteRulesetModal: () => routingController.submitRoutingRemoteRulesetModal(),
+  routingRemoteRulesetModalClose,
+  closeRoutingRemoteRulesetModal: () => routingController.closeRoutingRemoteRulesetModal(),
+  routingRemoteRulesetModalCancel,
+  openRoutingRemoteRulesetModal: (ruleset) => routingController.openRoutingRemoteRulesetModal(ruleset),
   routingRuleModalAction,
   routingRuleModalNode,
   getNodeGroups: () => nodeGroupsController.getNodeGroups(),
