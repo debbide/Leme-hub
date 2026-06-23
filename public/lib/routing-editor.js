@@ -338,7 +338,7 @@ export const renderRoutingRules = ({
       </div>`;
 
     routingRulesContainer.querySelectorAll('[data-field]').forEach((input) => {
-      const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
+      const eventName = 'change';
       input.addEventListener(eventName, (event) => onRuleFieldChange(input, event));
     });
 
@@ -359,7 +359,7 @@ export const renderRoutingRules = ({
     });
 
     routingRulesContainer.querySelectorAll('[data-ruleset-field]').forEach((input) => {
-      input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', (event) => onRulesetFieldChange(input, event));
+      input.addEventListener('change', (event) => onRulesetFieldChange(input, event));
     });
 
     routingRulesContainer.querySelectorAll('.routing-delete-ruleset-btn').forEach((button) => {
@@ -379,7 +379,7 @@ export const renderRoutingRules = ({
     });
 
     routingRulesContainer.querySelectorAll('[data-ruleset-entry-field]').forEach((input) => {
-      input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', (event) => onRulesetEntryFieldChange(input, event));
+      input.addEventListener('change', (event) => onRulesetEntryFieldChange(input, event));
     });
 
     routingRulesContainer.querySelectorAll('.routing-delete-ruleset-entry-btn').forEach((button) => {
