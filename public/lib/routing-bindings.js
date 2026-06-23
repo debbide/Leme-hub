@@ -12,9 +12,13 @@ export const bindRoutingEvents = ({
   renderRoutingRules,
   routingSaveBtn,
   saveRoutingRules,
+  ensureRoutingEditable,
   routingRulesetPresetSelect,
   getBuiltinRulesetById,
   showToast,
+  openRoutingRemoteRulesetModal,
+  closeRoutingRemoteRulesetModal,
+  submitRoutingRemoteRulesetModal,
   routingPresetSelect,
   applyRoutingPreset,
   getRoutingRules,
@@ -58,12 +62,23 @@ export const bindRoutingEvents = ({
 
   routingAddRulesetBtn?.addEventListener('click', () => {
     if (!canEditRouting()) return;
-    const rulesets = getRoutingRulesets();
-    const nextRulesets = [...rulesets, createRoutingRulesetDraft({ kind: 'remote', name: `远程订阅 ${rulesets.length + 1}` })];
-    setRoutingRulesets(nextRulesets);
-    setRoutingRulesetErrors(buildRoutingRulesetErrors(nextRulesets));
-    setRoutingDirty(true);
-    renderRoutingRules();
+    openRoutingRemoteRulesetModal();
+  });
+
+  const routingRemoteRulesetModalConfirm = document.querySelector('#routing-remote-ruleset-modal-confirm');
+  const routingRemoteRulesetModalClose = document.querySelector('#routing-remote-ruleset-modal-close');
+  const routingRemoteRulesetModalCancel = document.querySelector('#routing-remote-ruleset-modal-cancel');
+
+  routingRemoteRulesetModalConfirm?.addEventListener('click', () => {
+    submitRoutingRemoteRulesetModal();
+  });
+  
+  routingRemoteRulesetModalClose?.addEventListener('click', () => {
+    closeRoutingRemoteRulesetModal();
+  });
+  
+  routingRemoteRulesetModalCancel?.addEventListener('click', () => {
+    closeRoutingRemoteRulesetModal();
   });
 
   routingSaveBtn?.addEventListener('click', saveRoutingRules);
