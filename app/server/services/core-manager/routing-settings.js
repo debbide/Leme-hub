@@ -125,6 +125,46 @@ const normalizeRoutingItem = (item, index, nodeGroups = []) => {
     };
   }
 
+  if (kind === 'remote') {
+    const url = String(item.url || '').trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw createHttpError(`routingItems[${index}] remote requires a valid http/https url`, 400);
+    }
+    const format = String(item.format || 'binary').trim();
+    if (!['binary', 'source'].includes(format)) {
+      throw createHttpError(`routingItems[${index}] remote format must be binary or source`, 400);
+    }
+    const target = String(item.target || '').trim();
+    const nodeId = item.nodeId == null || item.nodeId === '' ? null : String(item.nodeId).trim();
+    const groupId = item.groupId == null || item.groupId === '' ? null : String(item.groupId).trim();
+
+    if (!RULESET_TARGETS.includes(target)) {
+      throw createHttpError(`routingItems[${index}] has invalid target`, 400);
+    }
+    if (target === 'node' && !nodeId) {
+      throw createHttpError(`routingItems[${index}] target=node requires nodeId`, 400);
+    }
+    if (target === 'node_group' && !groupId) {
+      throw createHttpError(`routingItems[${index}] target=node_group requires groupId`, 400);
+    }
+    if (target === 'node_group' && groupId && !hasExistingNodeGroup(nodeGroups, groupId)) {
+      throw createHttpError(`routingItems[${index}] target=node_group requires an existing node group`, 400);
+    }
+
+    return {
+      id: String(item.id || `routing-remote-${index + 1}`),
+      kind,
+      name: item.name || '',
+      url,
+      format,
+      target,
+      nodeId,
+      groupId,
+      enabled: item.enabled !== false,
+      note: item.note || ''
+    };
+  }
+
   const entry = normalizeRulesetEntry(item, index, index);
   const target = String(item.target || '').trim();
   const nodeId = item.nodeId == null || item.nodeId === '' ? null : String(item.nodeId).trim();
