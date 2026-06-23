@@ -730,7 +730,6 @@ bindRoutingEvents({
   routingAddRuleBtn,
   openRoutingRuleModal: (rule) => routingController.openRoutingRuleModal(rule),
   routingAddRulesetBtn,
-  routingAddRemoteRulesetBtn: document.querySelector('#routing-add-remote-ruleset'),
   createRoutingRulesetDraft: routingController.createRoutingRulesetDraft,
   createRoutingRulesetEntryDraft: routingController.createRoutingRulesetEntryDraft,
   getRoutingRulesets: () => routingController.getRoutingRulesets(),
