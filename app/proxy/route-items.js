@@ -5,7 +5,9 @@ export const buildNormalizedRoutingItems = ({ routingItems = [], customRules = [
       ...customRules.map((rule) => ({ ...rule, kind: 'rule' })),
       ...rulesets.flatMap((ruleset) => ruleset.kind === 'builtin'
         ? [{ ...ruleset, kind: 'builtin_ruleset' }]
-        : (ruleset.entries || []).map((entry) => ({
+        : ruleset.kind === 'remote'
+          ? [{ ...ruleset, kind: 'remote' }]
+          : (ruleset.entries || []).map((entry) => ({
           id: entry.id,
           rulesetId: ruleset.id,
           rulesetName: ruleset.name,

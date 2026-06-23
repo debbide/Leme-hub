@@ -11,7 +11,7 @@ const isValidIpv4Cidr = (value) => {
   return match[1].split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
 };
 
-const ROUTING_ITEM_KINDS = ['rule', 'builtin_ruleset', 'custom_entry'];
+const ROUTING_ITEM_KINDS = ['rule', 'builtin_ruleset', 'custom_entry', 'remote'];
 
 const legacyRoutingItemsFromSettings = (settings = {}, nodeGroups = []) => {
   const rules = Array.isArray(settings.customRules) ? normalizeCustomRules(settings.customRules, nodeGroups) : [];
@@ -35,6 +35,21 @@ const legacyRoutingItemsFromSettings = (settings = {}, nodeGroups = []) => {
           kind: 'builtin_ruleset',
           presetId: ruleset.presetId,
           name: ruleset.name || '',
+          target: ruleset.target,
+          nodeId: ruleset.nodeId,
+          groupId: ruleset.groupId,
+          enabled: ruleset.enabled !== false,
+          note: ruleset.note || ''
+        }];
+      }
+
+      if (ruleset.kind === 'remote') {
+        return [{
+          id: String(ruleset.id || `routing-remote-${index + 1}`),
+          kind: 'remote',
+          name: ruleset.name || '',
+          url: ruleset.url || '',
+          format: ruleset.format || 'binary',
           target: ruleset.target,
           nodeId: ruleset.nodeId,
           groupId: ruleset.groupId,
@@ -158,7 +173,9 @@ const normalizeRoutingItems = (items, nodeGroups = []) => {
       ? `rule|${item.type}|${item.action}|${item.nodeId || ''}|${item.nodeGroupId || ''}|${String(item.value || '').toLowerCase()}`
       : item.kind === 'builtin_ruleset'
         ? `builtin_ruleset|${item.presetId}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}`
-        : `custom_entry|${item.rulesetId || ''}|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
+        : item.kind === 'remote'
+          ? `remote|${item.url}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}`
+          : `custom_entry|${item.rulesetId || ''}|${item.type}|${item.target}|${item.nodeId || ''}|${item.groupId || ''}|${String(item.value || '').toLowerCase()}`;
 
     if (seenSignatures.has(signature)) {
       throw createHttpError(`routingItems[${index}] duplicates another routing item`, 400);
@@ -200,6 +217,22 @@ const routingItemsToLegacySettings = (routingItems = []) => {
         groupId: item.groupId,
         entries: [],
         note: item.note || ''
+      });
+      return;
+    }
+
+    if (item.kind === 'remote') {
+      builtinRulesets.push({
+        id: item.id || `ruleset-${index + 1}`,
+        kind: 'remote',
+        name: item.note || item.name || item.url,
+        url: item.url,
+        format: item.format || 'binary',
+        enabled: item.enabled !== false,
+        target: item.target,
+        nodeId: item.nodeId,
+        groupId: item.groupId,
+        note: typeof item.note === 'string' ? item.note.trim() : ''
       });
       return;
     }

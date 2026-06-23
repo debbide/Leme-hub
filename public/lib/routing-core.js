@@ -400,6 +400,21 @@ export const buildRoutingItemsFromUnifiedRows = ({ rules = [], rulesets = [], or
       }];
     }
 
+    if (ruleset.kind === 'remote') {
+      return [{
+        id: rulesetId,
+        kind: 'remote',
+        name: String(ruleset.name || '').trim(),
+        url: String(ruleset.url || '').trim(),
+        format: ruleset.format || 'binary',
+        target,
+        nodeId,
+        groupId,
+        enabled: ruleset.enabled !== false,
+        note: String(ruleset.note || '').trim(),
+      }];
+    }
+
     return (Array.isArray(ruleset.entries) ? ruleset.entries : []).map((entry, entryIndex) => ({
       id: String(entry.id || `${rulesetId}-entry-${entryIndex + 1}`),
       kind: 'custom_entry',
