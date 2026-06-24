@@ -73,11 +73,24 @@ export const buildDnsConfig = ({
     .map((node) => normalizeHost(node?.server))
     .filter((host) => host && !isIpLiteralHost(host)))];
 
+  const upstreamEchDomains = [...new Set(validNodes
+    .flatMap((node) => [
+      normalizeHost(node?.sni),
+      normalizeHost(node?.host)
+    ])
+    .filter((host) => host && !isIpLiteralHost(host) && !upstreamServerDomains.includes(host)))];
+
   const dnsRules = [
     ...(upstreamServerDomains.length
       ? [{
           domain: upstreamServerDomains,
           server: 'dns-bootstrap'
+        }]
+      : []),
+    ...(upstreamEchDomains.length
+      ? [{
+          domain: upstreamEchDomains,
+          server: 'dns-local'
         }]
       : []),
     {
