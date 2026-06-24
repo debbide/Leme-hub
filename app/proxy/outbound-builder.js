@@ -105,6 +105,24 @@ export const buildNodeOutbound = (node, options = {}) => {
       outbound.tls.certificate_public_key_sha256 = toList(node.certificate_public_key_sha256);
     }
 
+    if (node.ech || node.ech_config) {
+      outbound.tls.ech = {
+        enabled: true
+      };
+      if (node.ech_config) {
+        const echConfigs = toList(node.ech_config);
+        if (echConfigs.length) {
+          outbound.tls.ech.config = echConfigs;
+        }
+      }
+      if (node.ech_pq_signature_schemes_enabled !== undefined) {
+        outbound.tls.ech.pq_signature_schemes_enabled = !!node.ech_pq_signature_schemes_enabled;
+      }
+      if (node.ech_dynamic_record_sizing_disabled !== undefined) {
+        outbound.tls.ech.dynamic_record_sizing_disabled = !!node.ech_dynamic_record_sizing_disabled;
+      }
+    }
+
     if (isReality) {
       outbound.tls.reality = {
         enabled: true,

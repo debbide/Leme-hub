@@ -1199,6 +1199,7 @@ tr.active-row {
 }
 .pill-protocol { background: var(--accent-base); color: white; }
 .pill-dark { background: var(--pill-bg); color: var(--pill-text); }
+.pill-ech { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); margin-left: 0.2rem; }
 .pill-active { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.4); margin-left: 0.5rem;}
 .pill-mini { background: var(--border-strong); padding: 0.1rem 0.3rem; margin-left: 0.2rem; }
 

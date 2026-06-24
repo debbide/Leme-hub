@@ -745,6 +745,16 @@
                     <span>跳过证书验证</span>
                   </label>
                 </div>
+                <div class="node-form-field-wrap node-form-toggle-wrap" data-form-field="ech">
+                  <label class="node-form-toggle">
+                    <input type="checkbox" id="edit-node-ech" name="ech">
+                    <span>开启 ECH</span>
+                  </label>
+                </div>
+                <div class="node-form-field-wrap" data-form-field="ech_config">
+                  <label class="modal-field-label" for="edit-node-ech-config">ECH Config (可选)</label>
+                  <input type="text" id="edit-node-ech-config" name="ech_config" class="modal-field-input" placeholder="留空自动从 DoH 获取，或填入配置字符串" autocomplete="off">
+                </div>
                 <div class="node-form-field-wrap" data-form-field="alpn">
                   <label class="modal-field-label" for="edit-node-alpn">ALPN</label>
                   <input type="text" id="edit-node-alpn" name="alpn" class="modal-field-input" placeholder="多个值用逗号分隔，例如 h2,h3" autocomplete="off">

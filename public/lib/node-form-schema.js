@@ -42,6 +42,50 @@ const FORM_EXCLUDED_KEYS = new Set([
   'max_early_data',
   'early_data_header_name',
   'fp',
+const SUPPORTED_NODE_TYPES = new Set(['vmess', 'vless', 'trojan', 'tuic', 'hysteria2', 'anytls', 'shadowsocks', 'socks', 'http']);
+const TYPES_WITH_TRANSPORT = new Set(['vmess', 'vless', 'trojan']);
+const TYPES_WITH_SECURITY = new Set(['vmess', 'vless', 'trojan']);
+const TYPES_WITH_FIXED_TLS = new Set(['tuic', 'hysteria2', 'anytls']);
+const TYPES_WITH_FP = new Set(['vmess', 'vless', 'trojan', 'anytls']);
+
+const FORM_EXCLUDED_KEYS = new Set([
+  'id',
+  'type',
+  'name',
+  'server',
+  'port',
+  'group',
+  'countryCodeOverride',
+  'uuid',
+  'password',
+  'username',
+  'method',
+  'security',
+  'flow',
+  'network',
+  'transport',
+  'plugin',
+  'plugin_opts',
+  'obfs',
+  'obfs_password',
+  'up_mbps',
+  'down_mbps',
+  'congestion_control',
+  'udp_relay_mode',
+  'idle_session_check_interval',
+  'idle_session_timeout',
+  'min_idle_session',
+  'heartbeat',
+  'packet_encoding',
+  'serviceName',
+  'service_name',
+  'wsPath',
+  'wsHost',
+  'path',
+  'host',
+  'max_early_data',
+  'early_data_header_name',
+  'fp',
   'pbk',
   'sid',
   'spx',
@@ -50,6 +94,8 @@ const FORM_EXCLUDED_KEYS = new Set([
   'tls_cipher_suites',
   'certificate_public_key_sha256',
   'alpn',
+  'ech',
+  'ech_config',
   'insecure',
   'tls',
   'sni',
@@ -89,6 +135,8 @@ export const DEFAULT_NODE_FORM_STATE = {
   flow: '',
   packet_encoding: '',
   sni: '',
+  ech: false,
+  ech_config: '',
   insecure: false,
   alpn: '',
   fp: 'chrome',
@@ -269,6 +317,8 @@ export const normalizeNodeForForm = (node) => {
     flow: toFormString(node?.flow),
     packet_encoding: packetEncoding,
     sni: toFormString(node?.sni),
+    ech: node?.ech === true,
+    ech_config: toFormString(node?.ech_config),
     insecure: !!node?.insecure,
     alpn: normalizeAlpnForForm(type, node?.alpn),
     fp: toFormString(node?.fp || (TYPES_WITH_FP.has(type) ? 'chrome' : '')),
@@ -464,6 +514,8 @@ const pruneTypeSpecificFields = (node, type, security, transport) => {
     drop(
       'tls',
       'sni',
+      'ech',
+      'ech_config',
       'insecure',
       'alpn',
       'fp',
@@ -666,6 +718,10 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
     if (formState?.insecure) {
       node.insecure = true;
     }
+    if (formState?.ech) {
+      node.ech = true;
+      setIfPresent(node, 'ech_config', cleanOptionalString(formState?.ech_config));
+    }
     setIfPresent(node, 'alpn', cleanOptionalString(formState?.alpn) || defaultAlpnForType(type) || undefined);
     setIfPresent(node, 'tls_min_version', cleanOptionalString(formState?.tls_min_version));
     setIfPresent(node, 'tls_max_version', cleanOptionalString(formState?.tls_max_version));
@@ -749,6 +805,7 @@ export const getNodeFormVisibility = (formState) => {
     grpcServiceName: TYPES_WITH_TRANSPORT.has(type) && transport === 'grpc',
     tlsSection: tlsEnabled,
     sni: tlsEnabled,
+    ech: tlsEnabled,
     insecure: tlsEnabled,
     alpn: tlsEnabled,
     fp: tlsEnabled && TYPES_WITH_FP.has(type),

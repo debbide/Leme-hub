@@ -34,6 +34,40 @@ export const renderNodeRow = ({
   else if (node.tls) secText = 'tls';
   const maskedIp = maskAddress(node.server);
   const localPortStr = node.localPort ? node.localPort : (node.port || '未知');
+
+export const showInlineMessage = (target, message, tone = '') => {
+  target.textContent = message;
+  target.className = tone ? `state-msg ${tone}` : 'state-msg';
+  target.classList.remove('hidden');
+};
+
+export const maskAddress = (address) => {
+  if (!address) return '未知地址';
+  const parts = address.split('.');
+  if (parts.length === 4 && !parts.some((part) => Number.isNaN(Number(part)))) {
+    return `${parts[0]}.${parts[1]}.*.*`;
+  }
+  if (address.length > 8) {
+    return address.substring(0, 4) + '***' + address.substring(address.length - 4);
+  }
+  return address;
+};
+
+export const renderNodeRow = ({
+  node,
+  activeNodeId,
+  groupsData,
+  nodesData,
+  escapeHtml,
+}) => {
+  const protText = (node.type || 'SOCKS').toUpperCase();
+  const transText = (node.transport || 'tcp').toLowerCase();
+  const isSubscriptionNode = node.source === 'subscription' && node.subscriptionUrl;
+  let secText = '-';
+  if (node.security && node.security !== 'none') secText = node.security.toLowerCase();
+  else if (node.tls) secText = 'tls';
+  const maskedIp = maskAddress(node.server);
+  const localPortStr = node.localPort ? node.localPort : (node.port || '未知');
   const isActive = node.id === activeNodeId;
   const activeClass = isActive ? 'active-row' : '';
   const activeBadge = isActive ? '<span class="pill pill-active"><i class="ph ph-lightning"></i> 当前生效</span>' : '';
@@ -42,6 +76,7 @@ export const renderNodeRow = ({
   const flagEmoji = node.flagEmoji || flagFromCountryCode(node.countryCode);
   const flagTitle = escapeHtml(node.countryName || node.countryCode || 'GeoIP 数据准备中');
   const countryOverrideBadge = node.countryOverridden ? '<span class="pill pill-dark">手动国家</span>' : '';
+  const echBadge = node.ech ? '<span class="pill pill-ech" title="Encrypted Client Hello 已开启">ECH</span>' : '';
   const groupMenuItems = [
     `<button type="button" class="group-menu-item${!node.group ? ' active' : ''}" data-group="">未分组</button>`,
     ...allGroups.map((group) => {
@@ -76,6 +111,7 @@ export const renderNodeRow = ({
       <td>
         <span class="pill pill-dark">${escapeHtml(transText)}</span>
         <span class="pill pill-dark">${escapeHtml(secText)}</span>
+        ${echBadge}
       </td>
       <td class="node-latency-cell">
         <span class="latency" id="test-result-${escapeHtml(node.id)}">-</span>

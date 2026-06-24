@@ -163,6 +163,18 @@ export const parseProxyLink = (link, options = {}) => {
     if (toBool(params.get('insecure')) || toBool(params.get('allowInsecure')) || toBool(params.get('allow_insecure'))) {
       config.insecure = true;
     }
+    
+    const echParam = params.get('ech');
+    if (echParam) {
+      config.ech = true;
+      if (!['1', 'true'].includes(echParam.toLowerCase())) {
+        config.ech_config = echParam;
+      }
+    }
+    if (params.get('ech_config')) {
+      config.ech = true;
+      config.ech_config = params.get('ech_config');
+    }
 
     const rawUser = decodeURIComponent(url.username || '');
     const rawPass = decodeURIComponent(url.password || '');
