@@ -112,7 +112,11 @@ export const buildNodeOutbound = (node, options = {}) => {
         };
         if (node.ech_config) {
           const configList = node.ech_config.split(',').map((s) => s.trim()).filter(Boolean);
-          const actualConfigs = configList.filter((s) => s !== 'pq_signature_schemes_enabled' && s !== 'dynamic_record_sizing_disabled');
+          const actualConfigs = configList.filter((s) => {
+            if (s === 'pq_signature_schemes_enabled' || s === 'dynamic_record_sizing_disabled') return false;
+            if (s.includes('.') || s.includes('://')) return false;
+            return true;
+          }).map((s) => s.replace(/ /g, '+'));
           if (actualConfigs.length > 0) {
             outbound.tls.ech.config = actualConfigs;
           }
