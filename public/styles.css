@@ -1119,6 +1119,7 @@ th {
 #nodes-list th:nth-child(4),
 #nodes-list td:nth-child(4) {
   text-align: left;
+  white-space: nowrap;
 }
 
 #nodes-list th:nth-child(6),
