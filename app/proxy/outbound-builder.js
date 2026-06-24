@@ -106,20 +106,17 @@ export const buildNodeOutbound = (node, options = {}) => {
     }
 
     if (node.ech || node.ech_config) {
-      outbound.tls.ech = {
-        enabled: true
-      };
-      if (node.ech_config) {
-        const echConfigs = toList(node.ech_config);
-        if (echConfigs.length) {
-          outbound.tls.ech.config = echConfigs;
+      if (node.ech) {
+        outbound.tls.ech = {
+          enabled: true
+        };
+        if (node.ech_config) {
+          const configList = node.ech_config.split(',').map((s) => s.trim()).filter(Boolean);
+          const actualConfigs = configList.filter((s) => s !== 'pq_signature_schemes_enabled' && s !== 'dynamic_record_sizing_disabled');
+          if (actualConfigs.length > 0) {
+            outbound.tls.ech.config = actualConfigs;
+          }
         }
-      }
-      if (node.ech_pq_signature_schemes_enabled !== undefined) {
-        outbound.tls.ech.pq_signature_schemes_enabled = !!node.ech_pq_signature_schemes_enabled;
-      }
-      if (node.ech_dynamic_record_sizing_disabled !== undefined) {
-        outbound.tls.ech.dynamic_record_sizing_disabled = !!node.ech_dynamic_record_sizing_disabled;
       }
     }
 
