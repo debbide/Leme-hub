@@ -205,7 +205,9 @@ export const deleteNode = async (manager, nodeId) => {
     throw createHttpError('Node not found', 404);
   }
 
-  return manager.queueNodeChangesApply(manager.saveNodes(remainingNodes));
+  const savedNodes = manager.saveNodes(remainingNodes);
+  manager.syncAutoCountryNodeGroups(savedNodes);
+  return manager.queueNodeChangesApply(savedNodes);
 };
 
 export const deleteNodes = async (manager, nodeIds) => {
@@ -223,7 +225,10 @@ export const deleteNodes = async (manager, nodeIds) => {
 
   const idSet = new Set(ids);
   const remainingNodes = nodes.filter((node) => !idSet.has(node.id));
-  const applied = await manager.queueNodeChangesApply(manager.saveNodes(remainingNodes));
+  const savedNodes = manager.saveNodes(remainingNodes);
+  manager.syncAutoCountryNodeGroups(savedNodes);
+  
+  const applied = await manager.queueNodeChangesApply(savedNodes);
   return {
     deletedCount: ids.length,
     ...applied
