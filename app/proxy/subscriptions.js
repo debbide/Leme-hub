@@ -234,10 +234,7 @@ export const syncSubscription = async (context, url, options = {}) => {
   let lastError;
   const tryDownload = async (transport, headerProfile) => {
     try {
-      const requestUrl = new URL(url);
-      requestUrl.searchParams.set('_t', Date.now().toString());
-      
-      response = await axios.get(requestUrl.toString(), {
+      response = await axios.get(url, {
         ...requestOptions,
         ...transport.config,
         headers: buildHeaders(headerProfile)
