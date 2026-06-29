@@ -130,3 +130,36 @@ export const showInputModal = (title, defaultValue = '') => new Promise((resolve
   document.getElementById('input-modal-close').addEventListener('click', () => finish(null));
   field.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(field.value); if (e.key === 'Escape') finish(null); }, { once: true });
 });
+
+export const showEditSubscriptionModal = (defaultUrl = '', defaultName = '') => new Promise((resolve) => {
+  const overlay = document.getElementById('edit-subscription-modal');
+  const urlField = document.getElementById('edit-subscription-url');
+  const nameField = document.getElementById('edit-subscription-name');
+  const confirmBtn = document.getElementById('edit-subscription-modal-confirm');
+  const cancelBtn = document.getElementById('edit-subscription-modal-cancel');
+  const closeBtn = document.getElementById('edit-subscription-modal-close');
+
+  urlField.value = defaultUrl;
+  nameField.value = defaultName;
+  overlay.classList.add('active');
+  setTimeout(() => { urlField.focus(); }, 50);
+
+  const finish = (result) => {
+    overlay.classList.remove('active');
+    confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+    closeBtn.replaceWith(closeBtn.cloneNode(true));
+    resolve(result);
+  };
+
+  document.getElementById('edit-subscription-modal-confirm').addEventListener('click', () => finish({ url: urlField.value, name: nameField.value }));
+  document.getElementById('edit-subscription-modal-cancel').addEventListener('click', () => finish(null));
+  document.getElementById('edit-subscription-modal-close').addEventListener('click', () => finish(null));
+  
+  const handleKeydown = (e) => {
+    if (e.key === 'Enter') finish({ url: urlField.value, name: nameField.value });
+    if (e.key === 'Escape') finish(null);
+  };
+  urlField.addEventListener('keydown', handleKeydown);
+  nameField.addEventListener('keydown', handleKeydown);
+});

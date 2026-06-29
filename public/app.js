@@ -1,4 +1,4 @@
-import { createToastController, showConfirmModal, showInputModal } from './lib/ui.js';
+import { createToastController, showConfirmModal, showInputModal, showEditSubscriptionModal } from './lib/ui.js';
 import { createNodesPanelController } from './lib/nodes-panel.js';
 import { createRoutingController } from './lib/routing-controller.js';
 import { pollTraffic as pollTrafficView, renderNodeApplyStatus as renderNodeApplyStatusView, renderProxyEndpoints as renderProxyEndpointsView, renderSystemProxyAutoSwitchControls as renderSystemProxyAutoSwitchControlsView, renderSystemProxyNodeOptions as renderSystemProxyNodeOptionsView, updateCoreStatus as updateCoreStatusView, updateSpeedCard as updateSpeedCardView } from './lib/dashboard-system.js';
@@ -456,6 +456,7 @@ const nodeGroupsController = createNodeGroupsController({
   requestJson,
   showToast,
   showInputModal,
+  showEditSubscriptionModal,
   updateCoreStatus,
   loadNodes: () => loadNodes(),
   showInlineMessage,
@@ -488,6 +489,7 @@ const nodesPanel = createNodesPanelController({
   addGroupBtn,
   subscriptionDetailPanel,
   showInputModal,
+  showEditSubscriptionModal,
   showConfirmModal,
   showToast,
   requestJson,

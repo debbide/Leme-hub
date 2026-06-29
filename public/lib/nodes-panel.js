@@ -40,6 +40,7 @@ export const createNodesPanelController = ({
   addGroupBtn,
   subscriptionDetailPanel,
   showInputModal,
+  showEditSubscriptionModal,
   showConfirmModal,
   showToast,
   requestJson,
@@ -324,15 +325,11 @@ export const createNodesPanelController = ({
       const target = subscriptionsData.find((item) => item.id === id);
       if (!target) return;
 
-      const nextUrlInput = await showInputModal('编辑订阅链接', target.url);
-      if (nextUrlInput === null) return;
-      const nextUrl = nextUrlInput.trim();
-      if (!nextUrl) return;
-
-      const nextNameInput = await showInputModal('编辑订阅名称（可选）', target.name || '');
-      if (nextNameInput === null) return;
-      const nextName = nextNameInput.trim();
-      if (nextUrl === target.url && nextName === (target.name || '')) return;
+      const result = await showEditSubscriptionModal(target.url, target.name || '');
+      if (!result) return;
+      const nextUrl = result.url.trim();
+      const nextName = result.name.trim();
+      if (!nextUrl || (nextUrl === target.url && nextName === (target.name || ''))) return;
 
       button.disabled = true;
       const label = button.querySelector('span');

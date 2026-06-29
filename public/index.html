@@ -919,6 +919,26 @@
       </div>
     </div>
 
+    <!-- Edit Subscription Modal -->
+    <div id="edit-subscription-modal" class="modal-overlay">
+      <div class="modal" style="max-width:380px;">
+        <div class="modal-header">
+          <h2 class="modal-title">编辑订阅</h2>
+          <button type="button" class="btn-icon modal-close-btn" id="edit-subscription-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-field-label" for="edit-subscription-url">订阅链接</label>
+          <input type="text" id="edit-subscription-url" class="modal-field-input" autocomplete="off" style="margin-bottom: 12px;">
+          <label class="modal-field-label" for="edit-subscription-name">订阅名称（可选）</label>
+          <input type="text" id="edit-subscription-name" class="modal-field-input" autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="cancel-modal-btn" id="edit-subscription-modal-cancel">取消</button>
+          <button type="button" class="btn-primary" id="edit-subscription-modal-confirm">保存</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Node QR Share Modal -->
     <div id="node-share-qr-modal" class="modal-overlay">
       <div class="modal node-share-qr-modal">
