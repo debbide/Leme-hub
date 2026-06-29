@@ -185,7 +185,9 @@ export const syncSubscription = async (context, url, options = {}) => {
   const buildHeaders = (profile = {}) => {
     const headers = {
       'User-Agent': profile.userAgent || explicitUserAgent || SUBSCRIPTION_USER_AGENT,
-      Accept: profile.accept || 'text/plain, application/json;q=0.9, */*;q=0.8'
+      Accept: profile.accept || 'text/plain, application/json;q=0.9, */*;q=0.8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache'
     };
     if (authHeader) {
       headers.Authorization = authHeader;
@@ -232,7 +234,10 @@ export const syncSubscription = async (context, url, options = {}) => {
   let lastError;
   const tryDownload = async (transport, headerProfile) => {
     try {
-      response = await axios.get(url, {
+      const requestUrl = new URL(url);
+      requestUrl.searchParams.set('_t', Date.now().toString());
+      
+      response = await axios.get(requestUrl.toString(), {
         ...requestOptions,
         ...transport.config,
         headers: buildHeaders(headerProfile)
