@@ -60,6 +60,9 @@ export const toShareLink = (node) => {
       alpn: node.alpn || '',
       fp: node.fp || (vmessTls ? 'chrome' : '')
     };
+    if (node.packet_encoding) {
+      payload.packetEncoding = node.packet_encoding;
+    }
     return `vmess://${toBase64(JSON.stringify(payload))}`;
   }
 
@@ -80,8 +83,9 @@ export const toShareLink = (node) => {
     if (!node.password) {
       return null;
     }
+    const isReality = nodeUsesReality(node);
     const query = buildQuery({
-      security: node.security || (node.tls ? 'tls' : undefined),
+      security: isReality ? 'reality' : (node.security || (node.tls ? 'tls' : undefined)),
       type: node.transport || 'tcp',
       host: node.wsHost || undefined,
       path: node.wsPath || undefined,
@@ -89,7 +93,11 @@ export const toShareLink = (node) => {
       sni: node.sni || undefined,
       alpn: node.alpn || undefined,
       fp: node.fp || undefined,
-      allowInsecure: node.insecure ? '1' : undefined
+      pbk: node.pbk || undefined,
+      sid: isReality ? (node.sid || '') : undefined,
+      allowInsecure: node.insecure ? '1' : undefined,
+      ech: node.ech ? '1' : undefined,
+      ech_config: node.ech_config || undefined
     });
     return `trojan://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
   }
@@ -117,7 +125,10 @@ export const toShareLink = (node) => {
       pbk: node.pbk || undefined,
       sid: isReality ? (node.sid || '') : undefined,
       flow: node.flow || undefined,
-      allowInsecure: node.insecure ? '1' : undefined
+      allowInsecure: node.insecure ? '1' : undefined,
+      packetEncoding: node.packet_encoding || undefined,
+      ech: node.ech ? '1' : undefined,
+      ech_config: node.ech_config || undefined
     });
     return `vless://${encodeURIComponent(node.uuid)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
   }
@@ -135,7 +146,9 @@ export const toShareLink = (node) => {
       sni: node.sni || undefined,
       alpn: node.alpn || undefined,
       insecure: node.insecure ? '1' : undefined,
-      allowInsecure: node.insecure ? '1' : undefined
+      allowInsecure: node.insecure ? '1' : undefined,
+      ech: node.ech ? '1' : undefined,
+      ech_config: node.ech_config || undefined
     });
     return `hy2://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
   }
@@ -151,7 +164,9 @@ export const toShareLink = (node) => {
       zero_rtt_handshake: node.zero_rtt_handshake,
       sni: node.sni || undefined,
       alpn: node.alpn || 'h3',
-      allow_insecure: node.insecure ? '1' : undefined
+      allow_insecure: node.insecure ? '1' : undefined,
+      ech: node.ech ? '1' : undefined,
+      ech_config: node.ech_config || undefined
     });
     return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
   }
@@ -168,7 +183,9 @@ export const toShareLink = (node) => {
       allowInsecure: node.insecure ? '1' : undefined,
       idle_session_check_interval: node.idle_session_check_interval || undefined,
       idle_session_timeout: node.idle_session_timeout || undefined,
-      min_idle_session: node.min_idle_session ?? undefined
+      min_idle_session: node.min_idle_session ?? undefined,
+      ech: node.ech ? '1' : undefined,
+      ech_config: node.ech_config || undefined
     });
     return `anytls://${encodeURIComponent(node.password)}@${urlHost}:${port || 443}${query}${name ? `#${name}` : ''}`;
   }
