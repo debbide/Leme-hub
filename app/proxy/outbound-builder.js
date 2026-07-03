@@ -130,9 +130,6 @@ export const buildNodeOutbound = (node, options = {}) => {
         public_key: node.pbk,
         short_id: node.sid
       };
-      if (node.spx) {
-        outbound.tls.reality.spider_x = node.spx;
-      }
       if (node.reality_next_protocol) {
         outbound.tls.reality.next_protocol = toList(node.reality_next_protocol);
       }
