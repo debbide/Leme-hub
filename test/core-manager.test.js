@@ -2760,3 +2760,70 @@ test('groupNodesByCountry updates only nodes with country code', async () => {
   assert.equal(result.nodes.find((node) => node.id === 'n2')?.group, '手动分组');
   assert.equal(result.nodeGroups.some((group) => group.id === 'country-auto-jp'), true);
 });
+
+test('start does not stop the running process when pre-spawn validation fails', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const oldProcess = { id: 'old', once() {} };
+  const calls = [];
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({ ready: true, source: 'managed' })
+  };
+  manager.proxyService = {
+    proxyProcess: oldProcess,
+    setNodes: () => calls.push('setNodes'),
+    // Simulate config validation failing before the old process is touched/replaced.
+    start: async () => {
+      calls.push('start');
+      const error = new Error('config validation failed');
+      error.phase = 'validation';
+      throw error;
+    },
+    stop: async () => { calls.push('stop'); },
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  await assert.rejects(() => manager.start(), /config validation failed/);
+  assert.equal(calls.includes('stop'), false, 'old process must not be stopped on validation failure');
+  assert.equal(manager.proxyService.proxyProcess, oldProcess, 'old process reference must be preserved');
+});
+
+test('start stops the process when startup fails after the process was replaced', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const oldProcess = { id: 'old', once() {} };
+  const newProcess = { id: 'new', once() {} };
+  const calls = [];
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({ ready: true, source: 'managed' })
+  };
+  manager.proxyService = {
+    proxyProcess: oldProcess,
+    setNodes: () => calls.push('setNodes'),
+    // Simulate spawn succeeding (process replaced) then a later readiness step failing.
+    start: async () => {
+      calls.push('start');
+      manager.proxyService.proxyProcess = newProcess;
+      throw new Error('timed out waiting for sing-box to listen');
+    },
+    stop: async () => { calls.push('stop'); },
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  await assert.rejects(() => manager.start(), /timed out/);
+  assert.equal(calls.includes('stop'), true, 'a replaced/failed process must be cleaned up');
+});

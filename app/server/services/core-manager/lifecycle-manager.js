@@ -128,8 +128,23 @@ export const start = async (manager, options = {}) => {
     void manager.runNodeGroupAutoTestTick();
     return manager.getStatus();
   } catch (error) {
-    if (binary && manager.proxyService?.proxyProcess) {
+    const preserveRunningProcess = error?.phase === 'validation'
+      && replacedProcess
+      && manager.proxyService?.proxyProcess === replacedProcess;
+
+    if (binary && manager.proxyService?.proxyProcess && !preserveRunningProcess) {
       await manager.proxyService.stop();
+    }
+
+    if (preserveRunningProcess) {
+      // Config validation failed while the previous sing-box process is still
+      // serving. Leave it running and surface the error without tearing down a
+      // working proxy.
+      manager.state = {
+        ...manager.state,
+        lastError: error.message
+      };
+      throw error;
     }
 
     const binaryState = binary

@@ -383,7 +383,14 @@ export const startProxyRuntime = async (context, options = {}) => {
   const execPath = resolveExecutablePath(options.binPath);
   context.executablePath = execPath;
   if (!options.skipValidation) {
-    await validateConfig(context, config, { binPath: execPath });
+    try {
+      await validateConfig(context, config, { binPath: execPath });
+    } catch (error) {
+      // Tag pre-spawn validation failures so callers can preserve a still-running
+      // previous process instead of tearing it down for a bad config.
+      error.phase = 'validation';
+      throw error;
+    }
   }
   writeConfig(config, context.configPath);
   buildRoutingObservabilityLines(runtimeOptions, config)
