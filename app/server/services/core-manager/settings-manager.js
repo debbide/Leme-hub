@@ -374,12 +374,7 @@ export const updateSettings = async (manager, patch, options = {}) => {
   const activeNodeId = hasPatchActiveNodeId
     ? manager.resolveActiveNodeId({ ...next, activeNodeId: requestedActiveNodeId }, nodes)
     : (current.activeNodeId == null ? null : String(current.activeNodeId).trim() || null);
-  let autoStart = manager.state.autoStart;
-  if (Object.prototype.hasOwnProperty.call(patch, 'autoStart')) {
-    autoStart = patch.autoStart
-      ? await manager.autoStartManager.enable()
-      : await manager.autoStartManager.disable();
-  }
+  const willChangeAutoStart = Object.prototype.hasOwnProperty.call(patch, 'autoStart');
 
   const systemProxyCaptureWasEnabled = !!current.systemProxyCaptureEnabled;
   const systemProxyCaptureWillBeDisabled = systemProxyCaptureWasEnabled && !next.systemProxyCaptureEnabled;
@@ -414,6 +409,15 @@ export const updateSettings = async (manager, patch, options = {}) => {
   if (systemProxyCaptureWillBeDisabled) {
     const disabledProxy = await manager.systemProxyManager.disable();
     manager.state.systemProxy = manager.buildSystemProxyState(disabledProxy);
+  }
+  // Apply the OS-level autostart change AFTER persisting settings so the
+  // snapshot read -> saveSettings write stays synchronous and atomic (no await
+  // window in which a concurrent writer's fields could be clobbered).
+  let autoStart = manager.state.autoStart;
+  if (willChangeAutoStart) {
+    autoStart = patch.autoStart
+      ? await manager.autoStartManager.enable()
+      : await manager.autoStartManager.disable();
   }
   manager.state.autoStart = manager.buildAutoStartState(autoStart);
   manager.refreshConnectionsServiceBaseUrl(saved);

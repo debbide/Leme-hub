@@ -2827,3 +2827,35 @@ test('start stops the process when startup fails after the process was replaced'
   await assert.rejects(() => manager.start(), /timed out/);
   assert.equal(calls.includes('stop'), true, 'a replaced/failed process must be cleaned up');
 });
+
+test('updateSettings does not clobber a concurrent settings write during the autostart os call', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  let interleaved = false;
+
+  manager.autoStartManager = {
+    getCapabilities: () => ({ supported: true, provider: 'mock' }),
+    enable: async () => {
+      // Simulate a background writer (e.g. latency cache persistence) landing on
+      // disk while the OS-level autostart call is in flight.
+      if (!interleaved) {
+        interleaved = true;
+        manager.persistNodeGroupLatencyResults(
+          [{ id: 'n1', ok: true, latencyMs: 123 }],
+          { testedAt: '2024-01-01T00:00:00.000Z' }
+        );
+      }
+      return { enabled: true, supported: true, provider: 'mock', command: 'mock-enable' };
+    },
+    disable: async () => ({ enabled: false, supported: true, provider: 'mock', command: null })
+  };
+
+  const result = await manager.updateSettings({ autoStart: true });
+
+  // Both writes must survive: autostart flag from updateSettings AND the latency
+  // cache from the interleaved background write.
+  const persisted = manager.getSettingsSnapshot();
+  assert.equal(interleaved, true);
+  assert.equal(result.settings.autoStart, true);
+  assert.equal(persisted.autoStart, true);
+  assert.equal(persisted.nodeGroupLatencyCache?.results?.n1?.latencyMs, 123);
+});
