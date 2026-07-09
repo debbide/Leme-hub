@@ -343,6 +343,11 @@ export const updateCoreStatus = ({
 }) => {
   if (!core) return;
   setCurrentCoreState(core);
+  const coreVersionNote = document.getElementById('core-version-note');
+  if (coreVersionNote) {
+    const version = core.binary?.version;
+    coreVersionNote.textContent = version ? `当前核心版本 v${String(version).replace(/^v/, '')}` : '当前核心版本 --';
+  }
   coreStatusIndicator.className = 'status-dot tooltip';
   const dashSwitch = document.getElementById('master-switch');
   const dashText = document.getElementById('master-status-text');
