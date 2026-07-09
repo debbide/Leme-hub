@@ -7,6 +7,7 @@ import {
 } from './protocol-common.js';
 
 const toBase64 = (value) => Buffer.from(String(value || ''), 'utf8').toString('base64');
+const toBase64Url = (value) => Buffer.from(String(value || ''), 'utf8').toString('base64url');
 const encodeShareName = (value, fallback = '') => encodeURIComponent(String(value || fallback || '').trim());
 
 const buildQuery = (params) => {
@@ -70,7 +71,7 @@ export const toShareLink = (node) => {
     if (!node.method || !node.password || !port) {
       return null;
     }
-    const userInfo = toBase64(`${node.method}:${node.password}`);
+    const userInfo = toBase64Url(`${node.method}:${node.password}`);
     const query = buildQuery({
       plugin: node.plugin
         ? [node.plugin, node.plugin_opts].filter(Boolean).join(';')

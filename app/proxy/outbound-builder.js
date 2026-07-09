@@ -67,9 +67,6 @@ export const buildNodeOutbound = (node, options = {}) => {
     applyIfPresent(outbound, 'packet_encoding', node.packet_encoding || defaultEncoding);
   }
 
-  applyIfPresent(outbound, 'network', node.network);
-  applyIfPresent(outbound, 'ip', node.ip);
-
   const isTls = nodeUsesTls(node);
   const isReality = nodeUsesReality(node);
   const tlsExplicitlyDisabled = node.type !== 'vmess' && String(node.security || '').trim().toLowerCase() === 'none';

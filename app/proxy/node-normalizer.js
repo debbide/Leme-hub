@@ -62,6 +62,19 @@ export const normalizeConfigNode = (node, index = 0) => {
     certificate_public_key_sha256: Array.isArray(node.tls?.certificate_public_key_sha256)
       ? node.tls.certificate_public_key_sha256.join(',')
       : node.tls?.certificate_public_key_sha256,
+    ech: node.tls?.ech?.enabled ?? node.ech,
+    ech_config: Array.isArray(node.tls?.ech?.config)
+      ? node.tls.ech.config.join(',')
+      : (node.tls?.ech?.config || node.ech_config),
+    reality_next_protocol: Array.isArray(node.tls?.reality?.next_protocol)
+      ? node.tls.reality.next_protocol.join(',')
+      : (node.tls?.reality?.next_protocol || node.reality_next_protocol),
+    record_fragment: node.tls?.record_fragment ?? node.record_fragment,
+    udp_over_stream: node.udp_over_stream,
+    zero_rtt_handshake: node.zero_rtt_handshake,
+    grpc_idle_timeout: node.transport?.idle_timeout ?? node.grpc_idle_timeout,
+    grpc_ping_timeout: node.transport?.ping_timeout ?? node.grpc_ping_timeout,
+    grpc_permit_without_stream: node.transport?.permit_without_stream ?? node.grpc_permit_without_stream,
     alpn: Array.isArray(node.tls?.alpn) ? node.tls.alpn.join(',') : node.tls?.alpn,
     insecure: node.tls?.insecure ?? node.insecure,
     tls: node.tls?.enabled ?? node.tls,
