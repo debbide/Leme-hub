@@ -134,18 +134,40 @@ export function createAppServer(paths, env = process.env) {
     sendFile(response, safePath);
   });
 
+  let handleListenError = null;
+
   server.on('error', (error) => {
     if (error?.code === 'EADDRINUSE') {
-      console.error(`Port ${runtime.port} is already in use on ${runtime.host}. Stop the existing process or change the configured host/port.`);
-      process.exit(1);
+      error.message = `Port ${runtime.port} is already in use on ${runtime.host}. Stop the existing process or change the configured host/port.`;
     }
 
+    // During startup, surface the error to the start() caller so it can decide
+    // how to handle it (e.g. the desktop app shows a dialog and shuts down
+    // cleanly instead of hard-killing the process and skipping proxy cleanup).
+    if (handleListenError) {
+      handleListenError(error);
+      return;
+    }
+
+    // No startup handler is listening (post-listen runtime error): log it.
+    // Callers that need to react can attach their own 'error' listener.
     console.error(error);
-    process.exit(1);
   });
 
-  const start = () => new Promise((resolve) => {
+  const start = () => new Promise((resolve, reject) => {
+    let settled = false;
+    handleListenError = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      handleListenError = null;
+      reject(error);
+    };
+
     server.listen(runtime.port, runtime.host, () => {
+      settled = true;
+      handleListenError = null;
       coreManager.refreshAutoStartState().catch(() => null);
       coreManager.initializeGeoIp().catch(() => null);
       coreManager.initializeRulesetDatabase().catch(() => null);

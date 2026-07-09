@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Tray } from 'electron';
 
 import { createAppServer } from '../app/server/createServer.js';
 import { resolveProjectPaths } from '../app/shared/paths.js';
@@ -184,7 +184,7 @@ function pickDesktopResponseHeaders(headers = {}) {
   const picked = {};
   DESKTOP_NET_TRACE_HEADER_NAMES.forEach((name) => {
     if (normalized[name] !== undefined) {
-      picked[name] = normalized[name];
+      picked[name] = name === 'location' ? redactDesktopUrl(String(normalized[name])) : normalized[name];
     }
   });
   return picked;
@@ -195,6 +195,42 @@ function previewDesktopResponseBody(body = '', limit = 240) {
     .replace(/\s+/gu, ' ')
     .trim()
     .slice(0, limit);
+}
+
+// Query params whose values may carry OAuth codes / tokens / session secrets.
+const DESKTOP_NET_TRACE_SENSITIVE_PARAMS = new Set([
+  'code', 'access_token', 'id_token', 'refresh_token', 'token', 'state',
+  'session', 'session_token', 'client_secret', 'password', 'auth', 'authorization',
+  'sig', 'signature', 'key', 'api_key'
+]);
+
+// Path fragments that indicate an auth/token exchange whose body must not be captured.
+const DESKTOP_NET_TRACE_SENSITIVE_PATHS = ['/oauth', '/authorize', '/callback', '/token', '/backend-api/', '/session'];
+
+function redactDesktopUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    let redacted = false;
+    for (const key of parsed.searchParams.keys()) {
+      if (DESKTOP_NET_TRACE_SENSITIVE_PARAMS.has(key.toLowerCase())) {
+        parsed.searchParams.set(key, 'REDACTED');
+        redacted = true;
+      }
+    }
+    if (redacted) {
+      return parsed.toString();
+    }
+    return rawUrl;
+  } catch {
+    // Not a parseable URL: strip anything after ? defensively.
+    const idx = String(rawUrl).indexOf('?');
+    return idx >= 0 ? `${String(rawUrl).slice(0, idx)}?REDACTED` : String(rawUrl);
+  }
+}
+
+function isDesktopSensitiveUrl(rawUrl) {
+  const lower = String(rawUrl || '').toLowerCase();
+  return DESKTOP_NET_TRACE_SENSITIVE_PATHS.some((fragment) => lower.includes(fragment));
 }
 
 async function installDesktopNetworkDiagnostics(window, context) {
@@ -240,11 +276,11 @@ async function installDesktopNetworkDiagnostics(window, context) {
         if (params.redirectResponse) {
           logDesktopNet(
             context,
-            `redirect ${meta.method} ${url} from_status=${params.redirectResponse.status} headers=${JSON.stringify(pickDesktopResponseHeaders(params.redirectResponse.headers))}`
+            `redirect ${meta.method} ${redactDesktopUrl(url)} from_status=${params.redirectResponse.status} headers=${JSON.stringify(pickDesktopResponseHeaders(params.redirectResponse.headers))}`
           );
         }
 
-        logDesktopNet(context, `request ${resourceType} ${meta.method} ${url}`);
+        logDesktopNet(context, `request ${resourceType} ${meta.method} ${redactDesktopUrl(url)}`);
         return;
       }
 
@@ -269,7 +305,7 @@ async function installDesktopNetworkDiagnostics(window, context) {
         if (shouldLogResponse) {
           logDesktopNet(
             context,
-            `response ${resourceType} status=${meta.status} url=${url} headers=${JSON.stringify(pickDesktopResponseHeaders(params.response?.headers))}`
+            `response ${resourceType} status=${meta.status} url=${redactDesktopUrl(url)} headers=${JSON.stringify(pickDesktopResponseHeaders(params.response?.headers))}`
           );
         }
         return;
@@ -284,7 +320,7 @@ async function installDesktopNetworkDiagnostics(window, context) {
 
         logDesktopNet(
           context,
-          `failed ${meta.resourceType} ${meta.method} ${meta.url} error=${params.errorText} canceled=${params.canceled ? 'true' : 'false'} blocked=${params.blockedReason || 'none'}`
+          `failed ${meta.resourceType} ${meta.method} ${redactDesktopUrl(meta.url)} error=${params.errorText} canceled=${params.canceled ? 'true' : 'false'} blocked=${params.blockedReason || 'none'}`
         );
         requests.delete(requestId);
         return;
@@ -297,7 +333,7 @@ async function installDesktopNetworkDiagnostics(window, context) {
           return;
         }
 
-        if (meta.status >= 400) {
+        if (meta.status >= 400 && !isDesktopSensitiveUrl(meta.url)) {
           try {
             const bodyResult = await debuggerApi.sendCommand('Network.getResponseBody', { requestId });
             const bodyText = bodyResult?.base64Encoded
@@ -305,10 +341,10 @@ async function installDesktopNetworkDiagnostics(window, context) {
               : bodyResult?.body || '';
             logDesktopNet(
               context,
-              `body status=${meta.status} url=${meta.url} preview=${JSON.stringify(previewDesktopResponseBody(bodyText))}`
+              `body status=${meta.status} url=${redactDesktopUrl(meta.url)} preview=${JSON.stringify(previewDesktopResponseBody(bodyText))}`
             );
           } catch (error) {
-            logDesktopNet(context, `body-read-failed status=${meta.status} url=${meta.url} error=${error.message}`);
+            logDesktopNet(context, `body-read-failed status=${meta.status} url=${redactDesktopUrl(meta.url)} error=${error.message}`);
           }
         }
 
@@ -570,7 +606,22 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    await startBackend();
+    try {
+      await startBackend();
+    } catch (error) {
+      // The backend server could not start (e.g. the UI port is already in use).
+      // Show a native error instead of leaving a windowless zombie process, then
+      // quit cleanly so before-quit cleanup still runs.
+      const detail = error?.message || String(error);
+      try {
+        dialog.showErrorBox('Leme Hub 无法启动', `本地服务启动失败：\n${detail}`);
+      } catch {
+        console.error(`[desktop] backend failed to start: ${detail}`);
+      }
+      isQuitting = true;
+      app.quit();
+      return;
+    }
     createTray();
     if (!isBackgroundLaunch()) {
       await createWindow();
