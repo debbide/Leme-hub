@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, Tray } from 'electron';
@@ -551,6 +552,48 @@ function createTray() {
   return tray;
 }
 
+const WINDOWS_PROXY_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+let emergencyProxyRestoreDone = false;
+
+// Best-effort SYNCHRONOUS system-proxy restore for abrupt-exit paths (OS
+// logoff/shutdown, uncaughtException) where the normal async cleanup subprocess
+// may be killed mid-flight, leaving ProxyEnable=1 pointing at a dead port and
+// breaking all networking. Only runs on Windows and only when this app believes
+// it currently has an enabled/managed system proxy, so it never clobbers a
+// proxy the user configured outside the app.
+function emergencyRestoreSystemProxySync() {
+  if (emergencyProxyRestoreDone || process.platform !== 'win32' || !serverContext) {
+    return;
+  }
+  let settings = null;
+  try {
+    settings = serverContext.store?.getSettings?.();
+  } catch {
+    settings = null;
+  }
+  if (!settings || (!settings.systemProxyEnabled && !settings.systemProxyCaptureEnabled)) {
+    return;
+  }
+  emergencyProxyRestoreDone = true;
+  const regWrites = [
+    ['ProxyEnable', 'REG_DWORD', '0'],
+    ['ProxyServer', 'REG_SZ', ''],
+    ['ProxyOverride', 'REG_SZ', ''],
+    ['AutoConfigURL', 'REG_SZ', '']
+  ];
+  for (const [name, type, data] of regWrites) {
+    try {
+      execFileSync('reg', ['add', WINDOWS_PROXY_REG_PATH, '/v', name, '/t', type, '/d', data, '/f'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        timeout: 4000
+      });
+    } catch {
+      // Best effort — continue with the remaining registry values.
+    }
+  }
+}
+
 async function shutdownBackend() {
   if (tray) {
     tray.destroy();
@@ -645,6 +688,23 @@ if (!hasSingleInstanceLock) {
     isQuitting = true;
     await shutdownBackend();
     app.exit(0);
+  });
+
+  // Final synchronous safety net. If the async before-quit cleanup was cut short
+  // (OS logoff/shutdown), restore the system proxy synchronously so networking
+  // is never left pointing at a dead local port.
+  app.on('will-quit', () => {
+    emergencyRestoreSystemProxySync();
+  });
+
+  // A crash in the main process must not strand the system proxy.
+  process.on('uncaughtException', (error) => {
+    try {
+      emergencyRestoreSystemProxySync();
+    } finally {
+      console.error(`[desktop] uncaughtException: ${error?.stack || error}`);
+      app.exit(1);
+    }
   });
 
   app.on('window-all-closed', () => {

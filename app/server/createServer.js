@@ -68,6 +68,44 @@ const sendFile = (response, filePath) => {
   fs.createReadStream(filePath).pipe(response);
 };
 
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
+
+const isLoopbackHostname = (hostname) => {
+  const normalized = String(hostname || '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+  if (LOOPBACK_HOSTNAMES.has(normalized)) {
+    return true;
+  }
+  // 127.0.0.0/8 is entirely loopback.
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(normalized);
+};
+
+// For the local desktop control API, reject state-changing requests whose
+// browser-supplied Origin is not this machine's loopback. This blocks CSRF /
+// DNS-rebinding from web pages without introducing a token. Same-origin
+// fetch()/XHR from the bundled UI always send a loopback Origin (or none, for
+// non-browser callers), so legitimate traffic is unaffected. Server mode (a
+// deliberately hosted panel, possibly remote) is intentionally exempt.
+export const isForbiddenCrossOrigin = (request, runtime) => {
+  if (runtime.mode !== 'desktop') {
+    return false;
+  }
+  const method = request.method || 'GET';
+  if (SAFE_HTTP_METHODS.has(method)) {
+    return false;
+  }
+  const origin = request.headers.origin;
+  if (!origin) {
+    return false;
+  }
+  try {
+    return !isLoopbackHostname(new URL(origin).hostname);
+  } catch {
+    // Unparseable Origin header on a write request: treat as forbidden.
+    return true;
+  }
+};
+
 export function createAppServer(paths, env = process.env) {
   ensureRuntimeDirs(paths);
 
@@ -106,6 +144,11 @@ export function createAppServer(paths, env = process.env) {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const routeKey = `${method} ${url.pathname}`;
     const route = routes[routeKey];
+
+    if (isForbiddenCrossOrigin(request, runtime)) {
+      sendJson(response, 403, { ok: false, error: 'Cross-origin request rejected' });
+      return;
+    }
 
     if (route) {
       try {
