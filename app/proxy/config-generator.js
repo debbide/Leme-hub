@@ -46,7 +46,7 @@ const normalizeNodeGroups = (nodeGroups = [], validNodeIdSet = new Set()) => (no
   .filter((group) => group.nodeIds.length > 0);
 
 const buildNodeInbounds = (context, validNodes) => validNodes.map((node, index) => ({
-  type: 'socks',
+  type: 'mixed',
   tag: `in-${node.id}`,
   listen: context.proxyListen,
   listen_port: context.nodePortMap.get(node.id) || (context.basePort + index)
