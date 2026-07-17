@@ -522,7 +522,7 @@ test('reports inactive routing observability labels when mode is not rule', () =
     ]
   });
 
-  assert.equal(lines[0], '[Routing] rule routing inactive: mode=global');
+  assert.equal(lines[0], '[Routing] rule routing inactive: mode=global via system proxy');
   assert.equal(lines.some((line) => line.includes('rule 1: domain=example.com -> default')), true);
 });
 
@@ -694,10 +694,28 @@ test('reports inactive routing observability labels when system proxy is disable
   });
 
   assert.deepEqual(lines, [
-    '[Routing] rule routing inactive: system proxy disabled',
+    '[Routing] rule routing inactive: capture disabled (system proxy/TUN off)',
     '[Routing] no manual rules configured',
     '[Routing] no rulesets configured'
   ]);
+});
+
+test('reports active routing observability for TUN capture without system proxy', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const lines = service.getRoutingObservabilityLines({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: false,
+    tunEnabled: true,
+    customRules: [
+      { type: 'domain', value: 'example.com', action: 'default', note: '' }
+    ]
+  });
+
+  assert.match(lines[0], /rule routing active via TUN/);
+  assert.equal(lines.some((line) => line.includes('unmatched capture traffic (TUN)')), true);
 });
 
 test('generates inline route rule sets mapped to target nodes in rule mode', () => {
