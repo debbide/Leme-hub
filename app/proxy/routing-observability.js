@@ -13,14 +13,21 @@ export const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     customRules = [],
     rulesets = [],
     routingItems = [],
-    systemProxyEnabled = false
+    systemProxyEnabled = false,
+    tunEnabled = false
   } = runtime;
 
   const route = config.route || {};
   const rules = Array.isArray(route.rules) ? route.rules : [];
+  // Capture path is system-proxy inbounds and/or TUN; either enables rule routing.
+  const captureEnabled = Boolean(systemProxyEnabled || tunEnabled);
+  const captureModeLabel = tunEnabled
+    ? (systemProxyEnabled ? 'system proxy + TUN' : 'TUN')
+    : (systemProxyEnabled ? 'system proxy' : 'none');
   const systemRule = rules.find((rule) => Array.isArray(rule.inbound)
-    && rule.inbound.includes('system-socks')
-    && rule.inbound.includes('system-http'));
+    && (rule.inbound.includes('system-socks')
+      || rule.inbound.includes('system-http')
+      || rule.inbound.includes('tun-in')));
   const systemFallback = rules[rules.length - 1];
   const activeOutbound = activeNodeId ? `out-${activeNodeId}` : 'direct';
   const normalizeDisplayOutbound = (outbound) => outbound === ACTIVE_NODE_SELECTOR_TAG ? activeOutbound : outbound;
@@ -35,10 +42,10 @@ export const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
   const displaySystemDefaultOutbound = normalizeDisplayOutbound(systemDefaultOutbound);
   const lines = [];
 
-  if (!systemProxyEnabled) {
-    lines.push('[Routing] rule routing inactive: system proxy disabled');
+  if (!captureEnabled) {
+    lines.push('[Routing] rule routing inactive: capture disabled (system proxy/TUN off)');
   } else if (proxyMode !== 'rule') {
-    lines.push(`[Routing] rule routing inactive: mode=${proxyMode}`);
+    lines.push(`[Routing] rule routing inactive: mode=${proxyMode} via ${captureModeLabel}`);
   } else {
     const hasRoutingItems = Array.isArray(routingItems) && routingItems.length > 0;
     const routingItemCount = hasRoutingItems
@@ -48,13 +55,13 @@ export const buildRoutingObservabilityLines = (runtime = {}, config = {}) => {
     const outboundLabel = displaySystemDefaultOutbound === activeOutbound
       ? `active outbound ${activeOutbound}`
       : `system outbound ${displaySystemDefaultOutbound} (active ${activeOutbound})`;
-    lines.push(`[Routing] rule routing active: ${routingItemCount} ${label}, ${outboundLabel}`);
+    lines.push(`[Routing] rule routing active via ${captureModeLabel}: ${routingItemCount} ${label}, ${outboundLabel}`);
   }
 
-  if (systemProxyEnabled) {
+  if (captureEnabled) {
     const defaultOutbound = proxyMode === 'direct' ? 'direct' : displaySystemDefaultOutbound;
     const fallbackOutbound = normalizeDisplayOutbound(systemFallback?.outbound || systemRule?.outbound || route.final || defaultOutbound);
-    lines.push(`[Routing] unmatched system traffic -> ${fallbackOutbound}`);
+    lines.push(`[Routing] unmatched capture traffic (${captureModeLabel}) -> ${fallbackOutbound}`);
   }
 
   if (Array.isArray(routingItems) && routingItems.length) {
