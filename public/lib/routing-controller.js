@@ -284,20 +284,49 @@ export const createRoutingController = ({
   };
 
   const enableRuleRoutingFlow = async ({ enableSystemProxy = false } = {}) => {
-    const patch = { routingMode: 'rule' };
-    if (enableSystemProxy) {
-      patch.systemProxyEnabled = true;
-    }
     try {
-      const payload = await requestJson('/api/system/settings', {
+      // Mode-only switch: just settings.
+      if (!enableSystemProxy) {
+        const payload = await requestJson('/api/system/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ routingMode: 'rule' })
+        });
+        updateCoreStatus(payload.core);
+        renderRoutingRules();
+        showToast('已切换到规则分流模式', 'success');
+        return;
+      }
+
+      // Real capture enable: same path as dashboard master switch (settings + start + apply).
+      await requestJson('/api/system/settings', {
         method: 'PUT',
-        body: JSON.stringify(patch)
+        body: JSON.stringify({
+          routingMode: 'rule',
+          systemProxyEnabled: true,
+          tunEnabled: false,
+          tunCaptureEnabled: false
+        })
       });
-      updateCoreStatus(payload.core);
+      try {
+        await requestJson('/api/system/tun/disable', { method: 'POST' });
+      } catch {
+        // ignore if TUN already off
+      }
+      const startPayload = await requestJson('/api/core/start', { method: 'POST' });
+      updateCoreStatus(startPayload.core);
+      const applyPayload = await requestJson('/api/system/proxy/apply', { method: 'POST' });
+      if (applyPayload?.ok === false) {
+        throw new Error(applyPayload.error || '系统代理写入失败');
+      }
+      updateCoreStatus(applyPayload.core || startPayload.core);
       renderRoutingRules();
-      showToast(enableSystemProxy ? '已启用统一代理并切换到规则分流' : '已切换到规则分流模式', 'success');
+      const managed = !!(applyPayload.core?.systemProxy?.enabled || applyPayload.core?.proxy?.systemProxyCaptureEnabled);
+      showToast(
+        managed ? '已启用系统代理并切换到规则分流' : '已切换到规则分流（系统代理写入未确认）',
+        managed ? 'success' : 'info'
+      );
     } catch (error) {
-      showToast(`切换规则分流失败: ${error.message}`, 'error');
+      showToast(`启用统一代理失败: ${error.message}`, 'error');
     }
   };
 

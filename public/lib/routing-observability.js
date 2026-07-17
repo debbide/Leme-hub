@@ -38,13 +38,21 @@ export const renderRoutingObservability = ({
   }
 
   if (routingLogSystemProxy) {
-    // Capture path: system proxy and/or TUN both apply routing rules.
-    const systemOn = Boolean(currentCoreState?.proxy?.systemProxyEnabled || currentCoreState?.systemProxy?.enabled);
-    const tunOn = Boolean(currentCoreState?.tun?.enabled || currentCoreState?.proxy?.tunEnabled);
+    // Capture path: only OUR managed system proxy and/or TUN (not external proxies).
+    const systemOn = Boolean(
+      currentCoreState?.proxy?.systemProxyCaptureEnabled
+      || (currentCoreState?.proxy?.systemProxyEnabled && currentCoreState?.systemProxy?.desiredEnabled)
+    );
+    const tunOn = Boolean(
+      currentCoreState?.tun?.enabled
+      || currentCoreState?.proxy?.tunEnabled
+      || currentCoreState?.proxy?.tunCaptureEnabled
+    );
     let label = '未启用';
     if (tunOn && systemOn) label = '系统代理 + TUN';
     else if (tunOn) label = 'TUN 已启用';
     else if (systemOn) label = '系统代理已启用';
+    else if (currentCoreState?.systemProxy?.enabled) label = '外部系统代理';
     routingLogSystemProxy.textContent = label;
     routingLogSystemProxy.className = `routing-log-summary-value ${tunOn || systemOn ? 'is-good' : 'is-warn'}`;
   }

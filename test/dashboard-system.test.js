@@ -116,12 +116,13 @@ test('updateCoreStatus fills dashboard summary cards from proxy profile', () => 
     updateCoreStatus({
       core: {
         status: 'running',
-        systemProxy: { enabled: true },
+        systemProxy: { enabled: true, desiredEnabled: true },
         proxy: {
           mode: 'global',
           activeNode: { id: 'n1', name: 'Manual' },
           systemDefaultNode: { id: 'n2', name: 'Auto Exit' },
           systemProxyEnabled: true,
+          systemProxyCaptureEnabled: true,
           systemProxyAutoSwitch: { enabled: false }
         },
         nodeApply: { state: 'applied', lastAppliedAt: '2026-06-09T12:00:00.000Z' }

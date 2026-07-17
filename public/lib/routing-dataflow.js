@@ -40,7 +40,15 @@ export const loadRoutingRulesData = async ({
   updateRoutingSaveState,
   renderRoutingModeBanner,
 }) => {
-  if (!force && routingLoaded && !routingDirty) {
+  // Never discard unsaved local edits — not on view switches, not on explicit refresh.
+  // Only fetch from server on first load or when the editor is clean.
+  if (routingLoaded && routingDirty) {
+    renderRoutingRules();
+    updateRoutingSaveState?.();
+    renderRoutingModeBanner?.();
+    return;
+  }
+  if (!force && routingLoaded) {
     renderRoutingRules();
     return;
   }
@@ -53,6 +61,11 @@ export const loadRoutingRulesData = async ({
 
   try {
     const payload = await requestJson('/api/system/rules');
+    // Re-check dirty after the await: user may have edited while loading.
+    if (routingDirty) {
+      if (payload.core) updateCoreStatus(payload.core);
+      return;
+    }
     const nextRules = (payload.customRules || payload.rules || []).filter((rule) => rule && typeof rule === 'object').map((rule) => createRoutingRuleDraft(rule));
     const nextRulesets = (payload.rulesets || []).filter((ruleset) => ruleset && typeof ruleset === 'object').map((ruleset) => createRoutingRulesetDraft(ruleset));
     setRoutingRules(nextRules);

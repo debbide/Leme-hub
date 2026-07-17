@@ -1,10 +1,23 @@
 import { runWithButtonState } from './ui.js';
 
+// Only treat OUR managed capture as system_proxy mode.
+// Raw systemProxy.enabled can be another app's proxy and must not flip the UI.
 const resolveCaptureMode = (core) => {
-  if (core?.tun?.enabled || core?.proxy?.tunEnabled) return 'tun';
-  if (core?.proxy?.systemProxyEnabled || core?.systemProxy?.enabled) return 'system_proxy';
+  if (core?.tun?.enabled || core?.proxy?.tunEnabled || core?.proxy?.tunCaptureEnabled) return 'tun';
+  if (core?.proxy?.systemProxyCaptureEnabled || (core?.proxy?.systemProxyEnabled && core?.systemProxy?.desiredEnabled)) {
+    return 'system_proxy';
+  }
   return 'none';
 };
+
+const isManagedSystemCapture = (core) => Boolean(
+  core?.proxy?.systemProxyCaptureEnabled
+  || (core?.proxy?.systemProxyEnabled && core?.systemProxy?.desiredEnabled && core?.systemProxy?.enabled)
+);
+
+const isTunCapture = (core) => Boolean(
+  core?.tun?.enabled || core?.proxy?.tunEnabled || core?.proxy?.tunCaptureEnabled
+);
 
 export const bindSystemEvents = ({
   masterSwitch,
@@ -74,15 +87,14 @@ export const bindSystemEvents = ({
       })
     });
     const startPayload = await requestJson('/api/core/start', { method: 'POST' });
-    // Desktop couples capture on enable; ensure OS apply when core is running.
-    try {
-      const applyPayload = await requestJson('/api/system/proxy/apply', { method: 'POST' });
-      updateCoreStatus(applyPayload.core || startPayload.core);
-      return { kind: 'system_proxy', core: applyPayload.core || startPayload.core };
-    } catch {
-      updateCoreStatus(startPayload.core);
-      return { kind: 'system_proxy', core: startPayload.core };
+    updateCoreStatus(startPayload.core);
+    // OS apply is required for real system-proxy capture; do not pretend success if it fails.
+    const applyPayload = await requestJson('/api/system/proxy/apply', { method: 'POST' });
+    if (applyPayload?.ok === false) {
+      throw new Error(applyPayload.error || '系统代理写入失败');
     }
+    updateCoreStatus(applyPayload.core || startPayload.core);
+    return { kind: 'system_proxy', core: applyPayload.core || startPayload.core };
   };
 
   if (captureModeSelect) {
@@ -93,7 +105,10 @@ export const bindSystemEvents = ({
           const result = await applyCaptureMode(nextMode);
           if (nextMode === 'none') showToast('已关闭流量接管', 'info');
           else if (nextMode === 'tun') showToast('TUN 已启用（节点本地端口仍可用）', 'success');
-          else showToast(result.core?.systemProxy?.enabled ? '系统代理已启动' : '统一代理入口已开启', 'success');
+          else {
+            const managed = isManagedSystemCapture(result.core);
+            showToast(managed ? '系统代理已启动' : '统一代理入口已开启（系统代理写入未确认）', managed ? 'success' : 'info');
+          }
           await loadNodes();
           await loadSystemStatus();
         } catch (error) {
@@ -126,14 +141,17 @@ export const bindSystemEvents = ({
           } else {
             masterSwitch.classList.remove('off');
             masterSwitch.classList.add('on');
-            const captureEnabled = !!result.core?.systemProxy?.enabled;
-            if (masterStatusText) masterStatusText.textContent = captureEnabled ? '系统代理接管中' : '统一代理入口已开启';
-            showToast(captureEnabled ? '系统代理已启动' : '统一代理已启动', 'success');
+            const managed = isManagedSystemCapture(result.core);
+            if (masterStatusText) masterStatusText.textContent = managed ? '系统代理接管中' : '统一代理入口已开启';
+            showToast(managed ? '系统代理已启动' : '统一代理已启动（系统代理写入未确认）', managed ? 'success' : 'info');
           }
           await loadNodes();
           await loadSystemStatus();
         } catch (error) {
           showToast(`操作失败: ${error.message}`, 'error');
+          if (captureModeSelect) {
+            captureModeSelect.value = resolveCaptureMode(getCurrentCoreState?.());
+          }
         }
       });
     });

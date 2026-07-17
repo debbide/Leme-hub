@@ -287,20 +287,37 @@ const renderDashboardSummaries = ({
   setText(dashCurrentOutlet, outletName);
   setText(dashProxyMode, modeLabel);
 
+  const tunOn = !!(core.tun?.enabled || proxyProfile.tunEnabled || proxyProfile.tunCaptureEnabled);
+  // Only count OUR managed system-proxy capture, not an external app's proxy.
+  const managedSystemCapture = !!(
+    proxyProfile.systemProxyCaptureEnabled
+    || (proxyProfile.systemProxyEnabled && systemProxy.desiredEnabled && systemProxy.enabled)
+  );
+  const externalSystemProxy = !!(systemProxy.enabled && !managedSystemCapture && !tunOn);
+
   if (core.status !== 'running') {
     setText(dashLinkSummary, '核心未运行');
-    setText(dashLinkDetail, systemProxy.enabled ? '检测到系统代理被外部占用。' : '开启后会显示当前系统代理出口。');
-  } else if (systemProxy.enabled) {
+    setText(dashLinkDetail, externalSystemProxy
+      ? '检测到其它程序占用了系统代理。'
+      : '开启系统代理或 TUN 后，这里会显示当前出口。');
+  } else if (tunOn) {
+    setText(dashLinkSummary, `TUN → ${outletName}`);
+    setText(dashLinkDetail, autoSwitch.enabled
+      ? `TUN 已接管系统流量；自动切换出口中，主节点为 ${activeName}。`
+      : `TUN 已接管系统流量；当前跟随主节点 ${activeName}。节点本地端口仍可用。`);
+  } else if (managedSystemCapture) {
     setText(dashLinkSummary, `系统代理 → ${outletName}`);
     setText(dashLinkDetail, autoSwitch.enabled
       ? `自动切换已接管出口，主节点为 ${activeName}。`
       : `当前跟随主节点 ${activeName}。`);
   } else if (proxyProfile.systemProxyEnabled) {
     setText(dashLinkSummary, `统一入口 → ${outletName}`);
-    setText(dashLinkDetail, '核心已运行，可通过本地入口手动使用代理。');
+    setText(dashLinkDetail, '核心已运行，可通过本地入口手动使用代理（系统代理尚未确认写入）。');
   } else {
     setText(dashLinkSummary, '核心运行中');
-    setText(dashLinkDetail, '系统代理未接管，统一入口未开启。');
+    setText(dashLinkDetail, externalSystemProxy
+      ? '检测到其它程序占用了系统代理；本软件未接管。'
+      : '本软件未开启系统代理或 TUN；节点本地端口仍可用。');
   }
 
   if (nodeApply.state === 'applying') {
@@ -367,8 +384,12 @@ export const updateCoreStatus = ({
       tunOption.disabled = tunStatus.supported === false;
       tunOption.textContent = tunStatus.supported === false ? 'TUN 网卡（当前平台不支持）' : 'TUN 网卡';
     }
+    const managedSystemCapture = !!(
+      proxyProfile.systemProxyCaptureEnabled
+      || (unifiedProxyEnabled && systemProxy.desiredEnabled && systemProxy.enabled)
+    );
     if (tunEnabled) captureModeSelect.value = 'tun';
-    else if (unifiedProxyEnabled || systemProxy.enabled) captureModeSelect.value = 'system_proxy';
+    else if (managedSystemCapture || (unifiedProxyEnabled && systemProxy.desiredEnabled)) captureModeSelect.value = 'system_proxy';
     else captureModeSelect.value = 'none';
   }
   if (captureModeHint) {

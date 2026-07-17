@@ -50,13 +50,21 @@ export const renderRoutingModeBanner = ({
 }) => {
   if (!routingModeBanner) return;
   const mode = getRoutingMode();
-  const systemProxyEnabled = Boolean(currentCoreState?.proxy?.systemProxyEnabled || currentCoreState?.systemProxy?.enabled);
-  const tunEnabled = Boolean(currentCoreState?.tun?.enabled || currentCoreState?.proxy?.tunEnabled);
+  // Managed capture only — do not treat an external OS proxy as "our" system proxy.
+  const managedSystemProxy = Boolean(
+    currentCoreState?.proxy?.systemProxyCaptureEnabled
+    || (currentCoreState?.proxy?.systemProxyEnabled && currentCoreState?.systemProxy?.desiredEnabled)
+  );
+  const tunEnabled = Boolean(
+    currentCoreState?.tun?.enabled
+    || currentCoreState?.proxy?.tunEnabled
+    || currentCoreState?.proxy?.tunCaptureEnabled
+  );
   // System proxy HTTP/SOCKS and TUN share the same capture routing path.
-  const captureEnabled = systemProxyEnabled || tunEnabled;
+  const captureEnabled = managedSystemProxy || tunEnabled;
   const captureLabel = tunEnabled
-    ? (systemProxyEnabled ? '系统代理 + TUN' : 'TUN')
-    : (systemProxyEnabled ? '系统代理' : '统一入口');
+    ? (managedSystemProxy ? '系统代理 + TUN' : 'TUN')
+    : (managedSystemProxy ? '系统代理' : '统一入口');
   const coreStatus = currentCoreState?.status || 'stopped';
   routingModeBanner.className = 'routing-mode-banner';
   let copy = '';

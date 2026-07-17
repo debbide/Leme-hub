@@ -33,7 +33,8 @@ export const bindViewLifecycle = ({
 
       if (targetId === 'routing-view') {
         loadSystemStatus();
-        loadRoutingRules(true);
+        // Do not force-reload when the editor has unsaved local edits (would wipe them).
+        loadRoutingRules(false);
         stopRoutingStatusPolling();
         stopNodeGroupAutoTest();
         stopTrafficPolling();
