@@ -152,20 +152,37 @@ export const resolveRoutingHit = (routingHitMap, ruleTag, host, outboundTag, opt
     }
 
     if (meta.kind === 'ruleset') {
-      const outboundMatches = meta.target === 'direct' ? outboundTag === 'direct' : outboundTag === meta.target;
-      if (!outboundMatches) continue;
-      if (String(meta.descriptor || '').toLowerCase().includes('youtube') && value.includes('youtube')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('google') && value.includes('google')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('github') && value.includes('github')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('telegram') && value.includes('telegram')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('tiktok') && value.includes('tiktok')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('netflix') && value.includes('netflix')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('paypal') && value.includes('paypal')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('steam') && value.includes('steam')) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('microsoft') && (value.includes('microsoft') || value.includes('live.com') || value.includes('msauth.net') || value.includes('msftauth.net'))) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('onedrive') && (value.includes('onedrive') || value.includes('1drv.com'))) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('apple') && (value.includes('apple') || value.includes('icloud'))) return { ...meta, matchedBy: 'host-heuristic' };
-      if (String(meta.descriptor || '').toLowerCase().includes('ai') && (value.includes('openai') || value.includes('anthropic') || value.includes('claude.ai') || value.includes('midjourney'))) return { ...meta, matchedBy: 'host-heuristic' };
+      const outboundMatches = meta.target === 'direct'
+        ? outboundTag === 'direct'
+        : (outboundTag === meta.target || String(outboundTag || '').startsWith('out-') || String(outboundTag || '').startsWith('selector-'));
+      // When resolving from Clash /connections we often know host + leaf outbound,
+      // but not the geosite tag. Use name/descriptor heuristics (still generic, not per-domain config).
+      const label = `${meta.name || ''} ${meta.descriptor || ''} ${meta.rulesetPresetId || ''}`.toLowerCase();
+      const hostHit = (
+        (label.includes('youtube') && (value.includes('youtube') || value.includes('googlevideo') || value.includes('ytimg')))
+        || (label.includes('google') && (value.includes('google') || value.includes('gstatic') || value.includes('googleapis') || value.includes('ggpht')))
+        || (label.includes('github') && (value.includes('github') || value.includes('githubusercontent')))
+        || (label.includes('telegram') && (value.includes('telegram') || value.includes('t.me') || value.includes('telegra.ph') || value.includes('tdesktop') || value.includes('tg.')))
+        || (label.includes('tiktok') && (value.includes('tiktok') || value.includes('musical.ly') || value.includes('byteoversea') || value.includes('ttlivecdn')))
+        || (label.includes('netflix') && (value.includes('netflix') || value.includes('nflx')))
+        || (label.includes('paypal') && value.includes('paypal'))
+        || (label.includes('steam') && (value.includes('steam') || value.includes('steampowered') || value.includes('steamcommunity')))
+        || (label.includes('microsoft') && (value.includes('microsoft') || value.includes('live.com') || value.includes('msauth.net') || value.includes('msftauth.net') || value.includes('office.com') || value.includes('office.net') || value.includes('windows.com') || value.includes('msn.com') || value.includes('xbox') || value.includes('skype')))
+        || (label.includes('onedrive') && (value.includes('onedrive') || value.includes('1drv.com') || value.includes('sharepoint')))
+        || (label.includes('apple') && (value.includes('apple') || value.includes('icloud') || value.includes('cdn-apple')))
+        || ((label.includes('ai') || label.includes('ai-services')) && (value.includes('openai') || value.includes('anthropic') || value.includes('claude.ai') || value.includes('midjourney') || value.includes('chatgpt') || value.includes('oaistatic')))
+        || ((label.includes('cn') || label.includes('china')) && /\.(cn|com\.cn|net\.cn|org\.cn)$/u.test(value))
+      );
+      if (!hostHit) continue;
+      // Prefer exact outbound match; otherwise still report the ruleset if host strongly matches
+      // and the leaf is a node outbound (covers multi-rule geosite chains).
+      if (!outboundMatches && meta.target !== 'direct') {
+        // keep only when host heuristic is strong and target is a node/group style outbound
+        if (!(String(meta.target || '').startsWith('out-') || String(meta.target || '').startsWith('selector-'))) {
+          continue;
+        }
+      }
+      return { ...meta, matchedBy: 'host-heuristic' };
     }
   }
 

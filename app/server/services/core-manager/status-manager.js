@@ -216,19 +216,30 @@ export const getRoutingHits = async (manager) => {
   const history = manager.readRoutingHitHistory();
   if (manager.state.status !== 'running') return history;
   const settings = manager.store.getSettings();
-  if (!settings.systemProxyEnabled || settings.routingMode !== 'rule') return history;
+  // Live hits come from Clash API /connections for both system proxy and TUN capture.
+  if ((!settings.systemProxyEnabled && !settings.tunEnabled) || settings.routingMode !== 'rule') {
+    return history;
+  }
 
   manager.refreshConnectionsServiceBaseUrl(settings);
   const nodes = manager.store.getNodes();
   const context = manager.createRoutingHitDisplayContext(manager.getSettingsSnapshot(), nodes);
-  const connections = await manager.connectionsService.getConnections();
+  let connections = [];
+  try {
+    connections = await manager.connectionsService.getConnections();
+  } catch {
+    return history;
+  }
   const liveHits = connections
     .map((connection) => {
       const metadata = connection.metadata || {};
       const host = metadata.host || metadata.destinationIP || metadata.destination || '';
       const chains = Array.isArray(connection.chains) ? connection.chains : [];
-      const outboundTag = chains[chains.length - 1] || '';
-      const hit = manager.proxyService.resolveRoutingHit(connection.rule || connection.rulePayload || null, host, outboundTag, { allowHeuristic: false });
+      // Clash chains are destination-first; the leaf outbound is usually index 0.
+      const outboundTag = chains[0] || chains[chains.length - 1] || '';
+      const ruleText = [connection.rule, connection.rulePayload].filter(Boolean).join(' ');
+      // Prefer tag/rule text; allow host heuristic so geosite/geoip rulesets can surface.
+      const hit = manager.proxyService.resolveRoutingHit(ruleText || null, host, outboundTag, { allowHeuristic: true });
       if (!hit) return null;
       return manager.decorateRoutingHitEntry({
         id: connection.id || `${host}-${outboundTag}`,
