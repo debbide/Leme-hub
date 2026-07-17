@@ -34,8 +34,10 @@ const defaultSettings = (paths, options = {}) => {
     proxyListenHost: mode === 'server' ? DEFAULT_SERVER_PROXY_LISTEN_HOST : DEFAULT_PROXY_LISTEN_HOST,
     proxyBasePort: DEFAULT_PROXY_BASE_PORT,
     tlsFragmentEnabled: true,
-    systemProxyEnabled: false,
-    systemProxyCaptureEnabled: false,
+    // Desktop: open as system-proxy capture + core auto-starts on launch.
+    // Server: stay off until the operator enables capture explicitly.
+    systemProxyEnabled: mode === 'desktop',
+    systemProxyCaptureEnabled: mode === 'desktop',
     tunEnabled: false,
     tunCaptureEnabled: false,
     // Windows: mixed stack + non-strict routes avoid total blackhole with auto_route.
