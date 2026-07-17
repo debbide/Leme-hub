@@ -54,12 +54,10 @@ export const updateSubscriptionRecord = (manager, recordInput, options = {}) => 
     ...subscriptions.filter((item) => item.id !== existingRecord?.id),
     nextRecord
   ];
-  const nextSettings = {
-    ...settings,
-    subscriptions: nextSubscriptions
-  };
-
-  manager.store.saveSettings(nextSettings);
+  // Persist only the subscriptions list. The snapshot may be stale (callers
+  // reach here after network syncs), and saveSettings merges over fresh disk
+  // state, so a whole-object write would revert unrelated concurrent edits.
+  manager.store.saveSettings({ subscriptions: nextSubscriptions });
   return nextRecord;
 };
 
@@ -174,8 +172,16 @@ export const syncSubscription = async (manager, input) => {
     throw createHttpError(errorMessage, 400);
   }
 
-  settings = ensureStoredGroup(settings, groupName);
-  manager.store.saveSettings(settings);
+  // `settings` was snapshotted before the network sync above; writing it back
+  // whole would clobber any field changed meanwhile. Persist only the group
+  // list, re-reading current groups so a concurrent group edit is preserved.
+  if (groupName) {
+    const current = manager.getSettingsSnapshot();
+    const currentGroups = Array.isArray(current.groups) ? current.groups : [];
+    if (!currentGroups.includes(groupName)) {
+      manager.store.saveSettings({ groups: [...currentGroups, groupName] });
+    }
+  }
 
   const urlsToReplace = new Set([url, existingRecord?.url].filter(Boolean));
   const existingNodes = manager.store.getNodes().filter((node) => !urlsToReplace.has(node.subscriptionUrl));

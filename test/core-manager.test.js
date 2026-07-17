@@ -1976,6 +1976,35 @@ test('testNodeGroups can test resolved auto country groups', async () => {
   assert.equal(store.getSaveCalls()[0].options.backup, false);
 });
 
+test('persisting latency results only writes the cache field and preserves concurrent edits', async () => {
+  const store = createStore([
+    { id: 'n1', type: 'socks', server: 'one.example', port: 1080 }
+  ]);
+  const manager = new CoreManager(createPaths(), store);
+
+  // Snapshot taken before an async gap (as the latency timer does).
+  const staleSettings = manager.getSettingsSnapshot();
+
+  // A concurrent user edit lands on disk while the latency test is in flight.
+  store.saveSettings({ routingMode: 'global', activeNodeId: 'n1' });
+  store.clearSaveCalls();
+
+  manager.persistNodeGroupLatencyResults(
+    [{ id: 'n1', ok: true, latencyMs: 42 }],
+    { settings: staleSettings, testedAt: '2024-01-01T00:00:00.000Z' }
+  );
+
+  const saveCalls = store.getSaveCalls();
+  assert.equal(saveCalls.length, 1);
+  // Only the cache field is written — no stale routingMode / activeNodeId.
+  assert.deepEqual(Object.keys(saveCalls[0].settings), ['nodeGroupLatencyCache']);
+
+  const persisted = store.getSettings();
+  assert.equal(persisted.routingMode, 'global');
+  assert.equal(persisted.activeNodeId, 'n1');
+  assert.equal(persisted.nodeGroupLatencyCache.results.n1.latencyMs, 42);
+});
+
 test('runNodeGroupAutoTestTick switches group selector to the faster node without changing active node', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

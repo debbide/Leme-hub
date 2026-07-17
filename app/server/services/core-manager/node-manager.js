@@ -81,7 +81,6 @@ export const saveNodes = (manager, nodes) => {
   const savedNodes = manager.store.saveNodes(manager.normalizeNodes(nodes));
   const settings = manager.getSettingsSnapshot();
   manager.store.saveSettings({
-    ...settings,
     activeNodeId: manager.resolveActiveNodeId(settings, savedNodes)
   }, { backup: false });
   return savedNodes;

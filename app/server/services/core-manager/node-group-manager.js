@@ -42,7 +42,7 @@ export const createGroup = async (manager, name) => {
     return { groups: manager.getGroups() };
   }
   const groups = [...new Set([...(settings.groups || []), trimmed])];
-  manager.store.saveSettings({ ...settings, groups });
+  manager.store.saveSettings({ groups });
   return { groups: manager.getGroups() };
 };
 
@@ -75,7 +75,7 @@ export const renameGroup = async (manager, oldName, newName) => {
   const subscriptions = (settings.subscriptions || []).map((record) =>
     record.groupName === oldName ? { ...record, groupName: trimmedNew } : record
   );
-  manager.store.saveSettings({ ...settings, groups, subscriptions });
+  manager.store.saveSettings({ groups, subscriptions });
   manager.saveNodes(nodes);
   return manager.buildSavedNodeChangeResult();
 };
@@ -232,7 +232,6 @@ export const syncAutoCountryNodeGroups = (manager, nodes, countryByNodeId = null
   }
 
   manager.store.saveSettings({
-    ...settings,
     nodeGroups: normalizedNodeGroups
   }, { backup: options.backup !== true ? false : true });
   return normalizedNodeGroups;
@@ -407,10 +406,11 @@ export const selectNodeGroupNode = async (manager, groupId, selectedNodeId) => {
   );
   const nextGroup = nextGroups.find((group) => group.id === normalizedGroupId) || null;
 
-  const saved = manager.store.saveSettings({
-    ...settings,
-    nodeGroups: nextGroups
-  });
+  // Persist only nodeGroups. Rolling back on hot-switch failure must also touch
+  // only nodeGroups, otherwise the stale full snapshot would revert any routing
+  // / capture / DNS edits made after this call started.
+  const previousGroups = Array.isArray(currentGroups) ? currentGroups : [];
+  const saved = manager.store.saveSettings({ nodeGroups: nextGroups });
   manager.proxyService.runtimeOptions = manager.getRuntimeOptions(saved, nodes);
 
   if (manager.state.status === 'running') {
@@ -418,7 +418,7 @@ export const selectNodeGroupNode = async (manager, groupId, selectedNodeId) => {
       await manager.clashApiService.waitUntilReady();
       await manager.applyRunningNodeGroupSelector(nextGroup, nodes);
     } catch (error) {
-      const rolledBack = manager.store.saveSettings(settings, { backup: false });
+      const rolledBack = manager.store.saveSettings({ nodeGroups: previousGroups }, { backup: false });
       manager.proxyService.runtimeOptions = manager.getRuntimeOptions(rolledBack, nodes);
       throw error;
     }

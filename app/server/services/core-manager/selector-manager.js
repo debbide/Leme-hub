@@ -212,13 +212,18 @@ export const persistNodeGroupLatencyResults = (manager, results = [], options = 
     updatedAt: testedAt,
     results: mergedResults
   };
+  // Latency tests run on a timer after awaiting network probes, so `settings`
+  // is almost always stale here. Persist only the cache field; saveSettings
+  // merges it over fresh disk state so concurrent user edits survive.
   const savedSettings = manager.store.saveSettings({
-    ...settings,
     nodeGroupLatencyCache: latencyCache
   }, { backup: false });
 
+  // Persist only the cache, but keep the caller's (possibly resolved / virtual)
+  // nodeGroups in the returned view — those groups may not exist on disk and
+  // should not be written there.
   return {
-    settings: savedSettings,
+    settings: { ...savedSettings, nodeGroups: settings.nodeGroups || savedSettings.nodeGroups },
     latencyCache
   };
 
