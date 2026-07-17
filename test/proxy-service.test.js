@@ -1970,3 +1970,58 @@ test('stop still waits when the process already received a kill signal', async (
   assert.equal(killCalls, 0);
   assert.ok(elapsed >= 20);
 });
+
+test('generates tun inbound while keeping per-node local ports', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    { id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 },
+    { id: 'n2', type: 'socks', server: '127.0.0.2', port: 1081 }
+  ]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    tunEnabled: true
+  });
+
+  const tun = config.inbounds.find((inbound) => inbound.tag === 'tun-in');
+  assert.ok(tun);
+  assert.equal(tun.type, 'tun');
+  assert.equal(tun.auto_route, true);
+  assert.equal(tun.strict_route, true);
+  assert.equal(tun.stack, 'system');
+  assert.equal(tun.interface_name, 'leme-tun');
+  assert.deepEqual(tun.address, ['172.19.0.1/30']);
+
+  assert.equal(config.inbounds.some((inbound) => inbound.tag === 'in-n1'), true);
+  assert.equal(config.inbounds.some((inbound) => inbound.tag === 'in-n2'), true);
+  assert.equal(
+    config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('in-n1') && rule.outbound === 'out-n1'),
+    true
+  );
+  assert.equal(
+    config.route.rules.some((rule) => Array.isArray(rule.inbound) && rule.inbound.includes('tun-in') && rule.outbound === ACTIVE_NODE_SELECTOR_TAG),
+    true
+  );
+});
+
+test('routes tun and system proxy capture inbounds together when both present in config', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  // Config generator still allows both inbounds if options ask for them; product mutex is enforced in settings.
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'global',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    tunEnabled: true
+  });
+
+  const captureRule = config.route.rules.find((rule) => Array.isArray(rule.inbound)
+    && rule.inbound.includes('tun-in')
+    && rule.inbound.includes('system-socks')
+    && rule.outbound === ACTIVE_NODE_SELECTOR_TAG);
+  assert.ok(captureRule);
+});

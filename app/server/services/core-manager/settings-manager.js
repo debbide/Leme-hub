@@ -150,6 +150,8 @@ export const updateSettings = async (manager, patch, options = {}) => {
   next.systemProxyEnabled = !!next.systemProxyEnabled;
   next.systemProxyCaptureEnabled = !!next.systemProxyCaptureEnabled;
   next.tlsFragmentEnabled = !!next.tlsFragmentEnabled;
+  next.tunEnabled = !!next.tunEnabled;
+  next.tunCaptureEnabled = !!next.tunCaptureEnabled;
   if (manager.runtimeMode === 'desktop'
     && Object.prototype.hasOwnProperty.call(patch, 'systemProxyEnabled')
     && !Object.prototype.hasOwnProperty.call(patch, 'systemProxyCaptureEnabled')) {
@@ -160,6 +162,41 @@ export const updateSettings = async (manager, patch, options = {}) => {
   }
   if (next.systemProxyCaptureEnabled) {
     next.systemProxyEnabled = true;
+  }
+  if (!next.tunEnabled) {
+    next.tunCaptureEnabled = false;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'tunStack')) {
+    next.tunStack = String(next.tunStack || 'system').trim() || 'system';
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'tunStrictRoute')) {
+    next.tunStrictRoute = next.tunStrictRoute !== false;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'tunInterfaceName')) {
+    next.tunInterfaceName = String(next.tunInterfaceName || 'leme-tun').trim() || 'leme-tun';
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'tunAddress')) {
+    const address = Array.isArray(next.tunAddress)
+      ? next.tunAddress.map((item) => String(item || '').trim()).filter(Boolean)
+      : String(next.tunAddress || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    next.tunAddress = address.length ? address : ['172.19.0.1/30'];
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'tunMtu')) {
+    const parsedMtu = Number.parseInt(next.tunMtu, 10);
+    if (!Number.isInteger(parsedMtu) || parsedMtu <= 0) {
+      throw createHttpError('tunMtu must be a positive integer', 400);
+    }
+    next.tunMtu = parsedMtu;
+  }
+  // Explicit mutex: cannot enable TUN and system-proxy capture together.
+  if (next.tunEnabled && next.systemProxyCaptureEnabled) {
+    throw createHttpError('tunEnabled and systemProxyCaptureEnabled are mutually exclusive', 400);
+  }
+  if (next.tunEnabled && next.systemProxyEnabled && next.systemProxyCaptureEnabled) {
+    throw createHttpError('Cannot enable TUN while system proxy capture is active', 400);
   }
 
   if (next.routingMode && !ROUTING_MODES.includes(next.routingMode)) {
@@ -385,6 +422,13 @@ export const updateSettings = async (manager, patch, options = {}) => {
     tlsFragmentEnabled: !!next.tlsFragmentEnabled,
     systemProxyEnabled: !!next.systemProxyEnabled,
     systemProxyCaptureEnabled: !!next.systemProxyCaptureEnabled,
+    tunEnabled: !!next.tunEnabled,
+    tunCaptureEnabled: !!next.tunCaptureEnabled,
+    tunStack: next.tunStack,
+    tunStrictRoute: next.tunStrictRoute !== false,
+    tunInterfaceName: next.tunInterfaceName,
+    tunAddress: next.tunAddress,
+    tunMtu: next.tunMtu,
     systemProxySocksPort,
     systemProxyHttpPort,
     routingItems,
@@ -423,7 +467,7 @@ export const updateSettings = async (manager, patch, options = {}) => {
   manager.refreshConnectionsServiceBaseUrl(saved);
   manager.proxyService.runtimeOptions = manager.getRuntimeOptions(saved, nodes);
 
-  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId'];
+  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId', 'tunEnabled', 'tunStack', 'tunStrictRoute', 'tunInterfaceName', 'tunAddress', 'tunMtu'];
   const changedRuntimeKeys = runtimeSensitiveKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
   if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && hasNodeGroupsRuntimeChange(current.nodeGroups || [], nodeGroups, {
     ...current,

@@ -59,6 +59,8 @@ export const buildDnsConfig = ({
   activeSelectorOutboundTag = '',
   systemDefaultOutbound = 'direct',
   systemProxyEnabled = false,
+  tunEnabled = false,
+  captureInbounds = [],
   systemInbounds = [],
   proxyMode = 'rule',
   localDirectDomains = [],
@@ -69,6 +71,10 @@ export const buildDnsConfig = ({
   builtInCnDirectRuleSetTags = [],
   resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote'
 } = {}) => {
+  const effectiveCaptureInbounds = (Array.isArray(captureInbounds) && captureInbounds.length
+    ? captureInbounds
+    : systemInbounds).filter(Boolean);
+  const captureRoutingEnabled = Boolean(systemProxyEnabled || tunEnabled);
   const upstreamServerDomains = [...new Set(validNodes
     .map((node) => normalizeHost(node?.server))
     .filter((host) => host && !isIpLiteralHost(host)))];
@@ -103,21 +109,21 @@ export const buildDnsConfig = ({
     }
   ];
 
-  if (systemProxyEnabled && systemInbounds.length) {
+  if (captureRoutingEnabled && effectiveCaptureInbounds.length) {
     if (proxyMode === 'direct') {
       dnsRules.push({
-        inbound: systemInbounds,
+        inbound: effectiveCaptureInbounds,
         server: 'dns-local'
       });
     } else if (proxyMode === 'global') {
       dnsRules.push({
-        inbound: systemInbounds,
+        inbound: effectiveCaptureInbounds,
         server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG
       });
     } else if (proxyMode === 'rule') {
       if (storeSigninRules.length) {
         dnsRules.push({
-          inbound: systemInbounds,
+          inbound: effectiveCaptureInbounds,
           rule_set: systemStoreSigninRuleSetTag,
           server: resolveDnsServerForOutbound(systemDefaultOutbound)
         });
@@ -127,13 +133,13 @@ export const buildDnsConfig = ({
 
       if (builtInCnDirectRuleSetTags.length) {
         dnsRules.push({
-          inbound: systemInbounds,
+          inbound: effectiveCaptureInbounds,
           rule_set: builtInCnDirectRuleSetTags,
           server: 'dns-local'
         });
       }
       dnsRules.push({
-        inbound: systemInbounds,
+        inbound: effectiveCaptureInbounds,
         server: systemDefaultOutbound === 'direct' ? 'dns-local' : SYSTEM_REMOTE_DNS_SERVER_TAG
       });
     }

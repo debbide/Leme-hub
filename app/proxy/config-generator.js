@@ -52,6 +52,12 @@ const buildNodeInbounds = (context, validNodes) => validNodes.map((node, index) 
   listen_port: context.nodePortMap.get(node.id) || (context.basePort + index)
 }));
 
+export const TUN_INBOUND_TAG = 'tun-in';
+export const DEFAULT_TUN_INTERFACE_NAME = 'leme-tun';
+export const DEFAULT_TUN_ADDRESS = ['172.19.0.1/30'];
+export const DEFAULT_TUN_MTU = 9000;
+export const DEFAULT_TUN_STACK = 'system';
+
 const appendSystemProxyInbounds = (inbounds, context, {
   systemProxyEnabled = false,
   systemProxyHttpPort,
@@ -74,6 +80,37 @@ const appendSystemProxyInbounds = (inbounds, context, {
       listen_port: systemProxyHttpPort
     });
   }
+};
+
+const appendTunInbound = (inbounds, {
+  tunEnabled = false,
+  tunStack = DEFAULT_TUN_STACK,
+  tunStrictRoute = true,
+  tunAddress = DEFAULT_TUN_ADDRESS,
+  tunInterfaceName = DEFAULT_TUN_INTERFACE_NAME,
+  tunMtu = DEFAULT_TUN_MTU
+} = {}) => {
+  if (!tunEnabled) {
+    return;
+  }
+
+  const address = Array.isArray(tunAddress)
+    ? tunAddress.map((item) => String(item || '').trim()).filter(Boolean)
+    : String(tunAddress || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  inbounds.push({
+    type: 'tun',
+    tag: TUN_INBOUND_TAG,
+    interface_name: String(tunInterfaceName || DEFAULT_TUN_INTERFACE_NAME).trim() || DEFAULT_TUN_INTERFACE_NAME,
+    address: address.length ? address : [...DEFAULT_TUN_ADDRESS],
+    mtu: Number.isInteger(tunMtu) && tunMtu > 0 ? tunMtu : DEFAULT_TUN_MTU,
+    auto_route: true,
+    strict_route: tunStrictRoute !== false,
+    stack: String(tunStack || DEFAULT_TUN_STACK).trim() || DEFAULT_TUN_STACK
+  });
 };
 
 const buildActiveSelectorOutbound = (validNodes, effectiveNodeId) => validNodes.length
@@ -107,7 +144,13 @@ export const generateProxyConfig = (context, options = {}) => {
     tlsFragmentEnabled = false,
     systemProxyEnabled = false,
     systemProxyHttpPort,
-    systemProxySocksPort
+    systemProxySocksPort,
+    tunEnabled = false,
+    tunStack = DEFAULT_TUN_STACK,
+    tunStrictRoute = true,
+    tunAddress = DEFAULT_TUN_ADDRESS,
+    tunInterfaceName = DEFAULT_TUN_INTERFACE_NAME,
+    tunMtu = DEFAULT_TUN_MTU
   } = options;
 
   const validNodes = filterValidNodes(context);
@@ -136,6 +179,14 @@ export const generateProxyConfig = (context, options = {}) => {
     systemProxyEnabled,
     systemProxyHttpPort,
     systemProxySocksPort
+  });
+  appendTunInbound(inbounds, {
+    tunEnabled,
+    tunStack,
+    tunStrictRoute,
+    tunAddress,
+    tunInterfaceName,
+    tunMtu
   });
 
   const activeOutbound = effectiveNodeId ? `out-${effectiveNodeId}` : 'direct';
@@ -166,6 +217,7 @@ export const generateProxyConfig = (context, options = {}) => {
     systemDefaultOutbound,
     activeSelectorOutboundTag,
     systemProxyEnabled,
+    tunEnabled,
     proxyMode
   });
   context.routingHitMap = routingHitMap;
@@ -181,6 +233,8 @@ export const generateProxyConfig = (context, options = {}) => {
     activeSelectorOutboundTag,
     systemDefaultOutbound,
     systemProxyEnabled,
+    tunEnabled,
+    captureInbounds: dnsRouting.captureInbounds || dnsRouting.systemInbounds,
     systemInbounds: dnsRouting.systemInbounds,
     proxyMode,
     localDirectDomains: dnsRouting.localDirectDomains,

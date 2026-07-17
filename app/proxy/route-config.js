@@ -29,6 +29,8 @@ const LOCAL_DIRECT_IP_CIDRS = [
 const LOCAL_DIRECT_DOMAINS = ['localhost', 'localhost.'];
 const LOCAL_DIRECT_DOMAIN_SUFFIXES = ['local', 'lan', 'home.arpa', 'localdomain'];
 
+export const CAPTURE_INBOUND_TAGS = ['system-socks', 'system-http', 'tun-in'];
+
 export const buildRouteConfig = ({
   rulesDir,
   validNodes = [],
@@ -40,6 +42,7 @@ export const buildRouteConfig = ({
   systemDefaultOutbound = 'direct',
   activeSelectorOutboundTag = 'direct',
   systemProxyEnabled = false,
+  tunEnabled = false,
   proxyMode = 'rule'
 } = {}) => {
   const routingHitMap = new Map();
@@ -82,7 +85,10 @@ export const buildRouteConfig = ({
   const orderedRouteRules = [];
   const orderedDnsRules = [];
   const customRulesetBuckets = new Map();
-  const systemInbounds = ['system-socks', 'system-http'].filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
+  const captureInbounds = CAPTURE_INBOUND_TAGS.filter((tag) => inbounds.some((inbound) => inbound.tag === tag));
+  // Backward-compatible alias used by older call sites / tests.
+  const systemInbounds = captureInbounds;
+  const captureRoutingEnabled = Boolean(systemProxyEnabled || tunEnabled);
   const builtInCnDirectRuleSetTags = ['geosite-cn', 'geoip-cn']
     .filter((tag) => Boolean(resolveExistingFilePath(localDatabaseRuleSets[tag])));
   const localBypassRuleSetTag = registerRoutingHit(LOCAL_DIRECT_RULESET_TAG, {
@@ -138,8 +144,8 @@ export const buildRouteConfig = ({
         tag,
         rules: [{ [item.type]: [item.value] }]
       });
-      orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
-      orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      orderedRouteRules.push({ inbound: captureInbounds, rule_set: tag, outbound });
+      orderedDnsRules.push({ inbound: captureInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
       return;
     }
 
@@ -170,11 +176,11 @@ export const buildRouteConfig = ({
         });
       });
       if (remoteRuleSetTags.length) {
-        orderedRouteRules.push({ inbound: systemInbounds, rule_set: remoteRuleSetTags, outbound });
-        orderedDnsRules.push({ inbound: systemInbounds, rule_set: remoteRuleSetTags, server: resolveDnsServerForOutbound(outbound) });
+        orderedRouteRules.push({ inbound: captureInbounds, rule_set: remoteRuleSetTags, outbound });
+        orderedDnsRules.push({ inbound: captureInbounds, rule_set: remoteRuleSetTags, server: resolveDnsServerForOutbound(outbound) });
       }
-      orderedRouteRules.push({ inbound: systemInbounds, rule_set: inlineTagName, outbound });
-      orderedDnsRules.push({ inbound: systemInbounds, rule_set: inlineTagName, server: resolveDnsServerForOutbound(outbound) });
+      orderedRouteRules.push({ inbound: captureInbounds, rule_set: inlineTagName, outbound });
+      orderedDnsRules.push({ inbound: captureInbounds, rule_set: inlineTagName, server: resolveDnsServerForOutbound(outbound) });
       if (Array.isArray(builtin.entries) && builtin.entries.length) {
         orderedInlineRuleSets.push({
           type: 'inline',
@@ -203,8 +209,8 @@ export const buildRouteConfig = ({
         download_detour: 'direct',
         update_interval: '24h'
       });
-      orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
-      orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      orderedRouteRules.push({ inbound: captureInbounds, rule_set: tag, outbound });
+      orderedDnsRules.push({ inbound: captureInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
       return;
     }
 
@@ -235,12 +241,12 @@ export const buildRouteConfig = ({
       };
       customRulesetBuckets.set(tag, bucket);
       orderedInlineRuleSets.push(bucket);
-      orderedRouteRules.push({ inbound: systemInbounds, rule_set: tag, outbound });
-      orderedDnsRules.push({ inbound: systemInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      orderedRouteRules.push({ inbound: captureInbounds, rule_set: tag, outbound });
+      orderedDnsRules.push({ inbound: captureInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
     }
   });
 
-  const finalOutbound = !systemProxyEnabled || proxyMode === 'rule'
+  const finalOutbound = !captureRoutingEnabled || proxyMode === 'rule'
     ? 'direct'
     : proxyMode === 'direct'
       ? 'direct'
@@ -278,17 +284,17 @@ export const buildRouteConfig = ({
 
   routeRules.unshift({ action: 'sniff' });
 
-  if (systemProxyEnabled) {
-    if (systemInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
+  if (captureRoutingEnabled) {
+    if (captureInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
       const systemOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;
       routeRules.push({
-        inbound: systemInbounds,
+        inbound: captureInbounds,
         outbound: systemOutbound
       });
-    } else if (systemInbounds.length && proxyMode === 'rule') {
+    } else if (captureInbounds.length && proxyMode === 'rule') {
       if (storeSigninRules.length) {
         routeRules.push({
-          inbound: systemInbounds,
+          inbound: captureInbounds,
           rule_set: SYSTEM_STORE_SIGNIN_RULESET_TAG,
           outbound: systemDefaultOutbound
         });
@@ -298,14 +304,14 @@ export const buildRouteConfig = ({
 
       if (builtInCnDirectRuleSetTags.length) {
         routeRules.push({
-          inbound: systemInbounds,
+          inbound: captureInbounds,
           rule_set: builtInCnDirectRuleSetTags,
           outbound: 'direct'
         });
       }
 
       routeRules.push({
-        inbound: systemInbounds,
+        inbound: captureInbounds,
         outbound: systemDefaultOutbound
       });
     }
@@ -337,6 +343,7 @@ export const buildRouteConfig = ({
       final: finalOutbound
     },
     dnsRouting: {
+      captureInbounds,
       systemInbounds,
       localDirectDomains: LOCAL_DIRECT_DOMAINS,
       localDirectDomainSuffixes: LOCAL_DIRECT_DOMAIN_SUFFIXES,

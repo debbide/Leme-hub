@@ -81,6 +81,8 @@ export const getProxyProfile = (manager) => {
     mode: settings.routingMode,
     systemProxyEnabled: !!settings.systemProxyEnabled,
     systemProxyCaptureEnabled: !!settings.systemProxyCaptureEnabled,
+    tunEnabled: !!settings.tunEnabled,
+    tunCaptureEnabled: !!settings.tunCaptureEnabled,
     activeNodeId,
     systemDefaultNodeId,
     unifiedHttpPort,
@@ -152,7 +154,31 @@ export const getRuntimeOptions = (manager, settings = null, nodes = manager.stor
     systemProxyEnabled: !!snapshot.systemProxyEnabled,
     systemProxyCaptureEnabled: !!snapshot.systemProxyCaptureEnabled,
     systemProxyHttpPort: snapshot.systemProxyHttpPort,
-    systemProxySocksPort: snapshot.systemProxySocksPort
+    systemProxySocksPort: snapshot.systemProxySocksPort,
+    tunEnabled: !!snapshot.tunEnabled,
+    tunCaptureEnabled: !!snapshot.tunCaptureEnabled,
+    tunStack: snapshot.tunStack || 'system',
+    tunStrictRoute: snapshot.tunStrictRoute !== false,
+    tunInterfaceName: snapshot.tunInterfaceName || 'leme-tun',
+    tunAddress: Array.isArray(snapshot.tunAddress) ? snapshot.tunAddress : ['172.19.0.1/30'],
+    tunMtu: snapshot.tunMtu || 9000
+  };
+};
+
+export const isTunSupportedPlatform = (platform = process.platform) => platform === 'win32' || platform === 'linux';
+
+export const getTunStatus = (manager) => {
+  const settings = manager.getSettingsSnapshot();
+  return {
+    supported: isTunSupportedPlatform(),
+    enabled: !!settings.tunEnabled,
+    captureEnabled: !!settings.tunCaptureEnabled,
+    stack: settings.tunStack || 'system',
+    strictRoute: settings.tunStrictRoute !== false,
+    interfaceName: settings.tunInterfaceName || 'leme-tun',
+    address: Array.isArray(settings.tunAddress) ? settings.tunAddress : ['172.19.0.1/30'],
+    mtu: settings.tunMtu || 9000,
+    platform: process.platform
   };
 };
 
@@ -164,6 +190,7 @@ export const getStatus = (manager) => {
     binary: { ...binary },
     proxy: manager.getProxyProfile(),
     systemProxy: { ...manager.state.systemProxy },
+    tun: getTunStatus(manager),
     autoStart: { ...manager.state.autoStart },
     geoIp: manager.getGeoIpStatus(),
     rulesetDatabase: manager.getRulesetDatabaseStatus(),

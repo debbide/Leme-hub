@@ -36,6 +36,13 @@ const defaultSettings = (paths, options = {}) => {
     tlsFragmentEnabled: true,
     systemProxyEnabled: false,
     systemProxyCaptureEnabled: false,
+    tunEnabled: false,
+    tunCaptureEnabled: false,
+    tunStack: 'system',
+    tunStrictRoute: true,
+    tunInterfaceName: 'leme-tun',
+    tunAddress: ['172.19.0.1/30'],
+    tunMtu: 9000,
     systemProxyAutoSwitchEnabled: false,
     systemProxyAutoSwitchGroupId: null,
     systemProxyAutoSwitchIntervalSec: 600,
@@ -88,6 +95,35 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
     : mode === 'desktop'
       ? normalized.systemProxyEnabled
       : false;
+  normalized.tunEnabled = !!normalized.tunEnabled;
+  normalized.tunCaptureEnabled = !!normalized.tunCaptureEnabled;
+  normalized.tunStack = String(normalized.tunStack || defaults.tunStack).trim() || defaults.tunStack;
+  normalized.tunStrictRoute = normalized.tunStrictRoute !== false;
+  normalized.tunInterfaceName = String(normalized.tunInterfaceName || defaults.tunInterfaceName).trim() || defaults.tunInterfaceName;
+  {
+    const address = Array.isArray(normalized.tunAddress)
+      ? normalized.tunAddress.map((item) => String(item || '').trim()).filter(Boolean)
+      : String(normalized.tunAddress || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    normalized.tunAddress = address.length ? address : [...defaults.tunAddress];
+  }
+  {
+    const parsedMtu = Number.parseInt(normalized.tunMtu, 10);
+    normalized.tunMtu = Number.isInteger(parsedMtu) && parsedMtu > 0 ? parsedMtu : defaults.tunMtu;
+  }
+  if (!normalized.tunEnabled) {
+    normalized.tunCaptureEnabled = false;
+  }
+  // Capture modes are mutually exclusive: TUN vs OS system-proxy capture.
+  if (normalized.tunEnabled && normalized.systemProxyCaptureEnabled) {
+    normalized.systemProxyCaptureEnabled = false;
+  }
+  if (normalized.tunEnabled && normalized.systemProxyEnabled && !hasCapturePreference && mode === 'desktop') {
+    // Desktop legacy migration previously mirrored enabled->capture; keep capture off when TUN wins.
+    normalized.systemProxyCaptureEnabled = false;
+  }
   normalized.systemProxyAutoSwitchEnabled = !!normalized.systemProxyAutoSwitchEnabled;
   normalized.systemProxyAutoSwitchGroupId = normalized.systemProxyAutoSwitchGroupId == null
     ? null

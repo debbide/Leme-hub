@@ -192,3 +192,35 @@ test('allows explicit routing clears through save options', () => {
   assert.equal(settings.customRules.length, 0);
   assert.equal(settings.rulesets.length, 0);
 });
+
+test('defaults tun settings to disabled capture-safe values', () => {
+  const paths = createPaths();
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+  const settings = store.getSettings();
+
+  assert.equal(settings.tunEnabled, false);
+  assert.equal(settings.tunCaptureEnabled, false);
+  assert.equal(settings.tunStack, 'system');
+  assert.equal(settings.tunStrictRoute, true);
+  assert.equal(settings.tunInterfaceName, 'leme-tun');
+  assert.deepEqual(settings.tunAddress, ['172.19.0.1/30']);
+  assert.equal(settings.tunMtu, 9000);
+});
+
+test('normalizing tun enabled clears system proxy capture preference conflict', () => {
+  const paths = createPaths();
+  fs.writeFileSync(paths.settingsPath, JSON.stringify({
+    systemProxyEnabled: true,
+    systemProxyCaptureEnabled: true,
+    tunEnabled: true
+  }, null, 2));
+  fs.writeFileSync(paths.nodesPath, '[]');
+  fs.writeFileSync(paths.logPath, '');
+  fs.writeFileSync(paths.configPath, 'null');
+
+  const store = new ConfigStore(paths, { mode: 'desktop' });
+  const settings = store.getSettings();
+
+  assert.equal(settings.tunEnabled, true);
+  assert.equal(settings.systemProxyCaptureEnabled, false);
+});

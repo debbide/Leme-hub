@@ -2859,3 +2859,29 @@ test('updateSettings does not clobber a concurrent settings write during the aut
   assert.equal(persisted.autoStart, true);
   assert.equal(persisted.nodeGroupLatencyCache?.results?.n1?.latencyMs, 123);
 });
+
+test('updateSettings rejects enabling tun with system proxy capture', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
+
+  await assert.rejects(
+    () => manager.updateSettings({ tunEnabled: true }),
+    /mutually exclusive|Cannot enable TUN/i
+  );
+});
+
+test('updateSettings accepts tun without system proxy capture and restarts runtime keys', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const result = await manager.updateSettings({
+    tunEnabled: true,
+    systemProxyEnabled: false,
+    systemProxyCaptureEnabled: false
+  });
+
+  assert.equal(result.settings.tunEnabled, true);
+  assert.equal(result.settings.tunCaptureEnabled, false);
+  assert.equal(result.settings.systemProxyCaptureEnabled, false);
+  assert.equal(manager.getRuntimeOptions().tunEnabled, true);
+  assert.equal(manager.getStatus().tun.enabled, true);
+  assert.equal(manager.getStatus().tun.supported, process.platform === 'win32' || process.platform === 'linux');
+});
