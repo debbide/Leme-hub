@@ -76,8 +76,11 @@ export class ProxyService {
       basePort = DEFAULT_PROXY_BASE_PORT,
       configFileName = DEFAULT_CONFIG_FILE,
       log = console,
-      onRoutingHit = null
+      onRoutingHit = null,
+      clashApiSecret = ''
     } = typeof options === 'string' ? { configDir: options } : options;
+
+    this.clashApiSecret = clashApiSecret;
 
     this.proxyProcess = null;
     this.nodes = [];

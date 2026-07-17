@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -118,8 +119,11 @@ export class CoreManager {
     this.rulesetDatabaseService = new RulesetDatabaseService(this.paths, {
       log: this.createLogger()
     });
-    this.connectionsService = new ConnectionsService({ listenHost: this.store.getSettings().proxyListenHost });
-    this.clashApiService = new ClashApiService({ listenHost: this.store.getSettings().proxyListenHost });
+    // One random secret per process, shared by the generated config and both
+    // Clash API clients, so only this app can drive the local controller.
+    this.clashApiSecret = crypto.randomBytes(24).toString('hex');
+    this.connectionsService = new ConnectionsService({ listenHost: this.store.getSettings().proxyListenHost, secret: this.clashApiSecret });
+    this.clashApiService = new ClashApiService({ listenHost: this.store.getSettings().proxyListenHost, secret: this.clashApiSecret });
     const routingHitHistoryDir = this.paths.logsDir || this.paths.dataDir || this.paths.root;
     this.routingHitHistoryPath = path.join(routingHitHistoryDir, 'routing-hits.jsonl');
     if (!fs.existsSync(this.routingHitHistoryPath)) {
@@ -133,7 +137,8 @@ export class CoreManager {
       basePort: this.store.getSettings().proxyBasePort,
       configFileName: this.paths.configPath.split(/[/\\]/).pop(),
       log: this.createLogger(),
-      onRoutingHit: (hit) => this.appendRoutingHitHistory(hit)
+      onRoutingHit: (hit) => this.appendRoutingHitHistory(hit),
+      clashApiSecret: this.clashApiSecret
     });
 
     this._nodeApplyPendingNodes = null;

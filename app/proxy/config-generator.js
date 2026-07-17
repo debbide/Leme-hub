@@ -267,7 +267,9 @@ export const generateProxyConfig = (context, options = {}) => {
     experimental: {
       clash_api: {
         external_controller: formatHostPort(resolveLoopbackHost(context.proxyListen), 9095),
-        secret: '',
+        // Even on loopback, a secret stops other local processes from driving
+        // selectors / closing connections via the Clash API.
+        secret: context.clashApiSecret || '',
         default_mode: proxyMode
       }
     }

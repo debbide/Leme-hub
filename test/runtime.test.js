@@ -8,12 +8,28 @@ const baseSettings = {
   uiPort: 51888
 };
 
-test('desktop mode inherits persisted ui host and port by default', () => {
+test('desktop mode binds loopback even if persisted host is 0.0.0.0', () => {
   const runtime = resolveServerRuntime(baseSettings, {});
+
+  assert.equal(runtime.mode, 'desktop');
+  // Unauthenticated control API must not listen on all interfaces by default.
+  assert.equal(runtime.host, '127.0.0.1');
+  assert.equal(runtime.port, 51888);
+});
+
+test('desktop mode honors persisted host only when remote is explicitly allowed', () => {
+  const runtime = resolveServerRuntime({ uiHost: '0.0.0.0', uiPort: 51888 }, { LEME_ALLOW_REMOTE: 'true' });
 
   assert.equal(runtime.mode, 'desktop');
   assert.equal(runtime.host, '0.0.0.0');
   assert.equal(runtime.port, 51888);
+});
+
+test('desktop mode still accepts explicit LEME_UI_HOST override', () => {
+  const runtime = resolveServerRuntime(baseSettings, { LEME_UI_HOST: '192.168.1.50' });
+
+  assert.equal(runtime.mode, 'desktop');
+  assert.equal(runtime.host, '192.168.1.50');
 });
 
 test('server mode defaults to all interfaces without remote flag', () => {
