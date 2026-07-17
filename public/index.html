@@ -56,10 +56,17 @@
         </div>
 
         <div class="sidebar-footer">
-          <label>系统代理模式</label>
-          <select class="system-proxy-mode">
+          <label for="capture-mode-select">流量接管</label>
+          <select id="capture-mode-select" class="system-proxy-mode" title="系统代理与 TUN 互斥；节点本地端口始终可用">
+            <option value="none">关闭接管</option>
+            <option value="system_proxy">系统代理</option>
+            <option value="tun">TUN 网卡</option>
+          </select>
+          <p id="capture-mode-hint" class="sidebar-capture-hint">节点本地端口始终可用</p>
+          <label for="system-proxy-mode-select" style="margin-top:10px;display:block;">分流策略</label>
+          <select id="system-proxy-mode-select" class="system-proxy-mode">
             <option value="rule">规则分流 (推荐)</option>
-            <option value="global">全局接管</option>
+            <option value="global">全局模式</option>
             <option value="direct">直连退出</option>
           </select>
         </div>
@@ -75,20 +82,14 @@
               <section class="dashboard-status-strip">
                 <div class="dashboard-power-block">
                   <div class="dashboard-power-orbit">
-                    <button id="master-switch" class="master-switch off" title="开启或关闭系统代理">
+                    <button id="master-switch" class="master-switch off" title="开启/关闭当前流量接管（系统代理或 TUN）">
                       <span class="switch-icon">⏻</span>
                     </button>
                   </div>
                   <div class="dashboard-power-copy">
                     <span class="stat-label">代理状态</span>
                     <h2 id="master-status-text">系统代理已关闭</h2>
-                    <label class="stat-label" for="capture-mode-select" style="display:block;margin-top:8px;">流量接管</label>
-                    <select id="capture-mode-select" class="dash-node-select fixed-width-select" title="系统代理与 TUN 互斥；节点本地端口始终可用">
-                      <option value="none">关闭接管</option>
-                      <option value="system_proxy">系统代理</option>
-                      <option value="tun">TUN 网卡</option>
-                    </select>
-                    <p id="capture-mode-hint" class="stat-label" style="margin-top:6px;opacity:.75;">节点本地端口始终可用，不受接管方式影响</p>
+                    <p class="stat-label" style="margin-top:6px;opacity:.75;">接管方式在左侧边栏「流量接管」中选择（含 TUN）</p>
                   </div>
                 </div>
                 <div class="dashboard-status-metrics">
