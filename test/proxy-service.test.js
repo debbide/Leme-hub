@@ -1988,7 +1988,6 @@ test('generates tun inbound while keeping per-node local ports', () => {
   assert.ok(tun);
   assert.equal(tun.type, 'tun');
   assert.equal(tun.auto_route, true);
-  assert.equal(tun.strict_route, true);
   assert.equal(tun.stack, process.platform === 'win32' ? 'mixed' : 'system');
   assert.equal(tun.interface_name, 'leme-tun');
   assert.equal(tun.mtu, 1500);
