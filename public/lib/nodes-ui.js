@@ -71,7 +71,7 @@ export const renderNodeRow = ({
             ${subscriptionBadge}
           </div>
           <span class="node-ip">${escapeHtml(maskedIp)}</span>
-          <span class="node-port">本地出口: ${escapeHtml(String(localPortStr))}</span>${countryOverrideBadge}
+          <span class="node-port" title="始终可用；指定此端口固定走该节点，不经系统代理/TUN 分流">本地出口: ${escapeHtml(String(localPortStr))}</span>${countryOverrideBadge}
         </div>
       </td>
       <td>

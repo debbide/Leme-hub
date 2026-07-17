@@ -29,7 +29,24 @@ It uses its own runtime contract and only changes via environment overrides.
 - Same web panel
 - Different startup modes only
 
+## Traffic Capture Modes
+
+Shared web panel supports three mutually exclusive capture modes:
+
+1. **None** — only per-node local ports (`mixed` inbounds)
+2. **System proxy** — unified HTTP/SOCKS inbounds + OS proxy settings (Windows registry / Linux gsettings+env)
+3. **TUN** — `tun-in` virtual NIC with `auto_route` (Windows + Linux; not macOS in v1)
+
+Per-node local ports remain available in all modes.
+
+### TUN notes
+
+- **Windows desktop**: requires administrator (already set via `requireAdministrator`). Wintun is provided by the sing-box core.
+- **Linux server**: systemd unit grants `CAP_NET_ADMIN` / `CAP_NET_RAW` and `DeviceAllow=/dev/net/tun`. TUN is **default off**.
+- **macOS**: not supported in v1 (`tun.supported = false`).
+- Do not enable TUN and system-proxy capture together; the API rejects that combination.
+
 ## Current Scope
 
-This foundation only separates runtime mode and startup behavior.
-Packaging, authentication, and desktop shell integration are intentionally left for the next stage.
+Runtime modes, packaging, and optional TUN capture are implemented.
+Control-panel authentication remains a separate concern (especially for server binds on `0.0.0.0`).

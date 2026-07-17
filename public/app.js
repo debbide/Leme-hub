@@ -706,10 +706,12 @@ bindViewLifecycle({
 // --- DASHBOARD MASTER SWITCH LOGIC ---
 const masterSwitch = document.getElementById('master-switch');
 const masterStatusText = document.getElementById('master-status-text');
+const captureModeSelect = document.getElementById('capture-mode-select');
 
 bindSystemEvents({
   masterSwitch,
   masterStatusText,
+  captureModeSelect,
   requestJson,
   systemProxyModeSelect,
   updateCoreStatus,

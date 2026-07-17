@@ -28,6 +28,21 @@ curl -fsSL -o /tmp/install-server.sh https://github.com/debbide/Leme-hub/release
 
 安装完成后，如果监听地址是 `0.0.0.0`，可以直接通过 `http://服务器IP:51888` 用浏览器访问控制面板。
 
+### TUN 接管（可选）
+
+面板「流量接管」可选 **关闭 / 系统代理 / TUN 网卡**（互斥）。节点本地端口始终保留。
+
+Linux 服务端 unit 已预置 `CAP_NET_ADMIN` 与 `/dev/net/tun` 权限；**默认关闭 TUN**，需在面板显式开启。若是旧版安装，请重新跑安装脚本或手动更新 unit 后执行：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart leme-hub-server
+```
+
+Windows 桌面版需管理员运行（安装包已请求管理员）。macOS 暂不支持 TUN。
+
+安全提示：服务端面板默认可监听 `0.0.0.0`，开启 TUN 前请确认面板访问范围与防火墙策略。
+
 ## Third-Party Components
 
 Leme Hub can download and run the sing-box proxy core. sing-box is an

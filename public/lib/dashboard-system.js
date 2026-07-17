@@ -351,9 +351,31 @@ export const updateCoreStatus = ({
   coreStatusIndicator.className = 'status-dot tooltip';
   const dashSwitch = document.getElementById('master-switch');
   const dashText = document.getElementById('master-status-text');
+  const captureModeSelect = document.getElementById('capture-mode-select');
+  const captureModeHint = document.getElementById('capture-mode-hint');
   const systemProxy = core.systemProxy || {};
   const proxyProfile = core.proxy || {};
+  const tunStatus = core.tun || {};
+  const tunEnabled = !!(tunStatus.enabled || proxyProfile.tunEnabled);
+  const tunSupported = tunStatus.supported !== false && (tunStatus.platform === 'win32' || tunStatus.platform === 'linux' || tunStatus.supported === true || !tunStatus.platform);
   const unifiedProxyEnabled = !!proxyProfile.systemProxyEnabled;
+
+  if (captureModeSelect) {
+    const tunOption = captureModeSelect.querySelector('option[value="tun"]');
+    if (tunOption) {
+      // Keep selectable on win/linux; if API reports unsupported, disable.
+      tunOption.disabled = tunStatus.supported === false;
+      tunOption.textContent = tunStatus.supported === false ? 'TUN 网卡（当前平台不支持）' : 'TUN 网卡';
+    }
+    if (tunEnabled) captureModeSelect.value = 'tun';
+    else if (unifiedProxyEnabled || systemProxy.enabled) captureModeSelect.value = 'system_proxy';
+    else captureModeSelect.value = 'none';
+  }
+  if (captureModeHint) {
+    captureModeHint.textContent = tunEnabled
+      ? 'TUN 已接管系统流量；节点本地端口仍可用'
+      : '节点本地端口始终可用，不受接管方式影响';
+  }
 
   renderProxyEndpoints(proxyProfile);
   if (typeof renderSystemProxyAutoSwitchControls === 'function') {
@@ -417,7 +439,16 @@ export const updateCoreStatus = ({
     setUptimeTimer(setInterval(renderUptime, 1000));
   }
 
-  if (core.status === 'running' && systemProxy.enabled) {
+  if (core.status === 'running' && tunEnabled) {
+    coreStatusIndicator.classList.add('running');
+    coreStatusIndicator.title = '运行中';
+    if (dashSwitch) {
+      dashSwitch.classList.remove('off');
+      dashSwitch.classList.add('on');
+      dashText.textContent = 'TUN 接管中';
+      dashText.className = 'status-pill is-running';
+    }
+  } else if (core.status === 'running' && systemProxy.enabled) {
     coreStatusIndicator.classList.add('running');
     coreStatusIndicator.title = '运行中';
     if (dashSwitch) {

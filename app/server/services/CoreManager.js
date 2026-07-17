@@ -432,10 +432,11 @@ export class CoreManager {
       settings = this.getSettingsSnapshot();
     }
 
-    if (!settings.tunEnabled) {
+    if (!settings.tunEnabled || settings.systemProxyEnabled || settings.systemProxyCaptureEnabled) {
       await this.updateSettings({
         tunEnabled: true,
         tunCaptureEnabled: false,
+        systemProxyEnabled: false,
         systemProxyCaptureEnabled: false
       });
     }

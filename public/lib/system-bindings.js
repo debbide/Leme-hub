@@ -1,8 +1,15 @@
 import { runWithButtonState } from './ui.js';
 
+const resolveCaptureMode = (core) => {
+  if (core?.tun?.enabled || core?.proxy?.tunEnabled) return 'tun';
+  if (core?.proxy?.systemProxyEnabled || core?.systemProxy?.enabled) return 'system_proxy';
+  return 'none';
+};
+
 export const bindSystemEvents = ({
   masterSwitch,
   masterStatusText,
+  captureModeSelect,
   requestJson,
   systemProxyModeSelect,
   updateCoreStatus,
@@ -31,37 +38,95 @@ export const bindSystemEvents = ({
   uwpLoopbackDisableBtn,
   renderUwpLoopbackStatus,
 }) => {
+  const applyCaptureMode = async (mode) => {
+    const selectedRoutingMode = systemProxyModeSelect?.value || 'rule';
+    if (mode === 'none') {
+      try { await requestJson('/api/system/tun/disable', { method: 'POST' }); } catch { /* ignore if already off */ }
+      try { await requestJson('/api/system/proxy/disable', { method: 'POST' }); } catch { /* ignore if already off */ }
+      await requestJson('/api/system/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ systemProxyEnabled: false, tunEnabled: false, tunCaptureEnabled: false })
+      });
+      const stopPayload = await requestJson('/api/core/stop', { method: 'POST' });
+      updateCoreStatus(stopPayload.core);
+      return { kind: 'none', core: stopPayload.core };
+    }
+
+    if (mode === 'tun') {
+      await requestJson('/api/system/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ routingMode: selectedRoutingMode })
+      });
+      const payload = await requestJson('/api/system/tun/enable', { method: 'POST' });
+      updateCoreStatus(payload.core);
+      return { kind: 'tun', core: payload.core };
+    }
+
+    // system_proxy
+    try { await requestJson('/api/system/tun/disable', { method: 'POST' }); } catch { /* ignore */ }
+    await requestJson('/api/system/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        routingMode: selectedRoutingMode,
+        systemProxyEnabled: true,
+        tunEnabled: false,
+        tunCaptureEnabled: false
+      })
+    });
+    const startPayload = await requestJson('/api/core/start', { method: 'POST' });
+    // Desktop couples capture on enable; ensure OS apply when core is running.
+    try {
+      const applyPayload = await requestJson('/api/system/proxy/apply', { method: 'POST' });
+      updateCoreStatus(applyPayload.core || startPayload.core);
+      return { kind: 'system_proxy', core: applyPayload.core || startPayload.core };
+    } catch {
+      updateCoreStatus(startPayload.core);
+      return { kind: 'system_proxy', core: startPayload.core };
+    }
+  };
+
+  if (captureModeSelect) {
+    captureModeSelect.addEventListener('change', async () => {
+      const nextMode = captureModeSelect.value || 'none';
+      await runWithButtonState(captureModeSelect, null, async () => {
+        try {
+          const result = await applyCaptureMode(nextMode);
+          if (nextMode === 'none') showToast('已关闭流量接管', 'info');
+          else if (nextMode === 'tun') showToast('TUN 已启用（节点本地端口仍可用）', 'success');
+          else showToast(result.core?.systemProxy?.enabled ? '系统代理已启动' : '统一代理入口已开启', 'success');
+          await loadNodes();
+          await loadSystemStatus();
+        } catch (error) {
+          showToast(`切换接管方式失败: ${error.message}`, 'error');
+          const current = resolveCaptureMode(getCurrentCoreState?.());
+          captureModeSelect.value = current;
+        }
+      });
+    });
+  }
+
   if (masterSwitch) {
     masterSwitch.addEventListener('click', async () => {
       const isCurrentlyOn = masterSwitch.classList.contains('on');
       await runWithButtonState(masterSwitch, null, async () => {
         try {
-          if (isCurrentlyOn) {
-            await requestJson('/api/system/proxy/disable', { method: 'POST' });
-            await requestJson('/api/system/settings', {
-              method: 'PUT',
-              body: JSON.stringify({ systemProxyEnabled: false })
-            });
-            const stopPayload = await requestJson('/api/core/stop', { method: 'POST' });
-            updateCoreStatus(stopPayload.core);
+          const nextMode = isCurrentlyOn ? 'none' : (captureModeSelect?.value === 'tun' ? 'tun' : 'system_proxy');
+          if (captureModeSelect) captureModeSelect.value = nextMode;
+          const result = await applyCaptureMode(nextMode);
+          if (nextMode === 'none') {
             masterSwitch.classList.remove('on');
             masterSwitch.classList.add('off');
             if (masterStatusText) masterStatusText.textContent = '统一代理已关闭';
             showToast('统一代理已关闭', 'info');
-          } else {
-            const selectedMode = systemProxyModeSelect?.value || 'rule';
-            await requestJson('/api/system/settings', {
-              method: 'PUT',
-              body: JSON.stringify({
-                routingMode: selectedMode,
-                systemProxyEnabled: true
-              })
-            });
-            const startPayload = await requestJson('/api/core/start', { method: 'POST' });
-            updateCoreStatus(startPayload.core);
+          } else if (nextMode === 'tun') {
             masterSwitch.classList.remove('off');
             masterSwitch.classList.add('on');
-            const captureEnabled = !!startPayload.core?.systemProxy?.enabled;
+            if (masterStatusText) masterStatusText.textContent = 'TUN 接管中';
+            showToast('TUN 已启动', 'success');
+          } else {
+            masterSwitch.classList.remove('off');
+            masterSwitch.classList.add('on');
+            const captureEnabled = !!result.core?.systemProxy?.enabled;
             if (masterStatusText) masterStatusText.textContent = captureEnabled ? '系统代理接管中' : '统一代理入口已开启';
             showToast(captureEnabled ? '系统代理已启动' : '统一代理已启动', 'success');
           }

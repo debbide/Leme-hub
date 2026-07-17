@@ -204,6 +204,12 @@ EnvironmentFile=${ENV_FILE}
 ExecStart=${BINARY_PATH}
 Restart=on-failure
 RestartSec=5
+# TUN mode (optional, panel switch) needs net admin + /dev/net/tun.
+# Defaults remain off; capabilities only grant permission when enabled.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+DeviceAllow=/dev/net/tun rw
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

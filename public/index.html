@@ -82,6 +82,13 @@
                   <div class="dashboard-power-copy">
                     <span class="stat-label">代理状态</span>
                     <h2 id="master-status-text">系统代理已关闭</h2>
+                    <label class="stat-label" for="capture-mode-select" style="display:block;margin-top:8px;">流量接管</label>
+                    <select id="capture-mode-select" class="dash-node-select fixed-width-select" title="系统代理与 TUN 互斥；节点本地端口始终可用">
+                      <option value="none">关闭接管</option>
+                      <option value="system_proxy">系统代理</option>
+                      <option value="tun">TUN 网卡</option>
+                    </select>
+                    <p id="capture-mode-hint" class="stat-label" style="margin-top:6px;opacity:.75;">节点本地端口始终可用，不受接管方式影响</p>
                   </div>
                 </div>
                 <div class="dashboard-status-metrics">
