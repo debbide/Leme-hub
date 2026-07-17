@@ -2949,19 +2949,23 @@ test('system proxy guard re-applies capture when OS proxy was cleared', async ()
   manager.state.status = 'running';
 
   let applyCount = 0;
+  let osEnabled = false;
+  let osHttpPort = null;
   manager.systemProxyManager = {
     getCapabilities: () => ({ supported: true, provider: 'mock' }),
     getStatus: async () => ({
-      enabled: false,
-      mode: 'off',
+      enabled: osEnabled,
+      mode: osEnabled ? 'manual' : 'off',
       provider: 'mock',
-      http: null,
+      http: osEnabled ? { host: '127.0.0.1', port: osHttpPort } : null,
       socks: null,
       lastError: null,
       supported: true
     }),
     apply: async ({ httpPort }) => {
       applyCount += 1;
+      osEnabled = true;
+      osHttpPort = httpPort;
       return {
         enabled: true,
         mode: 'manual',
@@ -2972,11 +2976,19 @@ test('system proxy guard re-applies capture when OS proxy was cleared', async ()
         supported: true
       };
     },
-    disable: async () => ({ enabled: false, mode: 'off', provider: 'mock', supported: true })
+    disable: async () => {
+      osEnabled = false;
+      osHttpPort = null;
+      return { enabled: false, mode: 'off', provider: 'mock', supported: true };
+    }
   };
 
   const healed = await manager.refreshSystemProxyState();
   assert.equal(applyCount, 1);
   assert.equal(healed.enabled, true);
   assert.equal(healed.http?.port, manager.getSettingsSnapshot().systemProxyHttpPort);
+
+  // Healthy capture should not re-apply again.
+  await manager.refreshSystemProxyState();
+  assert.equal(applyCount, 1);
 });
