@@ -55,7 +55,8 @@ const buildNodeInbounds = (context, validNodes) => validNodes.map((node, index) 
 export const TUN_INBOUND_TAG = 'tun-in';
 export const DEFAULT_TUN_INTERFACE_NAME = 'leme-tun';
 export const DEFAULT_TUN_ADDRESS = ['172.19.0.1/30'];
-export const DEFAULT_TUN_MTU = 9000;
+// 9000 jumbo MTU often breaks on Windows consumer NICs / VPN paths; 1500 is safer default.
+export const DEFAULT_TUN_MTU = 1500;
 export const DEFAULT_TUN_STACK = 'system';
 
 const appendSystemProxyInbounds = (inbounds, context, {
@@ -105,6 +106,7 @@ const appendTunInbound = (inbounds, {
     type: 'tun',
     tag: TUN_INBOUND_TAG,
     interface_name: String(tunInterfaceName || DEFAULT_TUN_INTERFACE_NAME).trim() || DEFAULT_TUN_INTERFACE_NAME,
+    // sing-box >=1.12 uses `address` only (legacy inet4_address removed).
     address: address.length ? address : [...DEFAULT_TUN_ADDRESS],
     mtu: Number.isInteger(tunMtu) && tunMtu > 0 ? tunMtu : DEFAULT_TUN_MTU,
     auto_route: true,

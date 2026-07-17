@@ -284,6 +284,15 @@ export const buildRouteConfig = ({
 
   routeRules.unshift({ action: 'sniff' });
 
+  // TUN (and strict system capture) must hijack plain DNS (udp/tcp 53).
+  // Without this, auto_route sends DNS into the tunnel but nothing handles it → total blackout.
+  if (tunEnabled) {
+    routeRules.unshift({
+      protocol: 'dns',
+      action: 'hijack-dns'
+    });
+  }
+
   if (captureRoutingEnabled) {
     if (captureInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
       const systemOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;

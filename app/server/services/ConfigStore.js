@@ -42,7 +42,7 @@ const defaultSettings = (paths, options = {}) => {
     tunStrictRoute: true,
     tunInterfaceName: 'leme-tun',
     tunAddress: ['172.19.0.1/30'],
-    tunMtu: 9000,
+    tunMtu: 1500,
     systemProxyAutoSwitchEnabled: false,
     systemProxyAutoSwitchGroupId: null,
     systemProxyAutoSwitchIntervalSec: 600,

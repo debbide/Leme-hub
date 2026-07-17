@@ -204,7 +204,7 @@ test('defaults tun settings to disabled capture-safe values', () => {
   assert.equal(settings.tunStrictRoute, true);
   assert.equal(settings.tunInterfaceName, 'leme-tun');
   assert.deepEqual(settings.tunAddress, ['172.19.0.1/30']);
-  assert.equal(settings.tunMtu, 9000);
+  assert.equal(settings.tunMtu, 1500);
 });
 
 test('normalizing tun enabled clears system proxy capture preference conflict', () => {
