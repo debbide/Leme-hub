@@ -2885,3 +2885,60 @@ test('updateSettings accepts tun without system proxy capture and restarts runti
   assert.equal(manager.getStatus().tun.enabled, true);
   assert.equal(manager.getStatus().tun.supported, process.platform === 'win32' || process.platform === 'linux');
 });
+
+test('enableTun rejects unsupported platforms', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'darwin' });
+  try {
+    await assert.rejects(() => manager.enableTun(), /not supported/i);
+  } finally {
+    Object.defineProperty(process, 'platform', { value: original });
+  }
+});
+
+test('enableTun disables system proxy capture and marks tun settings', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  const calls = [];
+
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
+  manager.systemProxyManager = {
+    disable: async () => {
+      calls.push('disable');
+      return { enabled: false, mode: 'off', provider: 'mock' };
+    },
+    getStatus: async () => ({ enabled: false, mode: 'off', provider: 'mock' }),
+    getCapabilities: () => ({ supported: true, provider: 'mock' })
+  };
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({ ready: true, source: 'managed' })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    start: async () => {
+      calls.push('start');
+      return { configPath: createPaths().configPath, executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe' };
+    },
+    stop: async () => { calls.push('stop'); },
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+  manager.state.status = 'running';
+
+  if (process.platform !== 'win32' && process.platform !== 'linux') {
+    return;
+  }
+
+  const tun = await manager.enableTun();
+  assert.equal(tun.enabled, true);
+  assert.equal(tun.captureEnabled, true);
+  assert.equal(manager.getSettingsSnapshot().systemProxyCaptureEnabled, false);
+  assert.equal(calls.includes('disable'), true);
+});

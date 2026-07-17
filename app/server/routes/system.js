@@ -318,6 +318,48 @@ export function createSystemRoutes({ store, coreManager, paths, uwpLoopbackManag
           body: { ok: false, error: error.message, core: coreManager.getStatus() }
         };
       }
+    },
+    'GET /api/system/tun/status': async () => ({
+      status: 200,
+      body: {
+        ok: true,
+        tun: coreManager.getStatus()?.tun || null,
+        core: coreManager.getStatus()
+      }
+    }),
+    'POST /api/system/tun/enable': async () => {
+      try {
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            tun: await coreManager.enableTun(),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, tun: coreManager.getStatus()?.tun || null, core: coreManager.getStatus() }
+        };
+      }
+    },
+    'POST /api/system/tun/disable': async () => {
+      try {
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            tun: await coreManager.disableTun(),
+            core: coreManager.getStatus()
+          }
+        };
+      } catch (error) {
+        return {
+          status: error.status || 500,
+          body: { ok: false, error: error.message, tun: coreManager.getStatus()?.tun || null, core: coreManager.getStatus() }
+        };
+      }
     }
   };
 }

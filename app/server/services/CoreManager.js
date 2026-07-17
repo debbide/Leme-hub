@@ -384,8 +384,13 @@ export class CoreManager {
     }
 
     let settings = this.getSettingsSnapshot();
-    if (!settings.systemProxyEnabled) {
-      await this.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: false });
+    const needsTunOff = !!(settings.tunEnabled || settings.tunCaptureEnabled);
+    const needsUnifiedEntry = !settings.systemProxyEnabled;
+    if (needsTunOff || needsUnifiedEntry) {
+      await this.updateSettings({
+        ...(needsTunOff ? { tunEnabled: false, tunCaptureEnabled: false } : {}),
+        ...(needsUnifiedEntry ? { systemProxyEnabled: true, systemProxyCaptureEnabled: false } : {})
+      });
       await this.restart();
       settings = this.getSettingsSnapshot();
     }
@@ -401,6 +406,63 @@ export class CoreManager {
     }
     this.state.systemProxy = this.buildSystemProxyState(status);
     return this.state.systemProxy;
+  }
+
+  async cleanupTunCaptureAfterExit() {
+    const settings = this.getSettingsSnapshot();
+    if (!settings.tunCaptureEnabled) {
+      return statusManager.getTunStatus(this);
+    }
+    try {
+      await this.updateSettings({ tunCaptureEnabled: false }, { backup: false });
+    } catch {
+      // best effort on crash/exit paths
+    }
+    return statusManager.getTunStatus(this);
+  }
+
+  async enableTun() {
+    if (!statusManager.isTunSupportedPlatform()) {
+      throw createHttpError(`TUN is not supported on ${process.platform}`, 400);
+    }
+
+    let settings = this.getSettingsSnapshot();
+    if (settings.systemProxyCaptureEnabled) {
+      await this.disableSystemProxy();
+      settings = this.getSettingsSnapshot();
+    }
+
+    if (!settings.tunEnabled) {
+      await this.updateSettings({
+        tunEnabled: true,
+        tunCaptureEnabled: false,
+        systemProxyCaptureEnabled: false
+      });
+    }
+
+    if (this.state.status === 'running') {
+      await this.restart();
+    } else {
+      await this.start();
+    }
+
+    return statusManager.getTunStatus(this);
+  }
+
+  async disableTun() {
+    const settings = this.getSettingsSnapshot();
+    if (settings.tunEnabled || settings.tunCaptureEnabled) {
+      await this.updateSettings({
+        tunEnabled: false,
+        tunCaptureEnabled: false
+      });
+    }
+
+    if (this.state.status === 'running') {
+      await this.restart();
+    }
+
+    return statusManager.getTunStatus(this);
   }
 
   isManagedSystemProxyStatus(status, settings = this.getSettingsSnapshot()) {

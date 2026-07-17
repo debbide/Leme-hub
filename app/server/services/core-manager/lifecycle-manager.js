@@ -14,6 +14,7 @@ export const bindProcessState = (manager) => {
 
     const wasRunning = manager.state.status === 'running';
     await manager.cleanupSystemProxyAfterExit();
+    await manager.cleanupTunCaptureAfterExit?.();
     if (manager.proxyService.proxyProcess !== boundProcess) {
       return;
     }
@@ -91,7 +92,7 @@ export const start = async (manager, options = {}) => {
       }
     }
     let systemProxy = null;
-    if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled) {
+    if (settings.systemProxyEnabled && settings.systemProxyCaptureEnabled && !settings.tunEnabled) {
       systemProxy = await manager.systemProxyManager.apply({
         host: settings.proxyListenHost,
         httpPort: settings.systemProxyHttpPort,
@@ -103,6 +104,15 @@ export const start = async (manager, options = {}) => {
         systemProxy = await manager.systemProxyManager.disable();
       }
     }
+
+    // TUN capture is config-driven: once the core is running with tun-in, mark capture.
+    // Clear the flag when TUN is off so status never lies after a mode switch.
+    if (settings.tunEnabled && !settings.tunCaptureEnabled) {
+      await manager.updateSettings({ tunCaptureEnabled: true }, { backup: false });
+    } else if (!settings.tunEnabled && settings.tunCaptureEnabled) {
+      await manager.updateSettings({ tunCaptureEnabled: false }, { backup: false });
+    }
+
     manager.state = {
       ...manager.state,
       status: 'running',
@@ -208,6 +218,9 @@ export const stop = async (manager) => {
         mode: 'error'
       }));
     }
+  }
+  if (settings.tunCaptureEnabled) {
+    await manager.updateSettings({ tunCaptureEnabled: false }, { backup: false }).catch(() => null);
   }
   manager.state = {
     ...manager.state,
