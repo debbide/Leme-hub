@@ -214,7 +214,10 @@ export function createAppServer(paths, env = process.env) {
       coreManager.refreshAutoStartState().catch(() => null);
       coreManager.initializeGeoIp().catch(() => null);
       coreManager.initializeRulesetDatabase().catch(() => null);
-      if (store.getSettings().systemProxyEnabled) {
+      // Auto-start core when either system-proxy entry or TUN capture is enabled.
+      // TUN-only users previously saw the mode selected but core never started.
+      const bootSettings = store.getSettings();
+      if (bootSettings.systemProxyEnabled || bootSettings.tunEnabled) {
         coreManager.start().catch((error) => {
           console.error(`[server] failed to auto-start proxy core: ${error.message}`);
         });
