@@ -2942,3 +2942,41 @@ test('enableTun disables system proxy capture and marks tun settings', async () 
   assert.equal(manager.getSettingsSnapshot().systemProxyCaptureEnabled, false);
   assert.equal(calls.includes('disable'), true);
 });
+
+test('system proxy guard re-applies capture when OS proxy was cleared', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
+  manager.state.status = 'running';
+
+  let applyCount = 0;
+  manager.systemProxyManager = {
+    getCapabilities: () => ({ supported: true, provider: 'mock' }),
+    getStatus: async () => ({
+      enabled: false,
+      mode: 'off',
+      provider: 'mock',
+      http: null,
+      socks: null,
+      lastError: null,
+      supported: true
+    }),
+    apply: async ({ httpPort }) => {
+      applyCount += 1;
+      return {
+        enabled: true,
+        mode: 'manual',
+        provider: 'mock',
+        http: { host: '127.0.0.1', port: httpPort },
+        socks: null,
+        lastError: null,
+        supported: true
+      };
+    },
+    disable: async () => ({ enabled: false, mode: 'off', provider: 'mock', supported: true })
+  };
+
+  const healed = await manager.refreshSystemProxyState();
+  assert.equal(applyCount, 1);
+  assert.equal(healed.enabled, true);
+  assert.equal(healed.http?.port, manager.getSettingsSnapshot().systemProxyHttpPort);
+});

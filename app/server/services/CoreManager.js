@@ -158,7 +158,9 @@ export class CoreManager {
     this._nodeGroupAutoTestTimer.unref?.();
 
     this._systemProxyAutoSwitchBusy = false;
+    this._systemProxyGuardBusy = false;
     this._systemProxyAutoSwitchTimer = setInterval(() => {
+      // Heal drifted OS proxy capture, then optional auto-switch.
       void this.runSystemProxyAutoSwitchTick();
     }, SYSTEM_PROXY_AUTO_SWITCH_TICK_MS);
     this._systemProxyAutoSwitchTimer.unref?.();
@@ -344,6 +346,9 @@ export class CoreManager {
 
   async refreshSystemProxyState() {
     try {
+      // Opportunistic heal when the UI/status polls: if capture is desired but
+      // the OS proxy was cleared by another app, re-apply without a full toggle.
+      await selectorManager.ensureSystemProxyCaptureHealthy(this).catch(() => false);
       const status = await this.systemProxyManager.getStatus();
       this.state.systemProxy = this.buildSystemProxyState(status);
     } catch (error) {

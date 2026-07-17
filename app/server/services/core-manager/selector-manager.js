@@ -308,7 +308,66 @@ export const getSystemProxyAutoSwitchProfile = (manager, settings = manager.getS
 
 };
 
+/**
+ * When the user wants system-proxy capture but Windows/other tools rewrote the
+ * registry (or the local entry died), re-apply our proxy. This covers the
+ * "UI still says on, but traffic stopped using the proxy mid-session" case.
+ */
+export const ensureSystemProxyCaptureHealthy = async (manager) => {
+  if (manager._systemProxyGuardBusy) {
+    return false;
+  }
+
+  const settings = manager.getSettingsSnapshot();
+  if (
+    manager.state.status !== 'running'
+    || !settings.systemProxyEnabled
+    || !settings.systemProxyCaptureEnabled
+    || settings.tunEnabled
+  ) {
+    return false;
+  }
+
+  manager._systemProxyGuardBusy = true;
+  try {
+    const status = await manager.systemProxyManager.getStatus().catch((error) => ({
+      enabled: false,
+      mode: 'error',
+      lastError: error.message,
+      supported: true
+    }));
+    manager.state.systemProxy = manager.buildSystemProxyState(status);
+
+    const managed = manager.isManagedSystemProxyStatus(status, settings);
+    if (status.enabled && managed) {
+      return false;
+    }
+
+    // Desired capture is on, but OS proxy is off or points elsewhere → reassert.
+    manager.store.appendLog(
+      managed
+        ? '[CoreManager] System proxy capture missing; re-applying managed proxy'
+        : `[CoreManager] System proxy drift detected (enabled=${!!status.enabled}); re-applying managed proxy`
+    );
+    const applied = await manager.systemProxyManager.apply({
+      host: settings.proxyListenHost,
+      httpPort: settings.systemProxyHttpPort,
+      socksPort: settings.systemProxySocksPort
+    });
+    manager.state.systemProxy = manager.buildSystemProxyState(applied);
+    return true;
+  } catch (error) {
+    manager.store.appendLog(`[CoreManager] System proxy guard failed: ${error.message}`);
+    return false;
+  } finally {
+    manager._systemProxyGuardBusy = false;
+  }
+};
+
 export const runSystemProxyAutoSwitchTick = async (manager) => {
+  // Always try to heal capture first (even when auto-switch is off).
+  await ensureSystemProxyCaptureHealthy(manager).catch(() => false);
+
   if (manager._systemProxyAutoSwitchBusy) {
     return false;
   }
