@@ -50,7 +50,13 @@ export const renderRoutingModeBanner = ({
 }) => {
   if (!routingModeBanner) return;
   const mode = getRoutingMode();
-  const systemProxyEnabled = Boolean(currentCoreState?.proxy?.systemProxyEnabled);
+  const systemProxyEnabled = Boolean(currentCoreState?.proxy?.systemProxyEnabled || currentCoreState?.systemProxy?.enabled);
+  const tunEnabled = Boolean(currentCoreState?.tun?.enabled || currentCoreState?.proxy?.tunEnabled);
+  // System proxy HTTP/SOCKS and TUN share the same capture routing path.
+  const captureEnabled = systemProxyEnabled || tunEnabled;
+  const captureLabel = tunEnabled
+    ? (systemProxyEnabled ? '系统代理 + TUN' : 'TUN')
+    : (systemProxyEnabled ? '系统代理' : '统一入口');
   const coreStatus = currentCoreState?.status || 'stopped';
   routingModeBanner.className = 'routing-mode-banner';
   let copy = '';
@@ -69,31 +75,31 @@ export const renderRoutingModeBanner = ({
     copy = '当前还没有分流规则。可以先新增规则，或者用右上角预设模板快速生成一组起步规则。';
     keywords = ['分流规则', '预设模板'];
     routingModeBanner.classList.add('is-inactive');
-  } else if (!systemProxyEnabled) {
-    modeLabel = '统一代理入口未启用';
+  } else if (!captureEnabled) {
+    modeLabel = '统一入口未启用';
     modeIcon = 'ph ph-plugs-connected';
-    copy = '统一代理入口当前未启用：规则已经保存，但统一入口没有开启，所以这些规则不会被命中。';
-    keywords = ['统一代理入口未启用', '不会被命中'];
+    copy = '规则已保存，但系统代理和 TUN 都未开启：只有统一入口（系统代理 / TUN）会走这些规则；节点本地端口仍直绑对应节点。';
+    keywords = ['统一入口未启用', '系统代理', 'TUN', '节点本地端口'];
     routingModeBanner.classList.add('is-direct');
-    actions.push('<button type="button" class="btn-primary" data-routing-action="enable-system-proxy-rule">启用统一代理</button>');
+    actions.push('<button type="button" class="btn-primary" data-routing-action="enable-system-proxy-rule">启用系统代理</button>');
   } else if (mode === 'rule') {
-    modeLabel = '规则分流模式';
+    modeLabel = tunEnabled ? '规则分流（TUN）' : '规则分流模式';
     modeIcon = 'ph ph-radar';
     routingModeBanner.classList.add('is-active');
-    copy = '当前处于规则分流模式：规则集和手写规则正在参与统一代理入口的流量分发。';
-    keywords = ['规则分流模式', '规则集', '手写规则'];
+    copy = `当前处于规则分流，流量经 ${captureLabel} 进入核心：规则集和手写规则会对统一入口生效（节点本地端口仍固定走对应节点）。`;
+    keywords = ['规则分流', captureLabel, '规则集', '手写规则'];
   } else if (mode === 'direct') {
     modeLabel = '直连退出模式';
     modeIcon = 'ph ph-arrow-bend-up-left';
     routingModeBanner.classList.add('is-direct');
-    copy = '当前处于直连退出模式：规则仍可编辑，但统一代理入口流量会全部直连，不使用这些规则。';
-    keywords = ['直连退出模式', '全部直连'];
+    copy = `当前处于直连退出：规则仍可编辑，但经 ${captureLabel} 的流量会全部直连，不使用这些规则。`;
+    keywords = ['直连退出模式', '全部直连', captureLabel];
   } else {
     modeLabel = '全局接管模式';
     modeIcon = 'ph ph-globe-hemisphere-west';
     routingModeBanner.classList.add('is-inactive');
-    copy = '当前处于全局接管模式：规则仍可编辑，但统一代理入口流量会统一走当前默认节点，不使用这些规则。';
-    keywords = ['全局接管模式', '当前默认节点'];
+    copy = `当前处于全局接管：规则仍可编辑，但经 ${captureLabel} 的流量会统一走当前默认节点，不使用这些规则。`;
+    keywords = ['全局接管模式', '当前默认节点', captureLabel];
   }
 
   let highlightedCopy = escapeHtml(copy);
