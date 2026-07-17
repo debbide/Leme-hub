@@ -235,8 +235,10 @@ export const getRoutingHits = async (manager) => {
       const metadata = connection.metadata || {};
       const host = metadata.host || metadata.destinationIP || metadata.destination || '';
       const chains = Array.isArray(connection.chains) ? connection.chains : [];
-      // Clash chains are destination-first; the leaf outbound is usually index 0.
-      const outboundTag = chains[0] || chains[chains.length - 1] || '';
+      // Clash Meta chains are typically [leafOutbound, ...groups]; fall back to last entry.
+      const outboundTag = chains.find((tag) => String(tag || '').startsWith('out-') || String(tag || '').startsWith('grp-') || String(tag || '').startsWith('selector-'))
+        || chains[chains.length - 1]
+        || '';
       const ruleText = [connection.rule, connection.rulePayload].filter(Boolean).join(' ');
       // Prefer tag/rule text; allow host heuristic so geosite/geoip rulesets can surface.
       const hit = manager.proxyService.resolveRoutingHit(ruleText || null, host, outboundTag, { allowHeuristic: true });
