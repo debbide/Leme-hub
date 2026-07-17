@@ -172,20 +172,64 @@ export const resolveRoutingHit = (routingHitMap, ruleTag, host, outboundTag, opt
   return null;
 };
 
+const rememberDnsIpHosts = (context, host, addresses = []) => {
+  if (!context.dnsIpHostMap) {
+    context.dnsIpHostMap = new Map();
+  }
+  const normalizedHost = String(host || '').replace(/\.$/u, '').toLowerCase();
+  if (!normalizedHost) {
+    return;
+  }
+  for (const address of addresses) {
+    const ip = String(address || '').trim();
+    if (!ip) continue;
+    context.dnsIpHostMap.set(ip, normalizedHost);
+  }
+};
+
+const resolveHostForHit = (context, host) => {
+  const value = String(host || '').replace(/^\[|\]$/g, '').trim();
+  if (!value) {
+    return value;
+  }
+  const mapped = context.dnsIpHostMap?.get(value);
+  return mapped || value;
+};
+
 export const handleProxyRuntimeLine = (context, line, options = {}) => {
   const cleanLine = context.stripAnsi(line).replace(/^\[Proxy STDERR\]\s*/u, '');
+
+  // TUN resolves domains via hijacked DNS first, then dials the IP. Remember A/AAAA
+  // answers so later IP-only inbound/outbound lines can still match domain rules.
+  const dnsExchange = cleanLine.match(/\bdns:\s+(?:exchanged|rejected)\s+(A|AAAA)\s+(\S+?)\.?\s+\d+\s+IN\s+(?:A|AAAA)\s+(\S+)/iu);
+  if (dnsExchange) {
+    const [, , host, address] = dnsExchange;
+    rememberDnsIpHosts(context, host, [address]);
+  }
+  const dnsExchangeMulti = cleanLine.match(/\bdns:\s+(?:exchanged|rejected)\s+(A|AAAA)\s+(\S+?)\.?\s+/iu);
+  if (dnsExchangeMulti && !dnsExchange) {
+    // Fall through: some builds log the RR on the same line without a perfect match above.
+    const rr = cleanLine.match(/\bIN\s+(?:A|AAAA)\s+(\S+)/iu);
+    const hostOnly = cleanLine.match(/\bdns:\s+(?:exchanged|rejected)\s+(?:A|AAAA)\s+(\S+?)(?:\.?\s|$)/iu);
+    if (rr && hostOnly) {
+      rememberDnsIpHosts(context, hostOnly[1], [rr[1]]);
+    }
+  }
+
   // Capture inbounds: system HTTP/SOCKS and TUN.
   // HTTP/SOCKS: "inbound/http[system-http]: inbound connection to host:port"
-  // TUN often logs differently; also accept any inbound/*[tun-in] line with host:port.
-  const inboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/](?:http|mixed|socks|tun)\[(system-http|system-socks|tun-in)\]:.*?(?:inbound connection to|connection (?:to|from) )(.+):(\d+)/u)
+  // TUN: "inbound/tun[tun-in]: inbound connection to IP:port" (often IP-only)
+  const inboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/](?:http|mixed|socks|tun)\[(system-http|system-socks|tun-in)\]:.*?(?:inbound (?:packet )?connection to|connection (?:to|from) )(.+):(\d+)/u)
     || cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/]tun\[(tun-in)\].*?(\d{1,3}(?:\.\d{1,3}){3}|\[?[0-9a-fA-F:]+\]?):(\d+)/u);
   if (inboundMatch) {
     const [, connId, inboundTag, host, port] = inboundMatch;
     const trace = context.connectionTraceMap.get(connId) || {};
+    const rawHost = String(host || '').replace(/^\[|\]$/g, '').trim();
     context.connectionTraceMap.set(connId, {
       ...trace,
       inboundTag,
-      host: String(host || '').replace(/^\[|\]$/g, ''),
+      host: rawHost,
+      sniffedHost: trace.sniffedHost || resolveHostForHit(context, rawHost) || null,
       port,
       ruleTag: trace.ruleTag || null,
       createdAt: trace.createdAt || Date.now()
@@ -243,13 +287,40 @@ export const handleProxyRuntimeLine = (context, line, options = {}) => {
     }
   }
 
-  const outboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*outbound[\\/][^\[]+\[(out-[^\]]+)\]: outbound connection to (.+):(\d+)$/u);
+  // TUN may only log outbound packet/connection lines with IPs and no prior system-* inbound tag.
+  const outboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*outbound[\\/][^\[]+\[(out-[^\]]+|selector-[^\]]+)\]: outbound (?:packet )?connection to (.+):(\d+)/u);
   if (outboundMatch) {
-    const [, connId, outboundTag, host] = outboundMatch;
-    const trace = context.connectionTraceMap.get(connId);
+    const [, connId, outboundTag, host, port] = outboundMatch;
+    let trace = context.connectionTraceMap.get(connId);
+    // Under TUN there is often no HTTP/SOCKS inbound line; if we saw DNS for this
+    // destination or any capture inbound, treat as capture path.
+    if (!trace) {
+      const mappedHost = resolveHostForHit(context, host);
+      if (mappedHost && mappedHost !== host) {
+        trace = {
+          createdAt: Date.now(),
+          inboundTag: 'tun-in',
+          host,
+          sniffedHost: mappedHost,
+          port,
+          ruleTag: null
+        };
+        context.connectionTraceMap.set(connId, trace);
+      }
+    } else if (!trace.inboundTag) {
+      trace.inboundTag = 'tun-in';
+      context.connectionTraceMap.set(connId, trace);
+    }
+
     if (trace && trace.inboundTag && ['system-http', 'system-socks', 'tun-in'].includes(trace.inboundTag)) {
-      const resolvedOutboundTag = trace.outboundTag && trace.outboundTag.startsWith('out-') ? trace.outboundTag : outboundTag;
-      const hit = context.resolveRoutingHit(trace.ruleTag, trace.sniffedHost || trace.host || host, resolvedOutboundTag, { allowHeuristic: true });
+      const resolvedOutboundTag = trace.outboundTag && (trace.outboundTag.startsWith('out-') || trace.outboundTag.startsWith('selector-'))
+        ? trace.outboundTag
+        : outboundTag;
+      const hostForHit = resolveHostForHit(
+        context,
+        trace.sniffedHost || (trace.host && !/^\d{1,3}(\.\d{1,3}){3}$/u.test(trace.host) ? trace.host : null) || host
+      );
+      const hit = context.resolveRoutingHit(trace.ruleTag, hostForHit, resolvedOutboundTag, { allowHeuristic: true });
       if (hit) {
         const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
         context.log.log(`[${ts}] [Routing Hit] ${hit.kind}:${hit.name} -> ${hit.target} | ${hit.descriptor}`);
@@ -257,8 +328,8 @@ export const handleProxyRuntimeLine = (context, line, options = {}) => {
           try {
             context.onRoutingHit({
               timestamp: new Date().toISOString(),
-              host: trace.sniffedHost || trace.host || host || null,
-              port: trace.port ? Number(trace.port) : null,
+              host: hostForHit || trace.sniffedHost || trace.host || host || null,
+              port: trace.port ? Number(trace.port) : (port ? Number(port) : null),
               outbound: resolvedOutboundTag,
               kind: hit.kind,
               name: hit.name,
