@@ -472,7 +472,8 @@ test('uses manual rules for system proxy routing in rule mode', () => {
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-1' && rule.outbound === 'direct'), true);
   assert.equal(config.route.rules.some((rule) => rule.rule_set === 'usr-rule-2' && rule.outbound === ACTIVE_NODE_SELECTOR_TAG), true);
   assert.equal(config.route.final, 'direct');
-  assert.equal(config.log.level, 'warn');
+  // Capture modes use info so connection/router lines feed routing-hit diagnostics.
+  assert.equal(config.log.level, 'info');
   assert.equal(config.route.rule_set.some((ruleset) => ruleset.tag.startsWith('usr-rule-')), true);
   assert.equal(config.route.rules.some((rule) => rule.rule_set && String(rule.rule_set).startsWith('usr-rule-')), true);
   assert.equal(config.dns.rules.some((rule) => rule.rule_set === 'usr-rule-1' && rule.server === 'dns-local'), true);

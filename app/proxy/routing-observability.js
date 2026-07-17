@@ -174,18 +174,45 @@ export const resolveRoutingHit = (routingHitMap, ruleTag, host, outboundTag, opt
 
 export const handleProxyRuntimeLine = (context, line, options = {}) => {
   const cleanLine = context.stripAnsi(line).replace(/^\[Proxy STDERR\]\s*/u, '');
-  const inboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/](?:http|mixed|socks)\[(system-http|system-socks)\]: inbound connection to (.+):(\d+)$/u);
+  // Capture inbounds: system HTTP/SOCKS and TUN.
+  // HTTP/SOCKS: "inbound/http[system-http]: inbound connection to host:port"
+  // TUN often logs differently; also accept any inbound/*[tun-in] line with host:port.
+  const inboundMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/](?:http|mixed|socks|tun)\[(system-http|system-socks|tun-in)\]:.*?(?:inbound connection to|connection (?:to|from) )(.+):(\d+)/u)
+    || cleanLine.match(/\[(\d+)\s+[^\]]+\].*inbound[\\/]tun\[(tun-in)\].*?(\d{1,3}(?:\.\d{1,3}){3}|\[?[0-9a-fA-F:]+\]?):(\d+)/u);
   if (inboundMatch) {
     const [, connId, inboundTag, host, port] = inboundMatch;
     const trace = context.connectionTraceMap.get(connId) || {};
     context.connectionTraceMap.set(connId, {
       ...trace,
       inboundTag,
-      host,
+      host: String(host || '').replace(/^\[|\]$/g, ''),
       port,
       ruleTag: trace.ruleTag || null,
       createdAt: trace.createdAt || Date.now()
     });
+  }
+
+  // TUN may only expose match/outbound lines without a prior "inbound connection" line.
+  // Seed a capture trace from router match lines that mention tun-in.
+  const tunMatchSeed = cleanLine.match(/\[(\d+)\s+[^\]]+\].*router: match(?:\[(\d+)\])?.*inbound=\[([^\]]*)\].*=>\s+route\(([^)]+)\)/u);
+  if (tunMatchSeed) {
+    const [, connId, ruleIndex, inboundList, outboundTag] = tunMatchSeed;
+    const inbounds = String(inboundList || '').split(/\s+/).filter(Boolean);
+    const isCapture = inbounds.some((tag) => ['system-http', 'system-socks', 'tun-in'].includes(tag));
+    if (isCapture) {
+      const trace = context.connectionTraceMap.get(connId) || { createdAt: Date.now(), ruleTag: null };
+      if (!trace.inboundTag) {
+        trace.inboundTag = inbounds.includes('tun-in')
+          ? 'tun-in'
+          : (inbounds.find((tag) => tag === 'system-http' || tag === 'system-socks') || inbounds[0]);
+      }
+      if (ruleIndex != null) {
+        const indexedRule = context.routingRuleIndexMap.get(String(ruleIndex));
+        if (indexedRule) trace.ruleTag = indexedRule.ruleTag;
+      }
+      trace.outboundTag = outboundTag;
+      context.connectionTraceMap.set(connId, trace);
+    }
   }
 
   const sniffMatch = cleanLine.match(/\[(\d+)\s+[^\]]+\].*router: sniffed protocol: [^,]+, domain: (\S+)/u);
@@ -220,7 +247,7 @@ export const handleProxyRuntimeLine = (context, line, options = {}) => {
   if (outboundMatch) {
     const [, connId, outboundTag, host] = outboundMatch;
     const trace = context.connectionTraceMap.get(connId);
-    if (trace && trace.inboundTag && ['system-http', 'system-socks'].includes(trace.inboundTag)) {
+    if (trace && trace.inboundTag && ['system-http', 'system-socks', 'tun-in'].includes(trace.inboundTag)) {
       const resolvedOutboundTag = trace.outboundTag && trace.outboundTag.startsWith('out-') ? trace.outboundTag : outboundTag;
       const hit = context.resolveRoutingHit(trace.ruleTag, trace.sniffedHost || trace.host || host, resolvedOutboundTag, { allowHeuristic: true });
       if (hit) {

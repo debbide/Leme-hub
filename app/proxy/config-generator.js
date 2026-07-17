@@ -252,7 +252,9 @@ export const generateProxyConfig = (context, options = {}) => {
   });
 
   return {
-    log: { level: 'warn' },
+    // Capture modes need info-level connection/router lines for routing-hit diagnostics.
+    // Keep warn for port-only / lighter local-port-only use to reduce log noise.
+    log: { level: (systemProxyEnabled || tunEnabled) ? 'info' : 'warn' },
     inbounds,
     outbounds: [
       ...outbounds,
