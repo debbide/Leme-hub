@@ -504,7 +504,7 @@ test('reports active routing observability labels for rule mode', () => {
 
   assert.equal(lines[0], '[Routing] rule routing active via system proxy: 1 manual rule(s), active outbound out-n1');
   assert.equal(lines.some((line) => line.includes('domain_suffix=corp.local -> direct (office)')), true);
-  assert.equal(lines.some((line) => line.includes('unmatched system traffic -> out-n1')), true);
+  assert.equal(lines.some((line) => line.includes('unmatched capture traffic (system proxy) -> out-n1')), true);
 });
 
 test('reports inactive routing observability labels when mode is not rule', () => {
