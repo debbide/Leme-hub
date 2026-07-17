@@ -467,7 +467,10 @@ export const updateSettings = async (manager, patch, options = {}) => {
   manager.refreshConnectionsServiceBaseUrl(saved);
   manager.proxyService.runtimeOptions = manager.getRuntimeOptions(saved, nodes);
 
-  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId', 'tunEnabled', 'tunStack', 'tunStrictRoute', 'tunInterfaceName', 'tunAddress', 'tunMtu'];
+  // systemProxyEnabled toggles the system-socks/system-http inbounds in the
+  // generated config, so a running core must be rebuilt when it changes.
+  // (systemProxyCaptureEnabled is OS-level only and never reaches config gen.)
+  const runtimeSensitiveKeys = ['activeNodeId', 'routingMode', 'routingItems', 'customRules', 'rulesets', 'dnsRemoteServer', 'dnsDirectServer', 'dnsBootstrapServer', 'dnsFinal', 'dnsStrategy', 'tlsFragmentEnabled', 'proxyListenHost', 'systemProxyEnabled', 'systemProxySocksPort', 'systemProxyHttpPort', 'systemProxyAutoSwitchEnabled', 'systemProxyAutoSwitchGroupId', 'tunEnabled', 'tunStack', 'tunStrictRoute', 'tunInterfaceName', 'tunAddress', 'tunMtu'];
   const changedRuntimeKeys = runtimeSensitiveKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
   if (Object.prototype.hasOwnProperty.call(patch, 'nodeGroups') && hasNodeGroupsRuntimeChange(current.nodeGroups || [], nodeGroups, {
     ...current,

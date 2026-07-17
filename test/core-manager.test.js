@@ -1007,6 +1007,24 @@ test('desktop mode keeps system proxy capture aligned with unified proxy toggle'
   assert.equal(result.proxy.systemProxyCaptureEnabled, true);
 });
 
+test('toggling systemProxyEnabled while running rebuilds the core', async () => {
+  const manager = new CoreManager(createPaths(), createStore(), { env: { LEME_MODE: 'server' } });
+  manager.state.status = 'running';
+  let restarts = 0;
+  manager.restart = async () => {
+    restarts += 1;
+    return manager.getStatus();
+  };
+
+  const enabled = await manager.updateSettings({ systemProxyEnabled: true });
+  assert.equal(enabled.autoRestarted, true);
+  assert.equal(restarts, 1);
+
+  const disabled = await manager.updateSettings({ systemProxyEnabled: false });
+  assert.equal(disabled.autoRestarted, true);
+  assert.equal(restarts, 2);
+});
+
 test('server mode leaves system proxy capture disabled when enabling unified proxy entry', async () => {
   const manager = new CoreManager(createPaths(), createStore(), { env: { LEME_MODE: 'server' } });
 
@@ -2048,6 +2066,7 @@ test('runNodeGroupAutoTestTick switches group selector to the faster node withou
 
 test('applySystemProxy uses current unified proxy ports', async () => {
   const manager = new CoreManager(createPaths(), createStore());
+  manager.restart = async () => manager.getStatus();
   manager.state.status = 'running';
   await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: false });
   manager.systemProxyManager = {

@@ -397,11 +397,16 @@ export class CoreManager {
     const needsTunOff = !!(settings.tunEnabled || settings.tunCaptureEnabled);
     const needsUnifiedEntry = !settings.systemProxyEnabled;
     if (needsTunOff || needsUnifiedEntry) {
-      await this.updateSettings({
+      // tunEnabled and systemProxyEnabled are runtime-sensitive keys, so
+      // updateSettings already rebuilds the running core. Only restart
+      // ourselves if it somehow did not (e.g. no runtime change detected).
+      const result = await this.updateSettings({
         ...(needsTunOff ? { tunEnabled: false, tunCaptureEnabled: false } : {}),
         ...(needsUnifiedEntry ? { systemProxyEnabled: true, systemProxyCaptureEnabled: false } : {})
       });
-      await this.restart();
+      if (!result.autoRestarted) {
+        await this.restart();
+      }
       settings = this.getSettingsSnapshot();
     }
 
