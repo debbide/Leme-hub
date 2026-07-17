@@ -57,7 +57,9 @@ export const DEFAULT_TUN_INTERFACE_NAME = 'leme-tun';
 export const DEFAULT_TUN_ADDRESS = ['172.19.0.1/30'];
 // 9000 jumbo MTU often breaks on Windows consumer NICs / VPN paths; 1500 is safer default.
 export const DEFAULT_TUN_MTU = 1500;
-export const DEFAULT_TUN_STACK = 'system';
+// system stack on Windows frequently fails to serve DNS to the auto_route gateway;
+// mixed (system TCP + gvisor UDP/DNS path) is more reliable for TUN.
+export const DEFAULT_TUN_STACK = process.platform === 'win32' ? 'mixed' : 'system';
 
 const appendSystemProxyInbounds = (inbounds, context, {
   systemProxyEnabled = false,
@@ -149,7 +151,8 @@ export const generateProxyConfig = (context, options = {}) => {
     systemProxySocksPort,
     tunEnabled = false,
     tunStack = DEFAULT_TUN_STACK,
-    tunStrictRoute = true,
+    // Windows: strict_route blackholes node dials under auto_route; default off.
+    tunStrictRoute = process.platform === 'win32' ? false : true,
     tunAddress = DEFAULT_TUN_ADDRESS,
     tunInterfaceName = DEFAULT_TUN_INTERFACE_NAME,
     tunMtu = DEFAULT_TUN_MTU

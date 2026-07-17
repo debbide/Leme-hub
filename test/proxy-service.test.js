@@ -1989,12 +1989,14 @@ test('generates tun inbound while keeping per-node local ports', () => {
   assert.equal(tun.type, 'tun');
   assert.equal(tun.auto_route, true);
   assert.equal(tun.strict_route, true);
-  assert.equal(tun.stack, 'system');
+  assert.equal(tun.stack, process.platform === 'win32' ? 'mixed' : 'system');
   assert.equal(tun.interface_name, 'leme-tun');
   assert.equal(tun.mtu, 1500);
+  assert.equal(tun.strict_route, process.platform === 'win32' ? false : true);
   assert.deepEqual(tun.address, ['172.19.0.1/30']);
-  assert.equal(config.route.rules[0]?.action, 'hijack-dns');
-  assert.equal(config.route.rules[0]?.protocol, 'dns');
+  const hijack = config.route.rules.filter((rule) => rule.action === 'hijack-dns');
+  assert.ok(hijack.some((rule) => rule.protocol === 'dns'));
+  assert.ok(hijack.some((rule) => rule.port === 53));
 
   assert.equal(config.inbounds.some((inbound) => inbound.tag === 'in-n1'), true);
   assert.equal(config.inbounds.some((inbound) => inbound.tag === 'in-n2'), true);

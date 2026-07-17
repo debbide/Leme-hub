@@ -432,13 +432,22 @@ export class CoreManager {
       settings = this.getSettingsSnapshot();
     }
 
-    if (!settings.tunEnabled || settings.systemProxyEnabled || settings.systemProxyCaptureEnabled) {
-      await this.updateSettings({
-        tunEnabled: true,
-        tunCaptureEnabled: false,
-        systemProxyEnabled: false,
-        systemProxyCaptureEnabled: false
-      });
+    // Always re-apply safe Windows TUN defaults when enabling: stale settings from
+    // early builds (stack=system, strict_route=true, mtu=9000) cause total blackout.
+    const tunPatch = {
+      tunEnabled: true,
+      tunCaptureEnabled: false,
+      systemProxyEnabled: false,
+      systemProxyCaptureEnabled: false
+    };
+    if (process.platform === 'win32') {
+      tunPatch.tunStack = 'mixed';
+      tunPatch.tunStrictRoute = false;
+      tunPatch.tunMtu = 1500;
+    }
+    if (!settings.tunEnabled || settings.systemProxyEnabled || settings.systemProxyCaptureEnabled
+      || (process.platform === 'win32' && (settings.tunStack === 'system' || settings.tunStrictRoute !== false || Number(settings.tunMtu) > 1500))) {
+      await this.updateSettings(tunPatch);
     }
 
     if (this.state.status === 'running') {

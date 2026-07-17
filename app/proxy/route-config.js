@@ -284,13 +284,14 @@ export const buildRouteConfig = ({
 
   routeRules.unshift({ action: 'sniff' });
 
-  // TUN (and strict system capture) must hijack plain DNS (udp/tcp 53).
-  // Without this, auto_route sends DNS into the tunnel but nothing handles it → total blackout.
+  // TUN must hijack plain DNS. auto_route points Windows DNS at the TUN gateway
+  // (e.g. 172.19.0.2); without hijack, OS DNS times out → total blackout.
+  // Keep hijack immediately after sniff (sing-box recommended order).
   if (tunEnabled) {
-    routeRules.unshift({
-      protocol: 'dns',
-      action: 'hijack-dns'
-    });
+    routeRules.splice(1, 0,
+      { protocol: 'dns', action: 'hijack-dns' },
+      { port: 53, action: 'hijack-dns' }
+    );
   }
 
   if (captureRoutingEnabled) {

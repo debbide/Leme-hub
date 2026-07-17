@@ -200,8 +200,8 @@ test('defaults tun settings to disabled capture-safe values', () => {
 
   assert.equal(settings.tunEnabled, false);
   assert.equal(settings.tunCaptureEnabled, false);
-  assert.equal(settings.tunStack, 'system');
-  assert.equal(settings.tunStrictRoute, true);
+  assert.equal(settings.tunStack, process.platform === 'win32' ? 'mixed' : 'system');
+  assert.equal(settings.tunStrictRoute, process.platform === 'win32' ? false : true);
   assert.equal(settings.tunInterfaceName, 'leme-tun');
   assert.deepEqual(settings.tunAddress, ['172.19.0.1/30']);
   assert.equal(settings.tunMtu, 1500);

@@ -38,8 +38,9 @@ const defaultSettings = (paths, options = {}) => {
     systemProxyCaptureEnabled: false,
     tunEnabled: false,
     tunCaptureEnabled: false,
-    tunStack: 'system',
-    tunStrictRoute: true,
+    // Windows: mixed stack + non-strict routes avoid total blackhole with auto_route.
+    tunStack: process.platform === 'win32' ? 'mixed' : 'system',
+    tunStrictRoute: process.platform === 'win32' ? false : true,
     tunInterfaceName: 'leme-tun',
     tunAddress: ['172.19.0.1/30'],
     tunMtu: 1500,
@@ -97,8 +98,23 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
       : false;
   normalized.tunEnabled = !!normalized.tunEnabled;
   normalized.tunCaptureEnabled = !!normalized.tunCaptureEnabled;
-  normalized.tunStack = String(normalized.tunStack || defaults.tunStack).trim() || defaults.tunStack;
-  normalized.tunStrictRoute = normalized.tunStrictRoute !== false;
+  {
+    const stack = String(normalized.tunStack || defaults.tunStack).trim() || defaults.tunStack;
+    // Migrate legacy default that blackholes DNS on Windows TUN.
+    normalized.tunStack = (stack === 'system' && process.platform === 'win32')
+      ? 'mixed'
+      : stack;
+  }
+  // strict_route on Windows with other virtual adapters often causes total blackout;
+  // default off for win32 unless user explicitly enabled it in a future UI.
+  if (!Object.prototype.hasOwnProperty.call(settings, 'tunStrictRoute') && process.platform === 'win32') {
+    normalized.tunStrictRoute = false;
+  } else {
+    normalized.tunStrictRoute = normalized.tunStrictRoute !== false;
+  }
+  if (process.platform === 'win32' && settings.tunStrictRoute === undefined) {
+    normalized.tunStrictRoute = false;
+  }
   normalized.tunInterfaceName = String(normalized.tunInterfaceName || defaults.tunInterfaceName).trim() || defaults.tunInterfaceName;
   {
     const address = Array.isArray(normalized.tunAddress)
@@ -111,7 +127,9 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
   }
   {
     const parsedMtu = Number.parseInt(normalized.tunMtu, 10);
-    normalized.tunMtu = Number.isInteger(parsedMtu) && parsedMtu > 0 ? parsedMtu : defaults.tunMtu;
+    // Clamp absurd jumbo MTUs left from early defaults (9000) that break Windows paths.
+    const mtu = Number.isInteger(parsedMtu) && parsedMtu > 0 ? parsedMtu : defaults.tunMtu;
+    normalized.tunMtu = mtu > 1500 ? 1500 : mtu;
   }
   if (!normalized.tunEnabled) {
     normalized.tunCaptureEnabled = false;
