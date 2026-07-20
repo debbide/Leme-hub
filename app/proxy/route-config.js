@@ -348,7 +348,7 @@ export const buildRouteConfig = ({
     route: {
       rule_set: ruleSetConfig,
       rules: routeRules,
-      auto_detect_interface: true,
+      auto_detect_interface: tunEnabled,
       default_domain_resolver: 'dns-local',
       final: finalOutbound
     },
