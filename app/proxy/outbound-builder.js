@@ -176,6 +176,13 @@ export const buildNodeOutbound = (node, options = {}) => {
         ...node.headers
       };
     }
+
+    // Cloudflare / CDN WS edges often require ALPN http/1.1. Without it, TLS may
+    // negotiate h2 and the WebSocket upgrade stalls — other clients usually default
+    // this for us. Only fill when the node did not specify alpn explicitly.
+    if (outbound.tls && (!Array.isArray(outbound.tls.alpn) || outbound.tls.alpn.length === 0)) {
+      outbound.tls.alpn = ['http/1.1'];
+    }
   } else if (node.transport === 'grpc') {
     outbound.transport = {
       type: 'grpc',

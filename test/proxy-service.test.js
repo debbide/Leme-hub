@@ -109,6 +109,7 @@ test('keeps vmess none cipher separate from tls detection', () => {
   assert.equal(outbound.transport.path, '/vmess-argo');
   assert.equal(outbound.transport.max_early_data, 2560);
   assert.equal(outbound.transport.headers.Host, 'rn.61154321.dpdns.org');
+  assert.deepEqual(outbound.tls.alpn, ['http/1.1']);
 });
 
 test('sanitizes invalid vmess tls security while keeping tls enabled', () => {
@@ -316,7 +317,7 @@ test('enables tls record fragment from runtime settings for tls proxy outbounds'
   assert.equal(outbound.tls.record_fragment, true);
 });
 
-test('does not force ws tls alpn when node does not specify one', () => {
+test('defaults ws tls alpn to http/1.1 when node does not specify one', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{
     id: 'n1',
@@ -334,10 +335,50 @@ test('does not force ws tls alpn when node does not specify one', () => {
   const config = service.generateConfig();
   const outbound = config.outbounds[0];
 
-  assert.equal(outbound.tls.alpn, undefined);
+  assert.deepEqual(outbound.tls.alpn, ['http/1.1']);
   assert.equal(outbound.transport.path, '/vless-argo');
   assert.equal(outbound.transport.max_early_data, 2560);
   assert.equal(outbound.transport.early_data_header_name, 'Sec-WebSocket-Protocol');
+});
+
+test('keeps explicit ws tls alpn from the node', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vless',
+    server: 'edge.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    security: 'tls',
+    sni: 'edge.example',
+    alpn: 'h2,http/1.1',
+    transport: 'ws',
+    wsHost: 'edge.example',
+    wsPath: '/vless-argo'
+  }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.deepEqual(outbound.tls.alpn, ['h2', 'http/1.1']);
+});
+
+test('does not force alpn for non-ws tls outbounds', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{
+    id: 'n1',
+    type: 'vless',
+    server: 'edge.example',
+    port: 443,
+    uuid: '0478303c-d7d2-4156-afba-1ab7e14c47fd',
+    security: 'tls',
+    sni: 'edge.example'
+  }]);
+
+  const config = service.generateConfig();
+  const outbound = config.outbounds[0];
+
+  assert.equal(outbound.tls.alpn, undefined);
 });
 
 test('keeps private traffic direct in rule mode', () => {
