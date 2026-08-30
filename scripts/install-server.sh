@@ -170,7 +170,9 @@ data['proxyListenHost'] = proxy_host
 data['systemProxyHttpPort'] = proxy_http_port
 data['systemProxySocksPort'] = proxy_socks_port
 data['systemProxyEnabled'] = proxy_enabled
-data['systemProxyCaptureEnabled'] = False
+# 更新时保留原有的抓取开关，避免更新后代理静默停摆；仅首次安装默认关闭。
+if 'systemProxyCaptureEnabled' not in data:
+    data['systemProxyCaptureEnabled'] = False
 
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY
