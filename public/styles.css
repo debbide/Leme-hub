@@ -9,11 +9,11 @@
   --border-subtle: #334155;
   --border-strong: #475569;
   --border-accent: rgba(59, 130, 246, 0.35);
-  
+
   --text-main: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
-  
+
   --accent-base: #3b82f6;
   --accent-hover: #2563eb;
   --accent-soft: rgba(59, 130, 246, 0.15);
@@ -26,12 +26,12 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --control-height: 38px;
-  
+
   --pill-bg: #334155;
   --pill-text: #cbd5e1;
   --pill-green-bg: rgba(16, 185, 129, 0.15);
   --pill-green-text: #34d399;
-  
+
   --btn-danger-bg: rgba(244, 63, 94, 0.1);
   --btn-danger-hover: rgba(244, 63, 94, 0.2);
   --btn-red-text: #f43f5e;
@@ -4096,8 +4096,7 @@ input:focus + .cyber-slider {
     width: 95vw;
   }
 }
-. g r o u p - t a b - g h o s t   {   o p a c i t y :   0 . 4 ;   b a c k g r o u n d :   v a r ( - - b g - h o v e r )   ! i m p o r t a n t ;   }  
- 
+.group-tab-ghost { opacity: 0.4; background: var(--bg-hover) !important; }
 
 /* MONOSPACE TYPOGRAPHY UPDATES */
 :root {
@@ -5622,16 +5621,47 @@ input:checked + .cyber-slider:before {
 }
 
 /* ---- 账号安全弹窗 ---- */
-.security-modal { width: 100%; max-width: 460px; }
-.security-modal-body { padding: 20px 24px 24px; }
+.security-modal {
+  width: min(680px, calc(100vw - 32px));
+  max-width: 680px;
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: hidden;
+}
+.security-modal-body {
+  padding: 20px 24px 24px;
+  overflow-y: auto;
+}
 .security-hint {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0 0 12px;
   line-height: 1.5;
 }
-.security-verify-row { display: flex; gap: 8px; }
-.security-verify-row input { flex: 1; }
+.security-verify-form { position: relative; }
+.security-autofill-username {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.security-field-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.security-verify-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+.security-verify-row input { min-width: 0; }
+.security-verify-row button { white-space: nowrap; }
 .security-error {
   color: #f87171;
   font-size: 13px;
@@ -5665,14 +5695,30 @@ input:checked + .cyber-slider:before {
 }
 .security-status-row strong { color: var(--text-main); }
 .totp-enroll-grid {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
 }
-.totp-enroll-grid canvas {
+.totp-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.totp-qr-wrap canvas {
+  display: block;
+  width: 160px;
+  height: 160px;
   background: #fff;
   border-radius: var(--radius-sm);
-  flex-shrink: 0;
+  padding: 8px;
 }
 .totp-enroll-side {
   display: flex;
@@ -5682,22 +5728,34 @@ input:checked + .cyber-slider:before {
   min-width: 0;
 }
 .totp-secret-box {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   background: var(--bg-main);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 .totp-secret-box span {
+  display: block;
+  min-width: 0;
   font-family: monospace;
   font-size: 12px;
   letter-spacing: 0.06em;
-  word-break: break-all;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: normal;
   color: var(--text-secondary);
-  flex: 1;
 }
+.totp-copy-btn { white-space: nowrap; }
+.totp-confirm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.totp-confirm-row input { min-width: 0; }
+.totp-confirm-row button { white-space: nowrap; }
 .passkey-list {
   display: flex;
   flex-direction: column;
@@ -5716,3 +5774,27 @@ input:checked + .cyber-slider:before {
   font-size: 13px;
 }
 .passkey-item-meta { font-size: 12px; color: var(--text-muted); }
+
+@media (max-width: 620px) {
+  .security-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .security-modal-body { padding: 16px; }
+  .security-field-grid,
+  .totp-enroll-grid {
+    grid-template-columns: 1fr;
+  }
+  .totp-qr-wrap canvas {
+    width: 148px;
+    height: 148px;
+  }
+  .security-verify-row,
+  .totp-confirm-row {
+    grid-template-columns: 1fr;
+  }
+  .security-verify-row button,
+  .totp-confirm-row button {
+    width: 100%;
+  }
+}

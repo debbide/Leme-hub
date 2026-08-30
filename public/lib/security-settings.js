@@ -32,6 +32,7 @@ export function initSecuritySettings({ showToast }) {
   const verifyStep = $('security-verify-step');
   const manageStep = $('security-manage-step');
   const verifyInput = $('security-verify-input');
+  const verifyUsername = $('security-verify-username');
   const verifyError = $('security-verify-error');
 
   const hideEntry = () => { entry.style.display = 'none'; };
@@ -54,6 +55,9 @@ export function initSecuritySettings({ showToast }) {
       if (note) {
         note.textContent = `当前账号：${me.user.username} · 修改密码、两步验证与通行密钥管理`;
       }
+      if (verifyUsername) {
+        verifyUsername.value = me.user.username || '';
+      }
     } catch (error) {
       hideEntry();
     }
@@ -74,12 +78,12 @@ export function initSecuritySettings({ showToast }) {
     }
     if (verifyInput) {
       verifyInput.value = '';
-      verifyInput.focus();
     }
     if (verifyError) {
       verifyError.textContent = '';
     }
     modal.classList.add('active');
+    window.setTimeout(() => verifyInput?.focus(), 0);
   }
 
   function closeModal() {
@@ -144,11 +148,9 @@ export function initSecuritySettings({ showToast }) {
     }
   }
 
-  $('security-verify-btn')?.addEventListener('click', verifyPassword);
-  verifyInput?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      verifyPassword();
-    }
+  verifyStep?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    verifyPassword();
   });
 
   // ---- 第二步：加载管理状态 ----
