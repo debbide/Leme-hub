@@ -209,6 +209,26 @@ export class AuthService {
     return { twoFactorRequired: false, ...this.createSessionCookie(user.id, { remember }) };
   }
 
+  changePassword(user, { currentPassword, newPassword } = {}) {
+    if (!this.enabled) {
+      throw Object.assign(new Error('Authentication is only available in server mode'), { status: 400 });
+    }
+    const stored = this.store.getUserById(user?.id) || this.store.getUserByUsername(user?.username);
+    if (!stored) {
+      throw Object.assign(new Error('用户不存在'), { status: 401 });
+    }
+    if (!verifyPassword(String(currentPassword || ''), stored.passwordHash)) {
+      throw Object.assign(new Error('当前密码错误'), { status: 401 });
+    }
+    if (String(newPassword || '').length < 8) {
+      throw Object.assign(new Error('新密码至少 8 位'), { status: 400 });
+    }
+    this.store.updateUser(stored.id, { passwordHash: hashPassword(newPassword) });
+    // 改密后吊销该用户全部会话，强制重新登录
+    this.store.deleteSessionsForUser(stored.id);
+    return { ok: true };
+  }
+
   verifyTotpTicket({ ticket, code }) {
     const pending = this.store.getPendingTotp();
     if (!pending || pending.ticket !== String(ticket || '')) {

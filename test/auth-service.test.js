@@ -181,3 +181,33 @@ test('requiresAuth is disabled when auth is not enabled', () => {
   assert.equal(requiresAuth('/', { enabled: false }), false);
   assert.equal(requiresAuth('/api/nodes', { enabled: false }), false);
 });
+
+// ---- 修改密码 ----
+
+test('changePassword updates hash and revokes all sessions', () => {
+  const { service } = createService();
+  service.setup({ username: 'admin', password: 'password123' });
+  const oldCookie = service.login({ username: 'admin', password: 'password123' }, {}).cookie;
+
+  service.changePassword({ username: 'admin' }, { currentPassword: 'password123', newPassword: 'newpassword456' });
+
+  // 旧密码失效
+  assert.throws(() => service.login({ username: 'admin', password: 'password123' }, {}), /密码错误/);
+  // 新密码可登录
+  const newLogin = service.login({ username: 'admin', password: 'newpassword456' }, {});
+  assert.match(newLogin.cookie, /^leme_session=/);
+  // 旧会话已吊销
+  const oldRequest = { headers: { cookie: oldCookie } };
+  assert.equal(service.resolveUserFromRequest(oldRequest), null);
+});
+
+test('changePassword rejects wrong current password and weak new password', () => {
+  const { service } = createService();
+  service.setup({ username: 'admin', password: 'password123' });
+
+  assert.throws(() => service.changePassword({ username: 'admin' }, { currentPassword: 'wrongpass', newPassword: 'newpassword456' }), /当前密码错误/);
+  assert.throws(() => service.changePassword({ username: 'admin' }, { currentPassword: 'password123', newPassword: 'short' }), /至少 8 位/);
+  // 原密码仍可用
+  const login = service.login({ username: 'admin', password: 'password123' }, {});
+  assert.match(login.cookie, /^leme_session=/);
+});

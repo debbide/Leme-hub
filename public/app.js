@@ -10,6 +10,7 @@ import { bindRoutingEvents } from './lib/routing-bindings.js';
 import { bindSystemEvents } from './lib/system-bindings.js';
 import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData, refreshRulesetDatabaseState, renderUwpLoopbackStatus as renderUwpLoopbackStatusView, runCoreAction as runCoreActionView, startRoutingStatusPolling as startRoutingStatusPollingView, startTrafficPolling as startTrafficPollingView, stopRoutingStatusPolling as stopRoutingStatusPollingView, stopTrafficPolling as stopTrafficPollingView } from './lib/system-runtime.js';
 import { bindAppMiscEvents, bindWindowChromeFallbacks, runInitialAppBootstrap } from './lib/app-init.js';
+import { initSecuritySettings } from './lib/security-settings.js';
 import { bindViewLifecycle } from './lib/view-lifecycle.js';
 import { debounce, escapeHtml, escapeRegExp, flagFromCountryCode, requestJson, requestSseStream } from './lib/utils.js';
 
@@ -817,6 +818,9 @@ bindAppMiscEvents({
 });
 
 bindWindowChromeFallbacks({ showToast });
+
+// 安全设置（server 模式登录后可用；desktop 模式自动隐藏）
+initSecuritySettings({ showToast });
 
 runInitialAppBootstrap({
   updateRoutingLogViewModeButtons: () => routingController.updateRoutingLogViewModeButtons(),

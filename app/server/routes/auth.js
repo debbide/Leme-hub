@@ -88,6 +88,12 @@ export function createAuthRoutes({ authService }) {
       }
     })),
 
+    // 修改密码
+    'POST /api/auth/password/change': requireAuth(async ({ user, body }) => {
+      authService.changePassword(user, { currentPassword: body?.currentPassword, newPassword: body?.newPassword });
+      return { status: 200, body: { ok: true }, headers: { 'Set-Cookie': 'leme_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' } };
+    }),
+
     // TOTP 两步验证管理
     'POST /api/auth/totp/begin': requireAuth(async ({ user }) => {
       const result = authService.beginTotpEnrollment(user);
