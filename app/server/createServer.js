@@ -109,6 +109,21 @@ export const isForbiddenCrossOrigin = (request, runtime) => {
   }
 };
 
+// The login page and its static assets must stay public, otherwise an
+// unauthenticated visit to /login.html would 302 back to
+// /login.html?next=... creating an infinite redirect loop.
+const PUBLIC_STATIC_PATHS = new Set(['/login.html', '/styles.css', '/favicon.png']);
+
+export const requiresAuth = (pathname, { enabled }) => {
+  if (!enabled) {
+    return false;
+  }
+  if (pathname.startsWith('/api/auth/')) {
+    return false;
+  }
+  return !PUBLIC_STATIC_PATHS.has(pathname);
+};
+
 export function createAppServer(paths, env = process.env) {
   ensureRuntimeDirs(paths);
 
@@ -158,7 +173,7 @@ export function createAppServer(paths, env = process.env) {
 
     // Server mode: every non-auth API requires a logged-in session; page
     // requests redirect to the login page (original path preserved in ?next=).
-    if (authService.enabled && !url.pathname.startsWith('/api/auth/')) {
+    if (requiresAuth(url.pathname, { enabled: authService.enabled })) {
       const user = authService.resolveUserFromRequest(request);
       if (!user) {
         if (url.pathname.startsWith('/api/')) {

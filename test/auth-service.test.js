@@ -7,6 +7,7 @@ import path from 'path';
 import { AuthStore } from '../app/server/services/AuthStore.js';
 import { AuthService, hashPassword, verifyPassword } from '../app/server/services/AuthService.js';
 import { TotpService, verifyTotp, totpCode } from '../app/server/services/TotpService.js';
+import { requiresAuth } from '../app/server/createServer.js';
 
 const createPaths = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'leme-hub-auth-'));
@@ -162,4 +163,21 @@ test('AuthStore prunes expired sessions', () => {
   store.pruneExpiredSessions(2000);
   assert.equal(store.getSessionByTokenHash('expired'), null);
   assert.equal(store.getSessionByTokenHash('fresh').userId, 'u1');
+});
+// ---- requiresAuth：登录页免鉴权（防无限重定向循环）----
+
+test('requiresAuth exempts the login page and its static assets', () => {
+  const enabled = { enabled: true };
+  assert.equal(requiresAuth('/login.html', enabled), false);
+  assert.equal(requiresAuth('/styles.css', enabled), false);
+  assert.equal(requiresAuth('/favicon.png', enabled), false);
+  assert.equal(requiresAuth('/api/auth/state', enabled), false);
+  assert.equal(requiresAuth('/', enabled), true);
+  assert.equal(requiresAuth('/index.html', enabled), true);
+  assert.equal(requiresAuth('/api/nodes', enabled), true);
+});
+
+test('requiresAuth is disabled when auth is not enabled', () => {
+  assert.equal(requiresAuth('/', { enabled: false }), false);
+  assert.equal(requiresAuth('/api/nodes', { enabled: false }), false);
 });

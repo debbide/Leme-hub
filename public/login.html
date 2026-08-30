@@ -203,7 +203,12 @@
         try {
           const next = new URLSearchParams(location.search).get('next');
           if (next && next.startsWith('/') && !next.startsWith('//')) {
-            return next;
+            // Defense: if next points back to the login page itself (a stale
+            // looped URL), fall back to the home page instead.
+            const nextPathname = next.split('?')[0].split('#')[0];
+            if (nextPathname !== '/login.html') {
+              return next;
+            }
           }
         } catch { /* ignore */ }
         return '/';
