@@ -2,9 +2,12 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 
+import { AuthStore } from './services/AuthStore.js';
+import { AuthService } from './services/AuthService.js';
 import { ConfigStore } from './services/ConfigStore.js';
 import { CoreManager } from './services/CoreManager.js';
 import { UwpLoopbackManager } from './services/UwpLoopbackManager.js';
+import { createAuthRoutes } from './routes/auth.js';
 import { createCoreRoutes } from './routes/core.js';
 import { createNodeGroupRoutes } from './routes/node-groups.js';
 import { createNodeRoutes } from './routes/nodes.js';
@@ -19,8 +22,8 @@ const contentTypes = {
   '.json': 'application/json; charset=utf-8'
 };
 
-const sendJson = (response, status, body) => {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+const sendJson = (response, status, body, headers = {}) => {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
   response.end(JSON.stringify(body));
 };
 
@@ -117,7 +120,10 @@ export function createAppServer(paths, env = process.env) {
   });
   const uwpLoopbackManager = new UwpLoopbackManager();
   const runtime = resolveServerRuntime(store.getSettings(), env);
+  const authStore = new AuthStore(paths);
+  const authService = new AuthService({ store: authStore, runtime });
   const routes = {
+    ...createAuthRoutes({ authService }),
     ...createSystemRoutes({ store, coreManager, paths, uwpLoopbackManager }),
     ...createCoreRoutes({ coreManager }),
     ...createNodeGroupRoutes({ coreManager }),
@@ -150,12 +156,28 @@ export function createAppServer(paths, env = process.env) {
       return;
     }
 
+    // Server mode: every non-auth API requires a logged-in session; page
+    // requests redirect to the login page (original path preserved in ?next=).
+    if (authService.enabled && !url.pathname.startsWith('/api/auth/')) {
+      const user = authService.resolveUserFromRequest(request);
+      if (!user) {
+        if (url.pathname.startsWith('/api/')) {
+          sendJson(response, 401, { ok: false, error: '未登录或会话已过期' });
+          return;
+        }
+        const next = encodeURIComponent(url.pathname + url.search);
+        response.writeHead(302, { Location: `/login.html?next=${next}` });
+        response.end();
+        return;
+      }
+    }
+
     if (route) {
       try {
         const body = await readJsonBody(request);
         const result = await route({ request, response, url, body });
         if (!result?.handled && !response.writableEnded) {
-          sendJson(response, result.status || 200, result.body);
+          sendJson(response, result.status || 200, result.body, result.headers);
         }
       } catch (error) {
         const status = error.status || (error instanceof SyntaxError ? 400 : 500);

@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 - Leme Proxy Client</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="/styles.css?v=20260405fix2">
+    <style>
+      .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(ellipse at top, #1e293b 0%, #0f172a 60%);
+        padding: 24px;
+      }
+      .login-card {
+        width: 100%;
+        max-width: 380px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        padding: 36px 32px;
+      }
+      .login-logo {
+        text-align: center;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        font-size: 15px;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+      }
+      .login-title {
+        text-align: center;
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--text-main);
+        margin: 0 0 24px;
+      }
+      .login-field { margin-bottom: 16px; }
+      .login-field label {
+        display: block;
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+      }
+      .login-field input {
+        width: 100%;
+        box-sizing: border-box;
+        background: var(--bg-main);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        color: var(--text-main);
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+      }
+      .login-field input:focus {
+        outline: none;
+        border-color: var(--accent-base);
+        box-shadow: var(--focus-ring);
+      }
+      .login-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .login-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+      .login-btn {
+        width: 100%;
+        background: var(--accent-base);
+        color: #fff;
+        border: none;
+        border-radius: var(--radius-sm);
+        padding: 11px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .login-btn:hover { background: var(--accent-hover); }
+      .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .login-alt {
+        width: 100%;
+        margin-top: 10px;
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 10px;
+        font-size: 13px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .login-alt:hover { background: var(--bg-soft-hover); }
+      .login-error {
+        display: none;
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        color: #fca5a5;
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        font-size: 13px;
+        margin-bottom: 16px;
+        white-space: pre-wrap;
+      }
+      .login-error.visible { display: block; }
+      .login-hint {
+        text-align: center;
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 18px;
+      }
+      .totp-secret {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        background: var(--bg-main);
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 8px 10px;
+        text-align: center;
+        letter-spacing: 0.08em;
+        word-break: break-all;
+        margin-bottom: 8px;
+        color: var(--text-main);
+      }
+      #totp-setup { display: none; }
+      #totp-setup.visible { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">LEME PROXY</div>
+        <h1 class="login-title" id="login-title">登录</h1>
+        <div class="login-error" id="login-error" role="alert"></div>
+
+        <!-- 第一步：账号密码 -->
+        <form id="login-form" autocomplete="on">
+          <div class="login-field">
+            <label for="username">用户名</label>
+            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+          </div>
+          <div class="login-field">
+            <label for="password">密码</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="login-row">
+            <label><input type="checkbox" id="remember"> 30 天内保持登录</label>
+          </div>
+          <button type="submit" class="login-btn" id="login-submit">登录</button>
+          <button type="button" class="login-alt" id="passkey-btn">使用通行密钥登录</button>
+        </form>
+
+        <!-- 第二步：TOTP 动态码 -->
+        <form id="totp-form" style="display:none">
+          <p class="login-hint" style="margin:0 0 16px; text-align:left;">请输入验证器 App 中的 6 位动态码</p>
+          <div class="login-field">
+            <label for="totp-code">动态码</label>
+            <input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" required autofocus>
+          </div>
+          <button type="submit" class="login-btn">验证</button>
+          <button type="button" class="login-alt" id="totp-back">返回重新登录</button>
+        </form>
+
+        <!-- 首次设置 -->
+        <form id="setup-form" style="display:none">
+          <p class="login-hint" style="margin:0 0 16px; text-align:left;">首次使用，请创建管理员账号（密码至少 8 位）</p>
+          <div class="login-field">
+            <label for="setup-username">用户名</label>
+            <input id="setup-username" type="text" autocomplete="username" required autofocus>
+          </div>
+          <div class="login-field">
+            <label for="setup-password">密码</label>
+            <input id="setup-password" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="login-field">
+            <label for="setup-password2">确认密码</label>
+            <input id="setup-password2" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <button type="submit" class="login-btn">创建账号并登录</button>
+        </form>
+
+        <p class="login-hint" id="login-footer">Leme Hub 面板</p>
+      </div>
+    </div>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const errorBox = $('login-error');
+      const showError = (message) => {
+        errorBox.textContent = message;
+        errorBox.classList.add('visible');
+      };
+      const clearError = () => errorBox.classList.remove('visible');
+
+      const nextPath = (() => {
+        try {
+          const next = new URLSearchParams(location.search).get('next');
+          if (next && next.startsWith('/') && !next.startsWith('//')) {
+            return next;
+          }
+        } catch { /* ignore */ }
+        return '/';
+      })();
+
+      const finishLogin = () => { location.replace(nextPath); };
+
+      const post = async (url, body) => {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `请求失败 (${response.status})`);
+        }
+        return data;
+      };
+
+      let pendingTicket = null;
+
+      // ---- 启动：探测认证状态 ----
+      (async () => {
+        try {
+          const state = await (await fetch('/api/auth/state')).json();
+          if (state.needsSetup) {
+            $('login-title').textContent = '初始化设置';
+            $('login-form').style.display = 'none';
+            $('setup-form').style.display = 'block';
+          }
+        } catch { /* desktop 模式或网络错误：默认显示登录表单 */ }
+      })();
+
+      // ---- 首次设置 ----
+      $('setup-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearError();
+        if ($('setup-password').value !== $('setup-password2').value) {
+          showError('两次输入的密码不一致');
+          return;
+        }
+        const btn = event.target.querySelector('.login-btn');
+        btn.disabled = true;
+        try {
+          await post('/api/auth/setup', {
+            username: $('setup-username').value,
+            password: $('setup-password').value
+          });
+          finishLogin();
+        } catch (error) {
+          showError(error.message);
+          btn.disabled = false;
+        }
+      });
+
+      // ---- 账号密码登录 ----
+      $('login-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearError();
+        const btn = $('login-submit');
+        btn.disabled = true;
+        try {
+          const data = await post('/api/auth/login', {
+            username: $('username').value,
+            password: $('password').value,
+            remember: $('remember').checked
+          });
+          if (data.twoFactor?.required) {
+            pendingTicket = data.twoFactor.ticket;
+            $('login-form').style.display = 'none';
+            $('totp-form').style.display = 'block';
+            $('totp-code').focus();
+          } else {
+            finishLogin();
+          }
+        } catch (error) {
+          showError(error.message);
+          btn.disabled = false;
+        }
+      });
+
+      // ---- TOTP 二步验证 ----
+      $('totp-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearError();
+        const btn = event.target.querySelector('.login-btn');
+        btn.disabled = true;
+        try {
+          await post('/api/auth/totp/verify', { ticket: pendingTicket, code: $('totp-code').value });
+          finishLogin();
+        } catch (error) {
+          showError(error.message);
+          btn.disabled = false;
+        }
+      });
+      $('totp-back').addEventListener('click', () => {
+        pendingTicket = null;
+        clearError();
+        $('totp-form').style.display = 'none';
+        $('login-form').style.display = 'block';
+        $('login-submit').disabled = false;
+        $('password').focus();
+      });
+
+      // ---- 通行密钥登录 ----
+      $('passkey-btn').addEventListener('click', async () => {
+        clearError();
+        try {
+          if (!window.PublicKeyCredential) {
+            throw new Error('当前浏览器不支持通行密钥');
+          }
+          const { options } = await post('/api/auth/passkey/login/challenge');
+          const credential = await navigator.credentials.get({
+            publicKey: {
+              ...options,
+              challenge: Uint8Array.from(atob(options.challenge), (c) => c.charCodeAt(0)),
+              allowCredentials: (options.allowCredentials || []).map((c) => ({
+                ...c,
+                id: Uint8Array.from(atob(c.id), (ch) => ch.charCodeAt(0))
+              }))
+            }
+          });
+          const serialized = {
+            id: credential.id,
+            rawId: credential.id,
+            type: credential.type,
+            response: {
+              clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON))),
+              authenticatorData: btoa(String.fromCharCode(...new Uint8Array(credential.response.authenticatorData))),
+              signature: btoa(String.fromCharCode(...new Uint8Array(credential.response.signature))),
+              userHandle: credential.response.userHandle
+                ? btoa(String.fromCharCode(...new Uint8Array(credential.response.userHandle)))
+                : null
+            }
+          };
+          await post('/api/auth/passkey/login/verify', { credential: serialized });
+          finishLogin();
+        } catch (error) {
+          showError(error.message || '通行密钥登录失败');
+        }
+      });
+    </script>
+  </body>
+</html>

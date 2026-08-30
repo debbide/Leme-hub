@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@maxmind/geoip2-node": "^6.3.4",
+    "@simplewebauthn/server": "^13.3.3",
     "adm-zip": "^0.5.16",
     "axios": "^1.6.7",
     "socks-proxy-agent": "^8.0.3",

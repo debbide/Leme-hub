@@ -24,6 +24,11 @@ export const requestJson = async (url, options = {}) => {
   });
   const body = await response.json();
   if (!response.ok) {
+    // Server 模式下会话过期：跳转登录页（保留当前路径，登录后跳回）。
+    if (response.status === 401 && !url.startsWith('/api/auth/')) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      location.replace(`/login.html?next=${next}`);
+    }
     const error = new Error(body.error || 'Request failed');
     error.status = response.status;
     error.body = body;
