@@ -5638,14 +5638,9 @@ input:checked + .cyber-slider:before {
   line-height: 1.5;
 }
 .security-verify-form { position: relative; }
-.security-autofill-username {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
+.security-verify-username {
+  width: 100%;
+  margin-bottom: 12px;
 }
 .security-field-label {
   display: block;

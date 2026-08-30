@@ -322,7 +322,7 @@ export class AuthService {
     const options = await generateRegistrationOptions({
       rpName,
       rpID: rpId,
-      userID: Buffer.from(user.id).toString('base64url'),
+      userID: Buffer.from(String(user.id), 'utf8'),
       userName: user.username,
       attestationType: 'none',
       excludeCredentials: this.store.listPasskeys(user.id).map((passkey) => ({
