@@ -1133,9 +1133,12 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-    <script type="module" src="/app.js?v=20260830fix2"></script>
+    <script type="module" src="/app.js?v=20260830fix3"></script>
 
-    <!-- Security Modal -->
+    <!-- Security Modal Template：内容克隆后才进入 DOM。密码管理器（Bitwarden 等）
+         只收集插入文档且可见的字段，模板内容不参与渲染；点击「管理」时克隆插入，
+         字段作为全新节点被重新收集，自动填充才能生效（关闭时整个移除）。 -->
+    <template id="security-modal-template">
     <div id="security-modal" class="modal-overlay">
       <div class="modal security-modal">
         <div class="modal-header">
@@ -1209,6 +1212,7 @@
         </div>
       </div>
     </div>
+    </template>
 
 </body>
 </html>
