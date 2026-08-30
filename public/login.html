@@ -206,6 +206,21 @@
         return Uint8Array.from(binary, (char) => char.charCodeAt(0));
       };
 
+      // ArrayBuffer 序列化为 Base64URL（+→-、/→_、去掉 padding）。
+      // @simplewebauthn/server 只接受 base64url，普通 btoa 的标准 base64 会报
+      // "authenticatorData was not a base64url string"。
+      const bufferToB64 = (buffer) => {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (const byte of bytes) {
+          binary += String.fromCharCode(byte);
+        }
+        return btoa(binary)
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+      };
+
       const errorBox = $('login-error');
       const showError = (message) => {
         errorBox.textContent = message;
@@ -348,14 +363,14 @@
           });
           const serialized = {
             id: credential.id,
-            rawId: credential.id,
+            rawId: bufferToB64(credential.rawId),
             type: credential.type,
             response: {
-              clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON))),
-              authenticatorData: btoa(String.fromCharCode(...new Uint8Array(credential.response.authenticatorData))),
-              signature: btoa(String.fromCharCode(...new Uint8Array(credential.response.signature))),
+              clientDataJSON: bufferToB64(credential.response.clientDataJSON),
+              authenticatorData: bufferToB64(credential.response.authenticatorData),
+              signature: bufferToB64(credential.response.signature),
               userHandle: credential.response.userHandle
-                ? btoa(String.fromCharCode(...new Uint8Array(credential.response.userHandle)))
+                ? bufferToB64(credential.response.userHandle)
                 : null
             }
           };
