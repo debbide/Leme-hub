@@ -211,3 +211,32 @@ test('changePassword rejects wrong current password and weak new password', () =
   const login = service.login({ username: 'admin', password: 'password123' }, {});
   assert.match(login.cookie, /^leme_session=/);
 });
+
+// ---- rpInfo：从请求头推导 WebAuthn rpID / origin ----
+
+test('rpInfo derives rpID from request Host header over publicOrigin', () => {
+  const { service } = createService();
+  const info = service.rpInfo({ headers: { host: '192.168.1.5:18997' } });
+  assert.equal(info.rpId, '192.168.1.5');
+  assert.equal(info.origin, 'http://192.168.1.5:18997');
+});
+
+test('rpInfo honors x-forwarded-host and x-forwarded-proto', () => {
+  const { service } = createService();
+  const info = service.rpInfo({
+    headers: {
+      host: 'internal:8080',
+      'x-forwarded-host': 'panel.example.com',
+      'x-forwarded-proto': 'https'
+    }
+  });
+  assert.equal(info.rpId, 'panel.example.com');
+  assert.equal(info.origin, 'https://panel.example.com');
+});
+
+test('rpInfo falls back to publicOrigin without request headers', () => {
+  const { service } = createService();
+  const info = service.rpInfo();
+  assert.equal(info.rpId, 'localhost');
+  assert.equal(info.origin, 'http://localhost:18997');
+});

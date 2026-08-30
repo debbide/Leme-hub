@@ -5621,6 +5621,12 @@ input:checked + .cyber-slider:before {
 }
 
 /* ---- 账号安全弹窗 ---- */
+/* 密码管理器兼容：隐藏时用 display:none 彻底移出渲染树。
+   通用 .modal-overlay 的 opacity:0 方案会让 Bitwarden 等密码管理器
+   把弹窗内密码框视为"不可见字段"，弹出菜单后点击填充无反应；
+   改为 display:none 后，打开弹窗时字段重新可见，可被正常检测与填充。 */
+#security-modal { display: none; }
+#security-modal.active { display: flex; }
 .security-modal {
   width: min(680px, calc(100vw - 32px));
   max-width: 680px;

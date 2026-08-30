@@ -302,7 +302,27 @@ export class AuthService {
     return { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse };
   }
 
-  rpInfo() {
+  // rpID 必须与浏览器实际访问的 origin 同域，否则 WebAuthn 会报
+  // "rp.id cannot be used with the current origin"。用户可能通过局域网 IP /
+  // 域名 / 反向代理访问面板，而 runtime.publicOrigin 只反映绑定地址，
+  // 因此优先从请求头（Host / x-forwarded-*）推导，失败再回退 publicOrigin。
+  rpInfo(request) {
+    const headers = request?.headers || {};
+    const host = String(headers['x-forwarded-host'] || headers.host || '')
+      .split(',')[0].trim();
+    if (host) {
+      const proto = String(headers['x-forwarded-proto'] || '')
+        .split(',')[0].trim()
+        || (this.runtime.publicOrigin?.startsWith('https') ? 'https' : 'http');
+      try {
+        const url = new URL(`${proto}://${host}`);
+        if (url.hostname) {
+          return { rpName: url.hostname, rpId: url.hostname, origin: url.origin };
+        }
+      } catch {
+        // fall through to publicOrigin
+      }
+    }
     const origin = this.runtime.publicOrigin || 'http://localhost';
     let rpName = 'Leme Hub';
     let rpId = 'localhost';
@@ -316,9 +336,9 @@ export class AuthService {
     return { rpName, rpId, origin };
   }
 
-  async beginPasskeyRegistration(user) {
+  async beginPasskeyRegistration(user, request) {
     const { generateRegistrationOptions } = await this.#webauthn();
-    const { rpName, rpId } = this.rpInfo();
+    const { rpName, rpId } = this.rpInfo(request);
     const options = await generateRegistrationOptions({
       rpName,
       rpID: rpId,
@@ -338,9 +358,9 @@ export class AuthService {
     return options;
   }
 
-  async finishPasskeyRegistration(user, credential, name = '') {
+  async finishPasskeyRegistration(user, credential, name = '', request) {
     const { verifyRegistrationResponse } = await this.#webauthn();
-    const { rpId, origin } = this.rpInfo();
+    const { rpId, origin } = this.rpInfo(request);
     const verification = await verifyRegistrationResponse({
       response: credential,
       expectedChallenge: (challenge) => {
@@ -372,24 +392,24 @@ export class AuthService {
     return { ok: true };
   }
 
-  async beginPasskeyLogin() {
+  async beginPasskeyLogin(request) {
     const { generateAuthenticationOptions } = await this.#webauthn();
     const options = await generateAuthenticationOptions({
-      rpID: this.rpInfo().rpId,
+      rpID: this.rpInfo(request).rpId,
       userVerification: 'preferred'
     });
     this.webauthnChallenges.set(options.challenge, this.now() + 5 * 60 * 1000);
     return options;
   }
 
-  async finishPasskeyLogin(credential) {
+  async finishPasskeyLogin(credential, request) {
     const { verifyAuthenticationResponse } = await this.#webauthn();
     const passkey = this.store.getPasskeyByCredentialId(credential?.id);
     if (!passkey) {
       throw Object.assign(new Error('通行密钥未注册'), { status: 401 });
     }
 
-    const { rpId, origin } = this.rpInfo();
+    const { rpId, origin } = this.rpInfo(request);
     const verification = await verifyAuthenticationResponse({
       response: credential,
       expectedChallenge: (challenge) => {

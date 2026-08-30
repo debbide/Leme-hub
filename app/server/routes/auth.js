@@ -53,14 +53,14 @@ export function createAuthRoutes({ authService }) {
     },
 
     // 公开：通行密钥登录 challenge
-    'POST /api/auth/passkey/login/challenge': async () => {
-      const options = await authService.beginPasskeyLogin();
+    'POST /api/auth/passkey/login/challenge': async ({ request }) => {
+      const options = await authService.beginPasskeyLogin(request);
       return { status: 200, body: { ok: true, options } };
     },
 
     // 公开：通行密钥登录验证
-    'POST /api/auth/passkey/login/verify': async ({ body }) => {
-      const result = await authService.finishPasskeyLogin(body?.credential);
+    'POST /api/auth/passkey/login/verify': async ({ body, request }) => {
+      const result = await authService.finishPasskeyLogin(body?.credential, request);
       return {
         status: 200,
         body: { ok: true },
@@ -122,13 +122,13 @@ export function createAuthRoutes({ authService }) {
       body: { ok: true, passkeys: authService.listPasskeysForUser(user) }
     })),
 
-    'POST /api/auth/passkeys/begin': requireAuth(async ({ user }) => {
-      const options = await authService.beginPasskeyRegistration(user);
+    'POST /api/auth/passkeys/begin': requireAuth(async ({ user, request }) => {
+      const options = await authService.beginPasskeyRegistration(user, request);
       return { status: 200, body: { ok: true, options } };
     }),
 
-    'POST /api/auth/passkeys/register': requireAuth(async ({ user, body }) => {
-      await authService.finishPasskeyRegistration(user, body?.credential, body?.name);
+    'POST /api/auth/passkeys/register': requireAuth(async ({ user, body, request }) => {
+      await authService.finishPasskeyRegistration(user, body?.credential, body?.name, request);
       return { status: 200, body: { ok: true } };
     }),
 
