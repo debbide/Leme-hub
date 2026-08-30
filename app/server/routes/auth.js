@@ -88,6 +88,12 @@ export function createAuthRoutes({ authService }) {
       }
     })),
 
+    // 进入安全管理前的密码二次确认
+    'POST /api/auth/verify-password': requireAuth(async ({ user, body }) => {
+      authService.verifyCurrentPassword(user, body?.password);
+      return { status: 200, body: { ok: true } };
+    }),
+
     // 修改密码
     'POST /api/auth/password/change': requireAuth(async ({ user, body }) => {
       authService.changePassword(user, { currentPassword: body?.currentPassword, newPassword: body?.newPassword });

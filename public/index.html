@@ -578,61 +578,13 @@
                 </select>
               </div>
 
-              <!-- 安全设置（仅 server 模式显示） -->
+              <!-- 账号安全（仅 server 模式显示） -->
               <div class="route-item" id="security-card" style="display:none">
                 <div class="route-info">
                   <div class="route-name">账号安全</div>
                   <div class="route-desc" id="security-account-note">修改密码、两步验证与通行密钥管理</div>
                 </div>
-              </div>
-              <div class="route-item" id="security-pwd-row" style="display:none">
-                <div class="route-info">
-                  <div class="route-name">修改密码</div>
-                  <div class="route-desc">修改后所有会话将失效，需要重新登录</div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;min-width:260px">
-                  <input type="password" id="pwd-current" class="modal-field-input settings-input" placeholder="当前密码" autocomplete="current-password">
-                  <input type="password" id="pwd-new" class="modal-field-input settings-input" placeholder="新密码（至少 8 位）" autocomplete="new-password">
-                  <input type="password" id="pwd-confirm" class="modal-field-input settings-input" placeholder="确认新密码" autocomplete="new-password">
-                  <button class="btn-primary" type="button" id="pwd-change-btn">修改密码</button>
-                </div>
-              </div>
-              <div class="route-item" id="security-totp-row" style="display:none">
-                <div class="route-info">
-                  <div class="route-name">两步验证（TOTP）</div>
-                  <div class="route-desc">状态：<span id="totp-status">--</span></div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
-                  <button class="btn-outline" type="button" id="totp-enable-btn">启用</button>
-                  <button class="btn-outline is-danger" type="button" id="totp-disable-btn" style="display:none">关闭</button>
-                </div>
-              </div>
-              <div class="route-item" id="totp-enroll-row" style="display:none">
-                <div class="route-info">
-                  <div class="route-name">绑定验证器</div>
-                  <div class="route-desc">将密钥添加到验证器 App（如 Google Authenticator），然后输入 6 位动态码确认</div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;min-width:260px">
-                  <input type="text" id="totp-secret-input" class="modal-field-input settings-input" placeholder="密钥" readonly>
-                  <input type="text" id="totp-code-input" class="modal-field-input settings-input" placeholder="6 位动态码" inputmode="numeric" maxlength="6">
-                  <button class="btn-primary" type="button" id="totp-confirm-btn">确认绑定</button>
-                </div>
-              </div>
-              <div class="route-item" id="security-passkey-row" style="display:none">
-                <div class="route-info">
-                  <div class="route-name">通行密钥（Passkey）</div>
-                  <div class="route-desc">使用指纹 / Face ID / 硬件密钥免密登录</div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
-                  <button class="btn-outline" type="button" id="passkey-add-btn">添加通行密钥</button>
-                </div>
-              </div>
-              <div class="route-item" id="passkey-list-row" style="display:none">
-                <div class="route-info">
-                  <div class="route-name">已绑定的通行密钥</div>
-                  <div class="route-desc">移除后该设备将无法免密登录</div>
-                </div>
-                <div id="passkey-list" style="display:flex;flex-direction:column;gap:8px;min-width:280px"></div>
+                <button class="btn-outline" type="button" id="security-manage-btn">管理</button>
               </div>
             </div>
           </div>
@@ -1182,5 +1134,71 @@
     
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <script type="module" src="/app.js?v=20260405fix2"></script>
-  </body>
+  
+    <!-- Security Modal -->
+    <div id="security-modal" class="modal-overlay">
+      <div class="modal security-modal">
+        <div class="modal-header">
+          <h2 class="modal-title">账号安全</h2>
+          <button type="button" class="btn-icon modal-close-btn" id="security-modal-close">&times;</button>
+        </div>
+        <div class="modal-body security-modal-body">
+          <!-- 第一步：验证当前密码 -->
+          <div id="security-verify-step">
+            <p class="security-hint">为保护账号安全，请先输入当前密码</p>
+            <div class="security-verify-row">
+              <input type="password" id="security-verify-input" class="modal-field-input" placeholder="当前密码" autocomplete="current-password">
+              <button class="btn-primary" type="button" id="security-verify-btn">验证</button>
+            </div>
+            <p class="security-error" id="security-verify-error"></p>
+          </div>
+          <!-- 第二步：安全管理 -->
+          <div id="security-manage-step" style="display:none">
+            <!-- 修改密码 -->
+            <section class="security-section">
+              <h3 class="security-section-title">修改密码</h3>
+              <div class="security-field-grid">
+                <input type="password" id="pwd-new" class="modal-field-input" placeholder="新密码（至少 8 位）" autocomplete="new-password">
+                <input type="password" id="pwd-confirm" class="modal-field-input" placeholder="确认新密码" autocomplete="new-password">
+              </div>
+              <button class="btn-outline" type="button" id="pwd-change-btn">修改密码</button>
+            </section>
+            <!-- 两步验证 -->
+            <section class="security-section">
+              <h3 class="security-section-title">两步验证（TOTP）</h3>
+              <div class="security-status-row">
+                <span>状态：<strong id="totp-status">--</strong></span>
+                <div>
+                  <button class="btn-outline" type="button" id="totp-enable-btn">启用</button>
+                  <button class="btn-outline is-danger" type="button" id="totp-disable-btn" style="display:none">关闭</button>
+                </div>
+              </div>
+              <div id="totp-enroll-area" style="display:none">
+                <p class="security-hint">用验证器 App 扫描二维码，或手动输入密钥</p>
+                <div class="totp-enroll-grid">
+                  <canvas id="totp-qr-canvas" width="160" height="160"></canvas>
+                  <div class="totp-enroll-side">
+                    <div class="totp-secret-box">
+                      <span id="totp-secret-text"></span>
+                      <button class="btn-icon" type="button" id="totp-copy-btn" title="复制密钥">复制</button>
+                    </div>
+                    <input type="text" id="totp-code-input" class="modal-field-input" placeholder="输入 6 位动态码确认" inputmode="numeric" maxlength="6">
+                    <button class="btn-primary" type="button" id="totp-confirm-btn">确认绑定</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- 通行密钥 -->
+            <section class="security-section">
+              <h3 class="security-section-title">通行密钥（Passkey）</h3>
+              <p class="security-hint">绑定后可用指纹 / Face ID / 硬件密钥免密登录，无需输入密码</p>
+              <button class="btn-outline" type="button" id="passkey-add-btn">添加通行密钥</button>
+              <div id="passkey-list" class="passkey-list"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+</body>
 </html>

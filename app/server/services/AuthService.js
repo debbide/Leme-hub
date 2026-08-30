@@ -253,6 +253,18 @@ export class AuthService {
     return this.createSessionCookie(user.id, { remember: pending.remember });
   }
 
+  // 验证当前密码（进入安全管理前的二次确认）
+  verifyCurrentPassword(user, password) {
+    const stored = this.store.getUserById(user?.id) || this.store.getUserByUsername(user?.username);
+    if (!stored) {
+      throw Object.assign(new Error('用户不存在'), { status: 401 });
+    }
+    if (!verifyPassword(String(password || ''), stored.passwordHash)) {
+      throw Object.assign(new Error('密码错误'), { status: 401 });
+    }
+    return { ok: true };
+  }
+
   // ---- TOTP 管理 ----
 
   beginTotpEnrollment(user) {
