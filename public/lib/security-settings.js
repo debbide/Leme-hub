@@ -5,9 +5,31 @@ import { renderQrCodeToCanvas } from './qr-code.js';
 
 const $ = (id) => document.getElementById(id);
 
-const b64ToBuffer = (value) => Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+// WebAuthn 使用 Base64URL，而不是普通 Base64。先还原字符和补齐 padding，
+// 否则 challenge / user.id 中出现 "-"、"_" 或缺少 "=" 时 atob 会直接抛错。
+const b64ToBuffer = (value) => {
+  const normalized = String(value || '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .replace(/[^A-Za-z0-9+/]/g, '');
+  const padding = normalized.length % 4 === 0
+    ? ''
+    : '='.repeat(4 - (normalized.length % 4));
+  const binary = atob(normalized + padding);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+};
 
-const bufferToB64 = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
+const bufferToB64 = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
 
 async function postJson(url, body, { method = 'POST' } = {}) {
   const response = await fetch(url, {
@@ -393,7 +415,7 @@ export function initSecuritySettings({ showToast }) {
       });
       const serialized = {
         id: credential.id,
-        rawId: credential.id,
+        rawId: bufferToB64(credential.rawId),
         type: credential.type,
         response: {
           clientDataJSON: bufferToB64(credential.response.clientDataJSON),

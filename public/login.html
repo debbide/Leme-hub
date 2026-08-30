@@ -192,6 +192,20 @@
 
     <script type="module">
       const $ = (id) => document.getElementById(id);
+
+      // WebAuthn 使用 Base64URL，先还原字符、剔除杂质并补齐 padding，避免 atob 抛错。
+      const b64ToBuffer = (value) => {
+        const normalized = String(value || '')
+          .replace(/-/g, '+')
+          .replace(/_/g, '/')
+          .replace(/[^A-Za-z0-9+/]/g, '');
+        const padding = normalized.length % 4 === 0
+          ? ''
+          : '='.repeat(4 - (normalized.length % 4));
+        const binary = atob(normalized + padding);
+        return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      };
+
       const errorBox = $('login-error');
       const showError = (message) => {
         errorBox.textContent = message;
@@ -325,10 +339,10 @@
           const credential = await navigator.credentials.get({
             publicKey: {
               ...options,
-              challenge: Uint8Array.from(atob(options.challenge), (c) => c.charCodeAt(0)),
+              challenge: b64ToBuffer(options.challenge),
               allowCredentials: (options.allowCredentials || []).map((c) => ({
                 ...c,
-                id: Uint8Array.from(atob(c.id), (ch) => ch.charCodeAt(0))
+                id: b64ToBuffer(c.id)
               }))
             }
           });
