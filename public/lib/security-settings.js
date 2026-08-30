@@ -105,6 +105,19 @@ export function initSecuritySettings({ showToast }) {
       verifyError.textContent = '';
     }
     modal.classList.add('active');
+    // 密码管理器兼容：Bitwarden 等在页面加载时扫描表单字段，此时弹窗
+    // display:none，字段被标记为不可见；后续 classList 变化不会触发其
+    // MutationObserver 重新扫描。这里通过"移除再插回"整个表单节点
+    // （DOM 移动不丢失事件监听器），强制密码管理器把用户名/密码字段
+    // 当作新增节点重新收集，恢复填充能力。
+    if (verifyStep) {
+      const parent = verifyStep.parentNode;
+      if (parent) {
+        const next = verifyStep.nextSibling;
+        parent.removeChild(verifyStep);
+        parent.insertBefore(verifyStep, next);
+      }
+    }
     window.setTimeout(() => verifyInput?.focus(), 0);
   }
 
