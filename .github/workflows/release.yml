@@ -43,6 +43,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Download and verify native runtime
+        shell: powershell
+        run: |
+          $env:LEME_NATIVE_TARGETS = 'win32-x64'
+          npm run prepare:native
       - run: npm run build:desktop:win
       - name: Collect Windows release files
         shell: powershell
@@ -85,6 +90,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Download and verify native runtime
+        env:
+          LEME_NATIVE_TARGETS: linux-x64
+        run: npm run prepare:native
       - run: npm run build:desktop:deb
       - name: Collect Linux deb release files
         run: |
@@ -122,6 +131,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Download and verify native runtimes
+        env:
+          LEME_NATIVE_TARGETS: linux-x64,linux-arm64
+        run: npm run prepare:native
       - run: npm run build:server
       - name: Collect Linux server binaries
         run: |

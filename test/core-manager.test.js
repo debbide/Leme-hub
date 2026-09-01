@@ -127,6 +127,115 @@ test('start bootstraps binary before starting proxy', async () => {
   assert.equal(status.binary.version, '1.13.4');
 });
 
+test('start uses embedded runtime without bootstrapping the process binary', async () => {
+  const paths = createPaths();
+  const store = createStore();
+  store.saveSettings({ coreRuntimeMode: 'embedded' });
+  const manager = new CoreManager(paths, store);
+  const runtime = { getStatus: () => ({ mode: 'embedded', status: 'running' }) };
+  const calls = [];
+
+  manager.binaryManager = {
+    ensureAvailable: async () => {
+      throw new Error('process binary should not be bootstrapped');
+    },
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\missing\\managed-sing-box.exe',
+      managedExists: false,
+      ready: false,
+      source: 'missing'
+    })
+  };
+  manager.coreRuntimeFactory = {
+    resolve: async (_context, options) => {
+      calls.push(['resolve', options.mode]);
+      return {
+        mode: 'embedded',
+        runtime,
+        source: 'managed-native',
+        libraryPath: 'E:\\native\\leme-singbox.dll',
+        runtimeVersion: '1.14.0-r4',
+        singBoxVersion: '1.14.0',
+        abiVersion: 2
+      };
+    }
+  };
+  manager.proxyService = {
+    proxyProcess: null,
+    setNodes: (nodes) => calls.push(['setNodes', nodes.length]),
+    setCoreRuntime: (nextRuntime) => calls.push(['setCoreRuntime', nextRuntime]),
+    start: async () => ({ configPath: paths.configPath, executablePath: null }),
+    stop() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const status = await manager.start();
+
+  assert.equal(status.status, 'running');
+  assert.equal(status.coreRuntime.mode, 'embedded');
+  assert.equal(status.coreRuntime.singBoxVersion, '1.14.0');
+  assert.equal(status.coreRuntime.abiVersion, 2);
+  assert.equal(status.binary.source, 'managed-native');
+  assert.equal(status.binary.version, '1.14.0');
+  assert.equal(calls.some(([name]) => name === 'setCoreRuntime'), true);
+});
+
+test('start records auto fallback from embedded to process runtime', async () => {
+  const paths = createPaths();
+  const store = createStore();
+  store.saveSettings({ coreRuntimeMode: 'auto' });
+  const manager = new CoreManager(paths, store);
+  const runtime = { defaultOptions: {}, initialize() {} };
+
+  manager.binaryManager = {
+    ensureAvailable: async () => ({
+      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      source: 'managed',
+      version: '1.13.4'
+    }),
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.coreRuntimeFactory = {
+    resolve: async () => ({
+      mode: 'process',
+      runtime,
+      source: 'managed-process',
+      fallbackFrom: 'embedded',
+      fallbackError: 'native library unavailable'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    setCoreRuntime() {},
+    start: async ({ binPath }) => ({ configPath: paths.configPath, executablePath: binPath }),
+    stop() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const status = await manager.start();
+
+  assert.equal(status.status, 'running');
+  assert.equal(status.coreRuntime.mode, 'process');
+  assert.equal(status.coreRuntime.fallbackFrom, 'embedded');
+  assert.equal(status.coreRuntime.fallbackError, 'native library unavailable');
+  assert.equal(status.binary.version, '1.13.4');
+  assert.equal(runtime.defaultOptions.binPath, 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe');
+});
+
 test('start syncs running node group selectors after core startup', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

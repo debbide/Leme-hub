@@ -1,6 +1,8 @@
 import fs from 'fs';
 
 import {
+  CORE_RUNTIME_MODES,
+  DEFAULT_CORE_RUNTIME_MODE,
   DEFAULT_DNS_BOOTSTRAP_SERVER,
   DEFAULT_DNS_DIRECT_SERVER,
   DEFAULT_DNS_FINAL,
@@ -29,6 +31,7 @@ const defaultSettings = (paths, options = {}) => {
   const mode = resolveRuntimeMode(options);
 
   return {
+    coreRuntimeMode: DEFAULT_CORE_RUNTIME_MODE,
     uiHost: DEFAULT_UI_HOST,
     uiPort: DEFAULT_UI_PORT,
     proxyListenHost: mode === 'server' ? DEFAULT_SERVER_PROXY_LISTEN_HOST : DEFAULT_PROXY_LISTEN_HOST,
@@ -90,6 +93,9 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
 
   normalized.uiHost = normalizeHost(normalized.uiHost, defaults.uiHost);
   normalized.proxyListenHost = normalizeHost(normalized.proxyListenHost, defaults.proxyListenHost);
+  normalized.coreRuntimeMode = CORE_RUNTIME_MODES.includes(String(normalized.coreRuntimeMode || '').trim().toLowerCase())
+    ? String(normalized.coreRuntimeMode).trim().toLowerCase()
+    : defaults.coreRuntimeMode;
 
   normalized.tlsFragmentEnabled = !!normalized.tlsFragmentEnabled;
   normalized.systemProxyEnabled = !!normalized.systemProxyEnabled;

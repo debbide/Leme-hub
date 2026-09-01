@@ -16,6 +16,15 @@ export const DEFAULT_LOG_FILE = 'singbox.log';
 export const DEFAULT_NODES_FILE = 'proxy_nodes.json';
 export const DEFAULT_SETTINGS_FILE = 'settings.json';
 export const DEFAULT_MANAGED_SINGBOX_VERSION = '1.13.4';
+export const DEFAULT_NATIVE_RUNTIME_VERSION = '1.14.0-r4';
+export const DEFAULT_NATIVE_SINGBOX_VERSION = '1.14.0';
+export const DEFAULT_NATIVE_ABI_VERSION = 2;
+export const DEFAULT_CORE_RUNTIME_MODE = 'process';
+export const CORE_RUNTIME_MODES = ['auto', 'embedded', 'process'];
+export const SINGBOX_NATIVE_REPOSITORY = {
+  owner: 'debbide',
+  repo: 'leme-singbox-native'
+};
 export const SINGBOX_REPOSITORY = {
   owner: 'SagerNet',
   repo: 'sing-box'

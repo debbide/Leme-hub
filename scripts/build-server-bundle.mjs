@@ -12,6 +12,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node20',
+  external: ['koffi'],
   outfile: path.join(serverDistDir, 'server-bundle.cjs'),
   banner: {
     js: "const path = require('path'); process.env.LEME_MODE = process.env.LEME_MODE || 'server'; process.env.LEME_PROJECT_ROOT = process.env.LEME_PROJECT_ROOT || path.resolve(__dirname, '..');"
@@ -23,6 +24,8 @@ await build({
 
 // Copy public/ alongside the bundle so pkg can embed it reliably
 fs.cpSync('public', path.join(serverDistDir, 'public'), { recursive: true });
+fs.cpSync('node_modules/koffi', path.join(serverDistDir, 'node_modules', 'koffi'), { recursive: true });
+fs.cpSync('native-assets', path.join(serverDistDir, 'native-assets'), { recursive: true });
 fs.writeFileSync(path.join(serverDistDir, '.npmignore'), '');
 fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   name: 'leme-hub-server',
@@ -30,9 +33,16 @@ fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   private: true,
   type: 'commonjs',
   bin: 'server-bundle.cjs',
+  dependencies: {
+    koffi: packageJson.dependencies.koffi
+  },
   pkg: {
     scripts: ['server-bundle.cjs'],
-    assets: ['public/**/*']
+    assets: [
+      'public/**/*',
+      'node_modules/koffi/**/*',
+      'native-assets/**/*'
+    ]
   }
 }, null, 2) + '\n');
 console.log('Prepared dist/server bundle assets and pkg manifest');

@@ -3,7 +3,9 @@ import fs from 'fs';
 import path from 'path';
 
 import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
+import { SingBoxNativeManager } from '../../proxy/SingBoxNativeManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
+import { CoreRuntimeFactory } from '../../proxy/runtime/CoreRuntimeFactory.js';
 import { AutoStartManager } from './AutoStartManager.js';
 import { ClashApiService } from './ClashApiService.js';
 import { ConnectionsService } from './ConnectionsService.js';
@@ -102,6 +104,14 @@ export class CoreManager {
     };
 
     this.binaryManager = new SingBoxBinaryManager(this.paths, {
+      log: this.createLogger()
+    });
+
+    this.nativeManager = options.nativeManager || new SingBoxNativeManager(this.paths, {
+      log: this.createLogger()
+    });
+    this.coreRuntimeFactory = options.coreRuntimeFactory || new CoreRuntimeFactory({
+      nativeManager: this.nativeManager,
       log: this.createLogger()
     });
 

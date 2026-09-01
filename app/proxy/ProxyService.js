@@ -57,6 +57,7 @@ import {
   setNodes as setProxyNodes,
   updatePortMap as updateProxyPortMap
 } from './node-state.js';
+import { ProcessCoreRuntime } from './runtime/ProcessCoreRuntime.js';
 
 const stripAnsi = (value = '') => String(value).replace(/\u001b\[[0-9;]*m/gu, '');
 
@@ -77,7 +78,8 @@ export class ProxyService {
       configFileName = DEFAULT_CONFIG_FILE,
       log = console,
       onRoutingHit = null,
-      clashApiSecret = ''
+      clashApiSecret = '',
+      coreRuntime = null
     } = typeof options === 'string' ? { configDir: options } : options;
 
     this.clashApiSecret = clashApiSecret;
@@ -108,6 +110,22 @@ export class ProxyService {
     }
 
     this.configPath = path.join(this.configDir, configFileName);
+    this.coreRuntime = coreRuntime || new ProcessCoreRuntime(this);
+  }
+
+  setCoreRuntime(coreRuntime) {
+    if (!coreRuntime) {
+      throw new Error('ProxyService requires a core runtime');
+    }
+    this.coreRuntime = coreRuntime;
+    return this.coreRuntime;
+  }
+
+  getCoreRuntimeStatus() {
+    return this.coreRuntime?.getStatus?.() || {
+      mode: 'process',
+      status: this.proxyProcess ? 'running' : 'stopped'
+    };
   }
 
   setNodes(nodes) {
@@ -155,6 +173,9 @@ export class ProxyService {
   }
 
   async validateConfig(config, options = {}) {
+    if (this.coreRuntime?.checkConfig) {
+      return this.coreRuntime.checkConfig(config, options);
+    }
     return validateRuntimeConfig(this, config, options);
   }
 
@@ -203,15 +224,53 @@ export class ProxyService {
   }
 
   async start(options = {}) {
-    return startProxyRuntime(this, options);
+    if (!this.coreRuntime || this.coreRuntime instanceof ProcessCoreRuntime) {
+      return this.coreRuntime
+        ? this.coreRuntime.start(options)
+        : startProxyRuntime(this, options);
+    }
+
+    const config = this.generateConfig(options);
+    await this.coreRuntime.checkConfig(config, options);
+    this.writeConfig(config);
+
+    const currentStatus = this.coreRuntime.getStatus?.();
+    if (currentStatus?.status === 'running') {
+      await this.coreRuntime.reload(config, options);
+    } else {
+      await this.coreRuntime.start(config, options);
+    }
+
+    await this.waitForRuntimeReady(options, this.proxyListen, null, options);
+    const status = this.coreRuntime.getStatus?.() || {};
+    return {
+      started: true,
+      mode: status.mode || 'embedded',
+      configPath: this.configPath,
+      executablePath: null,
+      libraryPath: status.libraryPath || null,
+      ...status
+    };
   }
 
   async stop() {
+    if (this.coreRuntime?.stop) {
+      return this.coreRuntime.stop();
+    }
     return stopProxyRuntime(this);
   }
 
   async restart(nodes, options = {}) {
-    return restartProxyRuntime(this, nodes, options);
+    if (!this.coreRuntime || this.coreRuntime instanceof ProcessCoreRuntime) {
+      return this.coreRuntime
+        ? this.coreRuntime.restart(nodes, options)
+        : restartProxyRuntime(this, nodes, options);
+    }
+
+    if (Array.isArray(nodes)) {
+      this.setNodes(nodes);
+    }
+    return this.start(options);
   }
 
   parseProxyLink(link) {
