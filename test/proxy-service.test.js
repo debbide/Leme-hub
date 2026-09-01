@@ -34,6 +34,48 @@ test('generates socks config for valid node', () => {
   assert.equal(config.route.final, 'direct');
 });
 
+test('generates sing-box 1.14 compatible DNS and HTTP client options', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig();
+
+  assert.equal(Object.hasOwn(config.dns, 'independent_cache'), false);
+  assert.equal(config.route.default_http_client, 'ruleset-direct');
+  assert.deepEqual(config.http_clients, [{
+    tag: 'ruleset-direct',
+    dialer: { detour: 'direct' }
+  }]);
+});
+
+test('remote rulesets use the default HTTP client without deprecated download_detour', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
+
+  const config = service.generateConfig({
+    activeNodeId: 'n1',
+    proxyMode: 'rule',
+    systemProxyEnabled: true,
+    systemProxyHttpPort: 20101,
+    systemProxySocksPort: 20100,
+    routingItems: [{
+      id: 'remote-example',
+      kind: 'remote',
+      name: 'Example',
+      url: 'https://example.com/rules.srs',
+      format: 'binary',
+      enabled: true,
+      target: 'direct'
+    }]
+  });
+
+  const ruleset = config.route.rule_set.find((item) => item.tag === 'usr-rs-remote-example');
+  assert.ok(ruleset);
+  assert.equal(ruleset.type, 'remote');
+  assert.equal(Object.hasOwn(ruleset, 'download_detour'), false);
+  assert.equal(config.route.default_http_client, 'ruleset-direct');
+});
+
 test('generates socks outbound through a front proxy node', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([

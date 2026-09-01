@@ -1,7 +1,7 @@
 import { formatHostPort, resolveLoopbackHost } from '../shared/network.js';
 import { buildDnsConfig } from './dns-config.js';
 import { buildNodeOutbound } from './protocols.js';
-import { buildRouteConfig } from './route-config.js';
+import { buildRouteConfig, RULESET_HTTP_CLIENT_TAG } from './route-config.js';
 import { ACTIVE_NODE_SELECTOR_TAG, createNodeGroupOutboundTag as getNodeGroupOutboundTag } from './routing-observability.js';
 
 const UUID_REQUIRED_NODE_TYPES = new Set(['vmess', 'vless', 'tuic']);
@@ -255,6 +255,14 @@ export const generateProxyConfig = (context, options = {}) => {
     // Capture modes need info-level connection/router lines for routing-hit diagnostics.
     // Keep warn for port-only / lighter local-port-only use to reduce log noise.
     log: { level: (systemProxyEnabled || tunEnabled) ? 'info' : 'warn' },
+    http_clients: [
+      {
+        tag: RULESET_HTTP_CLIENT_TAG,
+        dialer: {
+          detour: 'direct'
+        }
+      }
+    ],
     inbounds,
     outbounds: [
       ...outbounds,

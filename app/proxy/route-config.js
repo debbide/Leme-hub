@@ -11,6 +11,8 @@ import {
 } from './route-ruleset-files.js';
 import { createNodeGroupOutboundTag as getNodeGroupOutboundTag } from './routing-observability.js';
 
+export const RULESET_HTTP_CLIENT_TAG = 'ruleset-direct';
+
 const BUILTIN_RULESET_MAP = new Map(BUILTIN_RULESETS.map((ruleset) => [ruleset.id, ruleset]));
 const REMOTE_RULESET_MAP = new Map(REMOTE_RULESET_CATALOG.map((ruleset) => [ruleset.id, ruleset]));
 const LOCAL_DIRECT_RULESET_TAG = 'builtin-local-bypass';
@@ -206,7 +208,6 @@ export const buildRouteConfig = ({
         tag,
         format: item.format || 'binary',
         url: item.url,
-        download_detour: 'direct',
         update_interval: '24h'
       });
       orderedRouteRules.push({ inbound: captureInbounds, rule_set: tag, outbound });
@@ -350,6 +351,7 @@ export const buildRouteConfig = ({
       rules: routeRules,
       auto_detect_interface: tunEnabled,
       default_domain_resolver: 'dns-local',
+      default_http_client: RULESET_HTTP_CLIENT_TAG,
       final: finalOutbound
     },
     dnsRouting: {
