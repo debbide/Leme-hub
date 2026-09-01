@@ -34,21 +34,18 @@ test('generates socks config for valid node', () => {
   assert.equal(config.route.final, 'direct');
 });
 
-test('generates sing-box 1.14 compatible DNS and HTTP client options', () => {
+test('generates config without unsupported HTTP client options', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
 
   const config = service.generateConfig();
 
   assert.equal(Object.hasOwn(config.dns, 'independent_cache'), false);
-  assert.equal(config.route.default_http_client, 'ruleset-direct');
-  assert.deepEqual(config.http_clients, [{
-    tag: 'ruleset-direct',
-    dialer: { detour: 'direct' }
-  }]);
+  assert.equal(Object.hasOwn(config.route, 'default_http_client'), false);
+  assert.equal(Object.hasOwn(config, 'http_clients'), false);
 });
 
-test('remote rulesets use the default HTTP client without deprecated download_detour', () => {
+test('remote rulesets omit unsupported HTTP client and deprecated download_detour options', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{ id: 'n1', type: 'socks', server: '127.0.0.1', port: 1080 }]);
 
@@ -73,7 +70,8 @@ test('remote rulesets use the default HTTP client without deprecated download_de
   assert.ok(ruleset);
   assert.equal(ruleset.type, 'remote');
   assert.equal(Object.hasOwn(ruleset, 'download_detour'), false);
-  assert.equal(config.route.default_http_client, 'ruleset-direct');
+  assert.equal(Object.hasOwn(config.route, 'default_http_client'), false);
+  assert.equal(Object.hasOwn(config, 'http_clients'), false);
 });
 
 test('generates socks outbound through a front proxy node', () => {

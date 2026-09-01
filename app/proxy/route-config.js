@@ -351,7 +351,6 @@ export const buildRouteConfig = ({
       rules: routeRules,
       auto_detect_interface: tunEnabled,
       default_domain_resolver: 'dns-local',
-      default_http_client: RULESET_HTTP_CLIENT_TAG,
       final: finalOutbound
     },
     dnsRouting: {
