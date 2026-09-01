@@ -13,7 +13,8 @@ RUNTIME_DIR='/var/lib/leme-hub-server'
 SETTINGS_FILE="${RUNTIME_DIR}/data/settings.json"
 ENV_FILE="/etc/default/${SERVICE_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-DEFAULT_DOWNLOAD_URL="${LEME_DOWNLOAD_URL:-https://github.com/debbide/Leme-hub/releases/download/v2.3.6/leme-hub-server-linux-amd64}"
+GITHUB_REPOSITORY='debbide/Leme-hub'
+GITHUB_RELEASE_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
 DEFAULT_HOST='0.0.0.0'
 DEFAULT_PORT='51888'
 DEFAULT_PROXY_HOST='127.0.0.1'
@@ -135,6 +136,74 @@ download_binary() {
 
   install -Dm755 "${tmp_file}" "${BINARY_PATH}"
   rm -f "${tmp_file}"
+}
+
+detect_server_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      SERVER_ARCH='amd64'
+      ;;
+    aarch64|arm64)
+      SERVER_ARCH='arm64'
+      ;;
+    *)
+      say "暂不支持当前系统架构：$(uname -m)"
+      exit 1
+      ;;
+  esac
+}
+
+resolve_latest_release() {
+  local release_json
+  local release_file
+  local asset_name
+  local -a release_info
+
+  asset_name="leme-hub-server-linux-${SERVER_ARCH}"
+
+  if command -v curl >/dev/null 2>&1; then
+    release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: leme-hub-installer' "${GITHUB_RELEASE_API}")"
+  elif command -v wget >/dev/null 2>&1; then
+    release_json="$(wget -qO- --header='Accept: application/vnd.github+json' --header='User-Agent: leme-hub-installer' "${GITHUB_RELEASE_API}")"
+  else
+    say '系统未找到 curl 或 wget，无法查询 GitHub 最新版本。'
+    exit 1
+  fi
+
+  release_file="$(mktemp)"
+  printf '%s' "${release_json}" > "${release_file}"
+
+  readarray -t release_info < <(python3 - "${asset_name}" "${release_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+asset_name = sys.argv[1]
+release_path = pathlib.Path(sys.argv[2])
+release = json.loads(release_path.read_text(encoding='utf-8'))
+tag = str(release.get('tag_name') or '').strip()
+assets = release.get('assets') or []
+url = next((str(asset.get('browser_download_url') or '') for asset in assets if asset.get('name') == asset_name), '')
+
+if not tag or not url:
+    raise SystemExit(f'最新 Release 未包含所需资源：{asset_name}')
+
+print(tag)
+print(url)
+PY
+  )
+  rm -f "${release_file}"
+
+  if [[ "${#release_info[@]}" -lt 2 ]]; then
+    say '无法从 GitHub API 解析最新版本或下载地址。'
+    exit 1
+  fi
+
+  LATEST_VERSION="${release_info[0]}"
+  DEFAULT_DOWNLOAD_URL="${LEME_DOWNLOAD_URL:-${release_info[1]}}"
+  say "GitHub API 检测到最新版本：${LATEST_VERSION}"
+  say "当前系统架构：${SERVER_ARCH}"
+  say "将使用发布资源：${asset_name}"
 }
 
 write_settings_file() {
@@ -441,10 +510,12 @@ prompt_proxy_port() {
 }
 
 install_server() {
+  require_python3
+  detect_server_arch
+  resolve_latest_release
   prompt_download_url
   prompt_host
   prompt_port
-  require_python3
   prompt_proxy_enabled
   if [[ "${PROXY_ENABLED}" == 'true' ]]; then
     prompt_proxy_host
@@ -487,6 +558,7 @@ install_server() {
   systemctl enable --now "${SERVICE_NAME}"
 
   say '安装完成。'
+  say "安装版本：${LATEST_VERSION}"
   say "安装目录：${INSTALL_DIR}"
   say "数据目录：${RUNTIME_DIR}"
   say "控制面板监听地址：${LISTEN_HOST}"
