@@ -1,5 +1,7 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { build } from 'esbuild';
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -25,6 +27,34 @@ await build({
 // Copy public/ alongside the bundle so pkg can embed it reliably
 fs.cpSync('public', path.join(serverDistDir, 'public'), { recursive: true });
 fs.cpSync('node_modules/koffi', path.join(serverDistDir, 'node_modules', 'koffi'), { recursive: true });
+for (const packageName of ['koffi-linux-x64', 'koffi-linux-arm64']) {
+  const source = path.join('node_modules', '@koromix', packageName);
+  if (fs.existsSync(source)) {
+    fs.cpSync(source, path.join(serverDistDir, 'node_modules', '@koromix', packageName), { recursive: true });
+    continue;
+  }
+
+  // npm only installs optional dependencies for the build host architecture.
+  // Fetch the other Linux architecture explicitly so both pkg targets contain
+  // the Koffi native addon they require at runtime.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName}-`));
+  try {
+    const packageSpec = `@koromix/${packageName}@${packageJson.dependencies.koffi}`;
+    const packResult = JSON.parse(execFileSync('npm', ['pack', packageSpec, '--json'], {
+      cwd: tempDir,
+      encoding: 'utf8'
+    }));
+    const archivePath = path.join(tempDir, packResult[0].filename);
+    execFileSync('tar', ['-xzf', archivePath, '-C', tempDir]);
+    fs.cpSync(
+      path.join(tempDir, 'package'),
+      path.join(serverDistDir, 'node_modules', '@koromix', packageName),
+      { recursive: true }
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
 fs.cpSync('native-assets', path.join(serverDistDir, 'native-assets'), { recursive: true });
 fs.writeFileSync(path.join(serverDistDir, '.npmignore'), '');
 fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
@@ -41,6 +71,8 @@ fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
     assets: [
       'public/**/*',
       'node_modules/koffi/**/*',
+      'node_modules/@koromix/koffi-linux-x64/**/*',
+      'node_modules/@koromix/koffi-linux-arm64/**/*',
       'native-assets/**/*'
     ]
   }
