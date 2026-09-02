@@ -79,6 +79,7 @@ export class SingBoxNativeManager {
 
     const roots = [
       process.resourcesPath ? path.join(process.resourcesPath, 'native') : null,
+      process.pkg?.entrypoint ? path.join(path.dirname(process.pkg.entrypoint), 'native-assets') : null,
       path.join(this.paths.root, 'native-assets')
     ].filter(Boolean);
 
