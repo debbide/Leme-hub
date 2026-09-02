@@ -7,6 +7,11 @@ import { build } from 'esbuild';
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const serverDistDir = 'dist/leme-hub-server';
 const serverPackageJsonPath = path.join(serverDistDir, 'package.json');
+const nativeTarget = process.env.LEME_SERVER_TARGET;
+
+if (!['linux-x64', 'linux-arm64'].includes(nativeTarget)) {
+  throw new Error('LEME_SERVER_TARGET must be linux-x64 or linux-arm64');
+}
 
 await build({
   entryPoints: ['app/server/start.js'],
@@ -27,7 +32,9 @@ await build({
 // Copy public/ alongside the bundle so pkg can embed it reliably
 fs.cpSync('public', path.join(serverDistDir, 'public'), { recursive: true });
 fs.cpSync('node_modules/koffi', path.join(serverDistDir, 'node_modules', 'koffi'), { recursive: true });
-for (const packageName of ['koffi-linux-x64', 'koffi-linux-arm64']) {
+fs.rmSync(path.join(serverDistDir, 'node_modules', '@koromix'), { recursive: true, force: true });
+const packageName = nativeTarget === 'linux-arm64' ? 'koffi-linux-arm64' : 'koffi-linux-x64';
+{
   const source = path.join('node_modules', '@koromix', packageName);
   if (fs.existsSync(source)) {
     fs.cpSync(source, path.join(serverDistDir, 'node_modules', '@koromix', packageName), { recursive: true });
@@ -55,7 +62,20 @@ for (const packageName of ['koffi-linux-x64', 'koffi-linux-arm64']) {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
-fs.cpSync('native-assets', path.join(serverDistDir, 'native-assets'), { recursive: true });
+const nativeManifest = JSON.parse(fs.readFileSync('native-assets/manifest.json', 'utf8'));
+const nativeRuntimeVersion = String(nativeManifest.runtimeVersion);
+const nativeSourceDir = path.join('native-assets', nativeRuntimeVersion, nativeTarget);
+const nativeDestinationDir = path.join(serverDistDir, 'native-assets', nativeRuntimeVersion, nativeTarget);
+fs.rmSync(path.join(serverDistDir, 'native-assets'), { recursive: true, force: true });
+fs.mkdirSync(nativeDestinationDir, { recursive: true });
+fs.cpSync(nativeSourceDir, nativeDestinationDir, { recursive: true });
+fs.writeFileSync(
+  path.join(serverDistDir, 'native-assets', 'manifest.json'),
+  JSON.stringify({
+    ...nativeManifest,
+    targets: nativeManifest.targets.filter((entry) => entry.target === nativeTarget)
+  }, null, 2) + '\n'
+);
 fs.writeFileSync(path.join(serverDistDir, '.npmignore'), '');
 fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
   name: 'leme-hub-server',
@@ -71,8 +91,7 @@ fs.writeFileSync(serverPackageJsonPath, JSON.stringify({
     assets: [
       'public/**/*',
       'node_modules/koffi/**/*',
-      'node_modules/@koromix/koffi-linux-x64/**/*',
-      'node_modules/@koromix/koffi-linux-arm64/**/*',
+      `node_modules/@koromix/${packageName}/**/*`,
       'native-assets/**/*'
     ]
   }

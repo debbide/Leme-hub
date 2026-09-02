@@ -19,7 +19,9 @@
     "build:desktop:win": "npm run prepare:icons && electron-builder --publish never --win zip",
     "build:desktop:deb": "npm run prepare:icons && electron-builder --publish never --linux deb",
     "build:server:bundle": "node scripts/build-server-bundle.mjs",
-    "build:server": "npm run build:server:bundle && pkg ./dist/leme-hub-server/package.json --no-bytecode --public --targets node20-linux-x64,node20-linux-arm64 --out-path dist/leme-hub-server",
+    "build:server:x64": "LEME_SERVER_TARGET=linux-x64 npm run build:server:bundle && pkg ./dist/leme-hub-server/package.json --no-bytecode --public --targets node20-linux-x64 --output dist/leme-hub-server/leme-hub-server-linux-x64",
+    "build:server:arm64": "LEME_SERVER_TARGET=linux-arm64 npm run build:server:bundle && pkg ./dist/leme-hub-server/package.json --no-bytecode --public --targets node20-linux-arm64 --output dist/leme-hub-server/leme-hub-server-linux-arm64",
+    "build:server": "npm run build:server:x64 && npm run build:server:arm64",
     "dev": "node scripts/dev.js",
     "test": "node --test"
   },
