@@ -89,30 +89,40 @@ const attachPassiveNodeServices = (manager, getLocalPort = () => 20000) => {
   };
 };
 
-test('start bootstraps binary before starting proxy', async () => {
+// Stub runtime factory: in embedded-only architecture the start path resolves
+// the core through coreRuntimeFactory.resolve (no binary bootstrap step).
+const attachEmbeddedRuntimeFactory = (manager, calls = []) => {
+  manager.coreRuntimeFactory = {
+    resolve: async (_context, options) => {
+      calls.push(['resolve', options?.mode || 'embedded']);
+      return {
+        mode: 'embedded',
+        runtime: { getStatus: () => ({ mode: 'embedded', status: 'running' }) },
+        source: 'managed-native',
+        libraryPath: '/native/leme-singbox.so',
+        runtimeVersion: '1.14.0-r4',
+        singBoxVersion: '1.14.0',
+        abiVersion: 2
+      };
+    },
+    createEmbedded: async function () {
+      calls.push(['createEmbedded']);
+      return this.resolve(null, { mode: 'embedded' });
+    }
+  };
+};
+
+test('start resolves embedded runtime before starting proxy', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   const calls = [];
 
-  manager.binaryManager = {
-    ensureAvailable: async (configuredPath) => {
-      calls.push(['ensureAvailable', configuredPath]);
-      return { executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe', source: 'managed', version: '1.13.4' };
-    },
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager, calls);
   manager.proxyService = {
-    proxyProcess: { once() {} },
+    setCoreRuntime: (runtime) => calls.push(['setCoreRuntime', runtime]),
     setNodes: (nodes) => calls.push(['setNodes', nodes.length]),
-    start: async ({ binPath }) => {
-      calls.push(['start', binPath]);
-      return { configPath: createPaths().configPath, executablePath: binPath };
+    start: async () => {
+      calls.push(['start']);
+      return { configPath: createPaths().configPath, executablePath: null };
     },
     stop() {},
     getLocalPort: () => 20000,
@@ -122,9 +132,9 @@ test('start bootstraps binary before starting proxy', async () => {
 
   const status = await manager.start();
 
-  assert.deepEqual(calls.slice(0, 3).map(([name]) => name), ['ensureAvailable', 'setNodes', 'start']);
-  assert.equal(status.binary.source, 'managed');
-  assert.equal(status.binary.version, '1.13.4');
+  assert.deepEqual(calls.slice(0, 4).map(([name]) => name), ['setNodes', 'resolve', 'setCoreRuntime', 'start']);
+  assert.equal(status.binary.source, 'managed-native');
+  assert.equal(status.binary.version, '1.14.0');
 });
 
 test('start uses embedded runtime without bootstrapping the process binary', async () => {
@@ -135,19 +145,6 @@ test('start uses embedded runtime without bootstrapping the process binary', asy
   const runtime = { getStatus: () => ({ mode: 'embedded', status: 'running' }) };
   const calls = [];
 
-  manager.binaryManager = {
-    ensureAvailable: async () => {
-      throw new Error('process binary should not be bootstrapped');
-    },
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\missing\\managed-sing-box.exe',
-      managedExists: false,
-      ready: false,
-      source: 'missing'
-    })
-  };
   manager.coreRuntimeFactory = {
     resolve: async (_context, options) => {
       calls.push(['resolve', options.mode]);
@@ -184,42 +181,19 @@ test('start uses embedded runtime without bootstrapping the process binary', asy
   assert.equal(calls.some(([name]) => name === 'setCoreRuntime'), true);
 });
 
-test('start records auto fallback from embedded to process runtime', async () => {
+test('start records embedded runtime resolution in core state', async () => {
   const paths = createPaths();
   const store = createStore();
   store.saveSettings({ coreRuntimeMode: 'auto' });
   const manager = new CoreManager(paths, store);
   const runtime = { defaultOptions: {}, initialize() {} };
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
-  manager.coreRuntimeFactory = {
-    resolve: async () => ({
-      mode: 'process',
-      runtime,
-      source: 'managed-process',
-      fallbackFrom: 'embedded',
-      fallbackError: 'native library unavailable'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: { once() {} },
-    setNodes() {},
     setCoreRuntime() {},
-    start: async ({ binPath }) => ({ configPath: paths.configPath, executablePath: binPath }),
+    setNodes() {},
+    start: async () => ({ configPath: paths.configPath, executablePath: null }),
     stop() {},
     getLocalPort: () => 20000,
     proxyListen: '127.0.0.1',
@@ -229,11 +203,9 @@ test('start records auto fallback from embedded to process runtime', async () =>
   const status = await manager.start();
 
   assert.equal(status.status, 'running');
-  assert.equal(status.coreRuntime.mode, 'process');
-  assert.equal(status.coreRuntime.fallbackFrom, 'embedded');
-  assert.equal(status.coreRuntime.fallbackError, 'native library unavailable');
-  assert.equal(status.binary.version, '1.13.4');
-  assert.equal(runtime.defaultOptions.binPath, 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe');
+  assert.equal(status.coreRuntime.mode, 'embedded');
+  assert.equal(status.coreRuntime.singBoxVersion, '1.14.0');
+  assert.equal(status.binary.source, 'managed-native');
 });
 
 test('start syncs running node group selectors after core startup', async () => {
@@ -247,27 +219,14 @@ test('start syncs running node group selectors after core startup', async () => 
     nodeGroups: [{ id: 'g1', name: 'JP Pool', nodeIds: ['n1', 'n2'], selectedNodeId: 'n2' }]
   });
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes: () => calls.push('setNodes'),
-    start: async ({ binPath }) => {
-      calls.push(['start', binPath]);
-      return { configPath: createPaths().configPath, executablePath: binPath };
+    start: async () => {
+      calls.push('start');
+      return { configPath: createPaths().configPath, executablePath: null };
     },
     stop() {},
     getLocalPort: () => 20000,
@@ -302,18 +261,13 @@ test('start syncs running node group selectors after core startup', async () => 
 test('start surfaces binary bootstrap failures in core state', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
-  manager.binaryManager = {
-    ensureAvailable: async () => {
+  manager.coreRuntimeFactory = {
+    resolve: async () => {
       throw new Error('download failed');
     },
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: false,
-      ready: false,
-      source: 'missing'
-    })
+    createEmbedded: async () => {
+      throw new Error('download failed');
+    }
   };
 
   await assert.rejects(() => manager.start(), /download failed/);
@@ -326,22 +280,9 @@ test('start surfaces binary bootstrap failures in core state', async () => {
 test('start keeps binary ready when runtime startup fails after bootstrap', async () => {
   const manager = new CoreManager(createPaths(), createStore());
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
+    setCoreRuntime() {},
     setNodes() {},
     start: async () => {
       throw new Error('spawn failed');
@@ -358,33 +299,20 @@ test('start keeps binary ready when runtime startup fails after bootstrap', asyn
   assert.equal(status.lastError, 'spawn failed');
   assert.equal(status.binary.status, 'ready');
   assert.equal(status.binary.lastError, null);
-  assert.equal(status.binary.version, '1.13.4');
+  assert.equal(status.binary.version, '1.14.0');
 });
 
-test('start rolls back proxy process when system proxy apply fails', async () => {
+test('start preserves embedded runtime when system proxy apply fails', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   const calls = [];
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes() {},
-    start: async () => ({ configPath: createPaths().configPath, executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe' }),
+    start: async () => ({ configPath: createPaths().configPath, executablePath: null }),
     stop: () => calls.push('stop'),
     getLocalPort: () => 20000,
     proxyListen: '127.0.0.1',
@@ -398,7 +326,7 @@ test('start rolls back proxy process when system proxy apply fails', async () =>
   };
 
   await assert.rejects(() => manager.start(), /apply failed/);
-  assert.deepEqual(calls, ['stop']);
+  assert.deepEqual(calls, []);
 });
 
 test('core lifecycle operations run one at a time', async () => {
@@ -406,30 +334,17 @@ test('core lifecycle operations run one at a time', async () => {
   let activeStarts = 0;
   let maxActiveStarts = 0;
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes() {},
-    start: async ({ binPath }) => {
+    start: async () => {
       activeStarts += 1;
       maxActiveStarts = Math.max(maxActiveStarts, activeStarts);
       await new Promise((resolve) => setTimeout(resolve, 30));
       activeStarts -= 1;
-      return { configPath: createPaths().configPath, executablePath: binPath };
+      return { configPath: createPaths().configPath, executablePath: null };
     },
     stop: async () => {},
     getLocalPort: () => 20000,
@@ -459,27 +374,14 @@ test('restart uses the lifecycle queue without re-entering it', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   const calls = [];
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: null,
+    setCoreRuntime() {},
     setNodes: () => calls.push('setNodes'),
-    start: async ({ binPath }) => {
+    start: async () => {
       calls.push('start');
-      return { configPath: createPaths().configPath, executablePath: binPath };
+      return { configPath: createPaths().configPath, executablePath: null };
     },
     stop: async () => calls.push('stop'),
     getLocalPort: () => 20000,
@@ -509,26 +411,13 @@ test('server mode keeps unified proxy entry enabled without auto-applying system
   const manager = new CoreManager(createPaths(), createStore(), { env: { LEME_MODE: 'server' } });
   let applyCalls = 0;
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: '/tmp/sing-box',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: null,
-      configuredExists: false,
-      managedPath: '/tmp/sing-box',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   await manager.updateSettings({ systemProxyEnabled: true });
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes() {},
-    start: async ({ binPath }) => ({ configPath: createPaths().configPath, executablePath: binPath }),
+    start: async () => ({ configPath: createPaths().configPath, executablePath: null }),
     stop() {},
     getLocalPort: () => 20000,
     proxyListen: '127.0.0.1',
@@ -1691,25 +1580,12 @@ test('main switch cycle preserves routing settings', async () => {
   const paths = createPaths();
   const manager = new CoreManager(paths, store);
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({
-      configuredPath: 'E:\\missing\\sing-box.exe',
-      configuredExists: false,
-      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
-      managedExists: true,
-      ready: true,
-      source: 'managed'
-    })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes() {},
-    start: async () => ({ configPath: paths.configPath, executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe' }),
+    start: async () => ({ configPath: paths.configPath, executablePath: null }),
     stop: async () => {},
     getLocalPort: () => 20000,
     proxyListen: '127.0.0.1',
@@ -2252,101 +2128,6 @@ test('disableSystemProxy clears desired system proxy setting', async () => {
   assert.equal(manager.getStatus().proxy.systemProxyEnabled, true);
 });
 
-test('unexpected process exit disables system proxy when desired', async () => {
-  const manager = new CoreManager(createPaths(), createStore());
-  await manager.updateSettings({ systemProxyEnabled: true, systemProxyCaptureEnabled: true });
-  let exitHandler = null;
-
-  manager.proxyService = {
-    proxyProcess: {
-      once: (_event, handler) => {
-        exitHandler = handler;
-      }
-    },
-    setNodes() {},
-    getLocalPort: () => 20000,
-    proxyListen: '127.0.0.1',
-    basePort: 20000
-  };
-  manager.systemProxyManager = {
-    disable: async () => ({
-      enabled: false,
-      mode: 'off',
-      provider: 'mock',
-      http: null,
-      socks: null,
-      supported: true,
-      lastError: null
-    }),
-    getStatus: async () => ({
-      enabled: true,
-      mode: 'manual',
-      provider: 'mock',
-      http: { host: '127.0.0.1', port: 18999 },
-      socks: { host: '127.0.0.1', port: 18998 },
-      supported: true,
-      lastError: null
-    }),
-    getCapabilities: () => ({ supported: true, provider: 'mock' })
-  };
-
-  manager.bindProcessState();
-  await exitHandler(2, null);
-
-  assert.equal(manager.getStatus().status, 'error');
-  assert.equal(manager.getStatus().systemProxy.enabled, false);
-});
-
-test('stale process exit does not overwrite the current running state', async () => {
-  const manager = new CoreManager(createPaths(), createStore());
-  const oldProcess = new EventEmitter();
-  const newProcess = new EventEmitter();
-  manager.state.status = 'running';
-  manager.state.startedAt = '2026-01-01T00:00:00.000Z';
-  manager.state.executablePath = 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe';
-  manager.proxyService = {
-    proxyProcess: oldProcess,
-    setNodes() {},
-    getLocalPort: () => 20000,
-    proxyListen: '127.0.0.1',
-    basePort: 20000
-  };
-  let disableCalls = 0;
-  manager.systemProxyManager = {
-    disable: async () => {
-      disableCalls += 1;
-      return {
-        enabled: false,
-        mode: 'off',
-        provider: 'mock',
-        http: null,
-        socks: null,
-        supported: true,
-        lastError: null
-      };
-    },
-    getStatus: async () => ({
-      enabled: true,
-      mode: 'manual',
-      provider: 'mock',
-      http: { host: '127.0.0.1', port: 18999 },
-      socks: null,
-      supported: true,
-      lastError: null
-    }),
-    getCapabilities: () => ({ supported: true, provider: 'mock' })
-  };
-
-  manager.bindProcessState();
-  manager.proxyService.proxyProcess = newProcess;
-  oldProcess.emit('exit', 2, null);
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(disableCalls, 0);
-  assert.equal(manager.getStatus().status, 'running');
-  assert.equal(manager.getStatus().startedAt, '2026-01-01T00:00:00.000Z');
-});
-
 test('stop clears managed proxy leftovers even when capture preference is off', async () => {
   const manager = new CoreManager(createPaths(), createStore());
   await manager.updateSettings({
@@ -2865,6 +2646,7 @@ test('updateNode replaces form-managed fields while preserving local port', asyn
     }
   ]));
   attachPassiveNodeServices(manager, () => 20100);
+  manager.validateSingleNodeConfig = async () => ({ validated: true });
 
   const result = await manager.updateNode('n1', {
     type: 'trojan',
@@ -2923,16 +2705,10 @@ test('start does not stop the running process when pre-spawn validation fails', 
   const oldProcess = { id: 'old', once() {} };
   const calls = [];
 
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({ ready: true, source: 'managed' })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: oldProcess,
+    setCoreRuntime() {},
     setNodes: () => calls.push('setNodes'),
     // Simulate config validation failing before the old process is touched/replaced.
     start: async () => {
@@ -2950,39 +2726,6 @@ test('start does not stop the running process when pre-spawn validation fails', 
   await assert.rejects(() => manager.start(), /config validation failed/);
   assert.equal(calls.includes('stop'), false, 'old process must not be stopped on validation failure');
   assert.equal(manager.proxyService.proxyProcess, oldProcess, 'old process reference must be preserved');
-});
-
-test('start stops the process when startup fails after the process was replaced', async () => {
-  const manager = new CoreManager(createPaths(), createStore());
-  const oldProcess = { id: 'old', once() {} };
-  const newProcess = { id: 'new', once() {} };
-  const calls = [];
-
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({ ready: true, source: 'managed' })
-  };
-  manager.proxyService = {
-    proxyProcess: oldProcess,
-    setNodes: () => calls.push('setNodes'),
-    // Simulate spawn succeeding (process replaced) then a later readiness step failing.
-    start: async () => {
-      calls.push('start');
-      manager.proxyService.proxyProcess = newProcess;
-      throw new Error('timed out waiting for sing-box to listen');
-    },
-    stop: async () => { calls.push('stop'); },
-    getLocalPort: () => 20000,
-    proxyListen: '127.0.0.1',
-    basePort: 20000
-  };
-
-  await assert.rejects(() => manager.start(), /timed out/);
-  assert.equal(calls.includes('stop'), true, 'a replaced/failed process must be cleaned up');
 });
 
 test('updateSettings does not clobber a concurrent settings write during the autostart os call', async () => {
@@ -3067,16 +2810,10 @@ test('enableTun disables system proxy capture and marks tun settings', async () 
     getStatus: async () => ({ enabled: false, mode: 'off', provider: 'mock' }),
     getCapabilities: () => ({ supported: true, provider: 'mock' })
   };
-  manager.binaryManager = {
-    ensureAvailable: async () => ({
-      executablePath: 'E:\repo\local-proxy-client\bin\sing-box.exe',
-      source: 'managed',
-      version: '1.13.4'
-    }),
-    getStatus: () => ({ ready: true, source: 'managed' })
-  };
+  attachEmbeddedRuntimeFactory(manager);
   manager.proxyService = {
     proxyProcess: { once() {} },
+    setCoreRuntime() {},
     setNodes() {},
     start: async () => {
       calls.push('start');
