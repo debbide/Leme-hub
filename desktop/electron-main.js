@@ -608,10 +608,11 @@ if (!hasSingleInstanceLock) {
   app.whenReady().then(async () => {
     try {
       await startBackend();
+      createTray();
+      if (!isBackgroundLaunch()) {
+        await createWindow();
+      }
     } catch (error) {
-      // The backend server could not start (e.g. the UI port is already in use).
-      // Show a native error instead of leaving a windowless zombie process, then
-      // quit cleanly so before-quit cleanup still runs.
       const detail = error?.message || String(error);
       try {
         dialog.showErrorBox('Leme Hub 无法启动', `本地服务启动失败：\n${detail}`);
@@ -622,10 +623,16 @@ if (!hasSingleInstanceLock) {
       app.quit();
       return;
     }
-    createTray();
-    if (!isBackgroundLaunch()) {
-      await createWindow();
+  }).catch((error) => {
+    const detail = error?.stack || error?.message || String(error);
+    console.error(`[desktop] startup failed: ${detail}`);
+    try {
+      dialog.showErrorBox('Leme Hub 无法启动', `桌面程序启动失败：\n${detail}`);
+    } catch {
+      // The native dialog itself may be unavailable during very early startup.
     }
+    isQuitting = true;
+    app.quit();
   });
 
   app.on('activate', async () => {
