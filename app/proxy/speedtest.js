@@ -1,7 +1,3 @@
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-
 import axios from 'axios';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
@@ -14,7 +10,6 @@ import {
 } from '../shared/constants.js';
 import { formatHostForUrl, normalizeHost, resolveLoopbackHost } from '../shared/network.js';
 
-const SPEEDTEST_CONFIG_PREFIX = 'singbox_speedtest_';
 const SPEEDTEST_REQUEST_COUNT = 2;
 const SPEEDTEST_REQUEST_GAP_MS = 100;
 const SPEEDTEST_WARMUP_DELAY_MS = 1000;
@@ -160,7 +155,6 @@ export const withSpeedtestRuntime = async (context, nodes, options = {}, callbac
     throw new Error('No nodes selected for speed test');
   }
 
-  const execPath = context.resolveExecutablePath(options.binPath || context.executablePath);
   const listenHost = normalizeHost(options.proxyListen, resolveLoopbackHost(context.proxyListen));
   const selectedNodeIds = new Set(selectedNodes.map((node) => node?.id).filter(Boolean));
   const speedtestNodes = resolveSpeedtestNodes(context, selectedNodes);
@@ -176,60 +170,38 @@ export const withSpeedtestRuntime = async (context, nodes, options = {}, callbac
     proxyListen: listenHost,
     basePort: allocatedNodes[0]?.local_port || options.basePort
   });
-  const configPath = path.join(
-    context.configDir,
-    `${SPEEDTEST_CONFIG_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
-  );
 
-  let processRef = null;
-  const stderrLines = [];
+  // Speed tests run on their own embedded core instance so they never disturb
+  // the state (status/log stream) of the main proxy runtime in this process.
+  if (typeof context.createCoreRuntime !== 'function') {
+    throw new Error('Speed test requires an embedded core runtime factory');
+  }
+  const speedtestRuntime = await context.createCoreRuntime();
+
   try {
-    context.writeConfig(config, configPath);
-    context.log.log?.(`[Speedtest] Starting dedicated runtime nodes=${allocatedNodes.map((node) => node.id).join(',')} url=${runtime.speedtestUrl} dns=${runtime.dnsDirectServer} bootstrap=${runtime.dnsBootstrapServer} listen=${listenHost}`);
-    processRef = spawn(execPath, ['run', '-c', configPath]);
-
-    processRef.stdout.on('data', (data) => {
-      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
-        context.log.log?.(`[Speedtest Log] ${line}`);
-      });
-    });
-
-    processRef.stderr.on('data', (data) => {
-      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
-        stderrLines.push(line);
-        context.log.error?.(`[Speedtest STDERR] ${line}`);
-      });
-    });
-
-    processRef.on('error', (error) => {
-      context.log.error?.(`[ProxyService] Failed to start speedtest sing-box process: ${error.message}`);
-    });
+    context.log.log?.(`[Speedtest] Starting embedded runtime nodes=${allocatedNodes.map((node) => node.id).join(',')} url=${runtime.speedtestUrl} dns=${runtime.dnsDirectServer} bootstrap=${runtime.dnsBootstrapServer} listen=${listenHost}`);
 
     try {
-      await service.waitForRuntimeReady({}, listenHost, processRef);
+      await speedtestRuntime.checkConfig(config, options);
     } catch (error) {
-      const stderrDetail = stderrLines.slice(-3).join(' | ');
-      if (stderrDetail) {
-        throw new Error(`${error.message}: ${stderrDetail}`);
-      }
+      error.phase = 'validation';
       throw error;
     }
+    await speedtestRuntime.start(config, options);
+    await service.waitForRuntimeReady({}, listenHost, options);
     await sleep(toInt(options.warmupDelayMs, SPEEDTEST_WARMUP_DELAY_MS));
 
     return await callback({
       service,
       listenHost,
-      configPath,
-      processRef,
       nodes: testedNodes,
       runtime
     });
   } finally {
-    await context.stopProcess(processRef);
     try {
-      fs.unlinkSync(configPath);
-    } catch {
-      // ignore temp speedtest cleanup failures
+      await speedtestRuntime.stop();
+    } catch (error) {
+      context.log.warn?.(`[Speedtest] Failed to stop embedded runtime: ${error.message}`);
     }
   }
 };

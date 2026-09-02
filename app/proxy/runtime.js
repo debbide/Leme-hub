@@ -1,107 +1,12 @@
-import { execFile, spawn } from 'child_process';
-import fs from 'fs';
 import net from 'net';
-import path from 'path';
 
-import { normalizeHost, resolveLoopbackHost } from '../shared/network.js';
-import { buildRoutingObservabilityLines } from './routing-observability.js';
-
-const stripAnsi = (value = '') => String(value).replace(/\u001b\[[0-9;]*m/gu, '');
-
-const summarizeProcessOutput = (...chunks) => stripAnsi(chunks.join('\n'))
-  .split(/\r?\n/u)
-  .map((line) => line.trim())
-  .filter(Boolean)
-  .slice(-3)
-  .join(' | ');
-
-const STOP_FORCE_TIMEOUT_MS = 800;
-const STOP_RESOLVE_TIMEOUT_MS = 5000;
-const STALE_PROCESS_CLEANUP_TIMEOUT_MS = 2500;
-
-const escapePowerShellSingleQuotedString = (value) => String(value).replace(/'/g, "''");
-
-export const resolveExecutablePath = (explicitPath) => {
-  if (!explicitPath) {
-    throw new Error('ProxyService.start requires a resolved sing-box executable path');
-  }
-
-  const candidate = path.resolve(explicitPath);
-  if (!fs.existsSync(candidate)) {
-    throw new Error(`Resolved sing-box executable does not exist: ${candidate}`);
-  }
-
-  return candidate;
-};
+import { normalizeHost } from '../shared/network.js';
 
 export const writeConfig = (config, targetPath) => {
   fs.writeFileSync(targetPath, JSON.stringify(config, null, 2));
 };
 
-export const validateConfig = async (context, config, options = {}) => {
-  const execPath = resolveExecutablePath(options.binPath || context.executablePath);
-  const explicitConfigPath = options.configPath ? path.resolve(options.configPath) : null;
-  const configPath = explicitConfigPath || path.join(
-    context.configDir,
-    `singbox_validate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
-  );
-  const shouldCleanup = !explicitConfigPath;
-
-  writeConfig(config, configPath);
-
-  try {
-    await new Promise((resolve, reject) => {
-      const stdoutChunks = [];
-      const stderrChunks = [];
-      let settled = false;
-
-      const finish = (error = null) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      };
-
-      const processRef = spawn(execPath, ['check', '-c', configPath]);
-      processRef.stdout.on('data', (data) => stdoutChunks.push(data.toString()));
-      processRef.stderr.on('data', (data) => stderrChunks.push(data.toString()));
-      processRef.once('error', (error) => finish(error));
-      processRef.once('close', (code, signal) => {
-        if (code === 0) {
-          finish();
-          return;
-        }
-
-        const detail = summarizeProcessOutput(stderrChunks.join('\n'), stdoutChunks.join('\n'));
-        const fallback = signal
-          ? `sing-box check terminated by signal ${signal}`
-          : `sing-box check exited with code ${code}`;
-        finish(new Error(detail || fallback));
-      });
-    });
-
-    return {
-      valid: true,
-      configPath,
-      executablePath: execPath
-    };
-  } finally {
-    if (shouldCleanup) {
-      try {
-        fs.rmSync(configPath, { force: true });
-      } catch {
-        // best effort cleanup for transient validation files
-      }
-    }
-  }
-};
-
-export const waitForPortReady = (context, port, timeoutMs = 15000, host = context.proxyListen, processRef = null) => {
+export const waitForPortReady = (context, port, timeoutMs = 15000, host = context.proxyListen) => {
   const targetHost = normalizeHost(host, context.proxyListen);
   const startedAt = Date.now();
 
@@ -112,30 +17,8 @@ export const waitForPortReady = (context, port, timeoutMs = 15000, host = contex
         return;
       }
       settled = true;
-      if (processRef) {
-        processRef.off('error', onProcessError);
-        processRef.off('exit', onProcessExit);
-      }
       callback(value);
     };
-
-    const onProcessError = (error) => {
-      finish(reject, error);
-    };
-
-    const onProcessExit = (code, signal) => {
-      const detail = code !== null
-        ? `exit code ${code}`
-        : signal
-          ? `signal ${signal}`
-          : 'unknown status';
-      finish(reject, new Error(`sing-box exited before listening on ${targetHost}:${port} (${detail})`));
-    };
-
-    if (processRef) {
-      processRef.once('error', onProcessError);
-      processRef.once('exit', onProcessExit);
-    }
 
     const attempt = () => {
       if (settled) {
@@ -151,7 +34,7 @@ export const waitForPortReady = (context, port, timeoutMs = 15000, host = contex
       socket.once('error', () => {
         socket.destroy();
         if (Date.now() - startedAt >= timeoutMs) {
-          finish(reject, new Error(`Timed out waiting for sing-box to listen on ${targetHost}:${port}`));
+          finish(reject, new Error(`Timed out waiting for the embedded core to listen on ${targetHost}:${port}`));
           return;
         }
 
@@ -208,7 +91,7 @@ export const collectRuntimeReadyPorts = (context, runtime = {}, options = {}) =>
   return [...ports];
 };
 
-export const waitForRuntimeReady = async (context, runtime = {}, host = context.proxyListen, processRef = context.proxyProcess, options = {}) => {
+export const waitForRuntimeReady = async (context, runtime = {}, host = context.proxyListen, options = {}) => {
   const ports = collectRuntimeReadyPorts(context, runtime, options);
 
   if (!ports.length) {
@@ -216,7 +99,7 @@ export const waitForRuntimeReady = async (context, runtime = {}, host = context.
   }
 
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 15000;
-  await Promise.all(ports.map((port) => waitForPortReady(context, port, timeoutMs, host, processRef)));
+  await Promise.all(ports.map((port) => waitForPortReady(context, port, timeoutMs, host)));
 };
 
 export const reserveEphemeralPort = async (context, host = resolveLoopbackHost(context.proxyListen)) => {
@@ -249,187 +132,4 @@ export const reserveEphemeralPort = async (context, host = resolveLoopbackHost(c
       });
     });
   });
-};
-
-export const stopProcess = async (processRef) => {
-  if (!processRef) {
-    return { exited: true, alreadyExited: true, timedOut: false };
-  }
-
-  const isExited = () => (processRef.exitCode !== null && processRef.exitCode !== undefined)
-    || (processRef.signalCode !== null && processRef.signalCode !== undefined);
-  if (isExited()) {
-    return { exited: true, alreadyExited: true, timedOut: false };
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let forceTimer = null;
-    let resolveTimer = null;
-
-    const finish = (result = null) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (forceTimer) clearTimeout(forceTimer);
-      if (resolveTimer) clearTimeout(resolveTimer);
-      resolve(result || { exited: true, alreadyExited: false, timedOut: false });
-    };
-
-    processRef.once('exit', () => finish());
-    processRef.once('close', () => finish());
-
-    if (!processRef.killed) {
-      try {
-        processRef.kill();
-      } catch {
-        finish();
-        return;
-      }
-    }
-
-    forceTimer = setTimeout(() => {
-      try {
-        processRef.kill('SIGKILL');
-      } catch {
-        finish();
-      }
-    }, STOP_FORCE_TIMEOUT_MS);
-
-    resolveTimer = setTimeout(() => {
-      finish({ exited: isExited(), alreadyExited: false, timedOut: !isExited() });
-    }, STOP_RESOLVE_TIMEOUT_MS);
-  });
-};
-
-export const stopProxyRuntime = async (context) => {
-  if (!context.proxyProcess) {
-    return;
-  }
-
-  const processRef = context.proxyProcess;
-  if (context.proxyProcess === processRef) {
-    context.proxyProcess = null;
-  }
-  const result = await stopProcess(processRef);
-  if (result?.timedOut) {
-    if (!context.proxyProcess) {
-      context.proxyProcess = processRef;
-    }
-    throw new Error('Timed out waiting for existing sing-box process to exit');
-  }
-};
-
-export const cleanupStaleRuntimeProcesses = async (context, options = {}) => {
-  if (process.platform !== 'win32' || options.enabled === false) {
-    return [];
-  }
-
-  const targetConfigPath = path.resolve(context.configPath);
-  const escapedTarget = escapePowerShellSingleQuotedString(targetConfigPath);
-  const script = [
-    `$target = '${escapedTarget}'`,
-    "$processes = Get-CimInstance Win32_Process -Filter \"Name = 'sing-box.exe'\"",
-    '$processes | Where-Object {',
-    '  $_.CommandLine -and $_.CommandLine.IndexOf($target, [System.StringComparison]::OrdinalIgnoreCase) -ge 0',
-    '} | ForEach-Object {',
-    '  try {',
-    '    Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop',
-    '    [string]$_.ProcessId',
-    '  } catch {}',
-    '}'
-  ].join('\n');
-
-  return new Promise((resolve) => {
-    execFile('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      script
-    ], {
-      timeout: Number.isFinite(options.timeoutMs) ? options.timeoutMs : STALE_PROCESS_CLEANUP_TIMEOUT_MS,
-      windowsHide: true
-    }, (error, stdout) => {
-      if (error) {
-        context.log.warn?.(`[ProxyService] Failed to clean stale sing-box processes: ${error.message}`);
-        resolve([]);
-        return;
-      }
-
-      const killedPids = stdout
-        .split(/\r?\n/u)
-        .map((line) => Number.parseInt(line.trim(), 10))
-        .filter((pid) => Number.isInteger(pid) && pid > 0);
-
-      if (killedPids.length) {
-        context.log.warn?.(`[ProxyService] Cleaned stale sing-box process(es): ${killedPids.join(', ')}`);
-      }
-      resolve(killedPids);
-    });
-  });
-};
-
-export const startProxyRuntime = async (context, options = {}) => {
-  if (context.nodes.length === 0) {
-    throw new Error('No proxy nodes configured');
-  }
-
-  const runtimeOptions = { ...(options.runtime || {}) };
-  context.runtimeOptions = runtimeOptions;
-  const config = context.generateConfig(runtimeOptions);
-  const execPath = resolveExecutablePath(options.binPath);
-  context.executablePath = execPath;
-  if (!options.skipValidation) {
-    try {
-      await validateConfig(context, config, { binPath: execPath });
-    } catch (error) {
-      // Tag pre-spawn validation failures so callers can preserve a still-running
-      // previous process instead of tearing it down for a bad config.
-      error.phase = 'validation';
-      throw error;
-    }
-  }
-  writeConfig(config, context.configPath);
-  buildRoutingObservabilityLines(runtimeOptions, config)
-    .forEach((line) => context.log.log(line));
-  await stopProxyRuntime(context);
-  await cleanupStaleRuntimeProcesses(context, { enabled: options.cleanupStaleProcesses !== false });
-
-  context.proxyProcess = spawn(execPath, ['run', '-c', context.configPath]);
-
-  context.proxyProcess.stdout.on('data', (data) => {
-    data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => context.handleProxyRuntimeLine(line));
-  });
-
-  context.proxyProcess.stderr.on('data', (data) => {
-    data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
-      const prefixedLine = `[Proxy STDERR] ${line}`;
-      context.log.error(prefixedLine);
-      context.handleProxyRuntimeLine(prefixedLine, { logRaw: false });
-    });
-  });
-
-  context.proxyProcess.on('error', (error) => {
-    context.log.error(`[ProxyService] Failed to start sing-box process: ${error.message}`);
-  });
-
-  await waitForRuntimeReady(context, runtimeOptions, context.proxyListen, context.proxyProcess, {
-    waitForAllNodePorts: options.waitForAllNodePorts,
-    waitNodeIds: options.waitNodeIds,
-    timeoutMs: options.readyTimeoutMs
-  });
-
-  return {
-    started: true,
-    configPath: context.configPath,
-    executablePath: execPath
-  };
-};
-
-export const restartProxyRuntime = async (context, nodes, options = {}) => {
-  context.setNodes(nodes);
-  return startProxyRuntime(context, options);
 };

@@ -73,7 +73,6 @@ export class CoreManager {
       status: 'stopped',
       startedAt: null,
       lastError: null,
-      executablePath: null,
       configPath: this.paths.configPath,
       systemProxy: {
         enabled: false,
@@ -134,7 +133,8 @@ export class CoreManager {
       configFileName: this.paths.configPath.split(/[/\\]/).pop(),
       log: this.createLogger(),
       onRoutingHit: (hit) => this.appendRoutingHitHistory(hit),
-      clashApiSecret: this.clashApiSecret
+      clashApiSecret: this.clashApiSecret,
+      coreRuntimeFactory: this.coreRuntimeFactory
     });
 
     this._nodeApplyPendingNodes = null;
@@ -148,7 +148,6 @@ export class CoreManager {
 
     this._restartAttempts = 0;
     this._autoRestartTimer = null;
-    this._expectedCoreExitProcess = null;
     this._lifecycleQueue = Promise.resolve();
 
     this._nodeGroupAutoTestBusy = false;
@@ -624,12 +623,12 @@ export class CoreManager {
     return nodeManager.saveNodes(this, nodes);
   }
 
-  createValidationProxyService(settings = this.getSettingsSnapshot()) {
-    return nodeManager.createValidationProxyService(this, settings);
+  createValidationProxyService(settings = this.getSettingsSnapshot(), coreRuntime = null) {
+    return nodeManager.createValidationProxyService(this, settings, coreRuntime);
   }
 
-  resolveValidationBinaryPath(settings = this.getSettingsSnapshot()) {
-    return nodeManager.resolveValidationBinaryPath(this, settings);
+  async ensureValidationRuntime() {
+    return nodeManager.ensureValidationRuntime(this);
   }
 
   async validateSingleNodeConfig(node, options = {}) {

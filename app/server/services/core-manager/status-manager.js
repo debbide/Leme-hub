@@ -11,17 +11,16 @@ import {
 } from './state-utils.js';
 
 export const buildBinaryState = (manager, overrides = {}) => {
-  const settings = manager.store.getSettings();
-  const status = manager.binaryManager.getStatus(settings.singBoxBinaryPath);
+  const nativeStatus = manager.nativeManager?.getStatus?.() || {};
 
   return {
-    status: status.ready ? 'ready' : 'missing',
-    configuredPath: status.configuredPath,
-    managedPath: status.managedPath,
-    resolvedPath: status.configuredExists ? status.configuredPath : (status.managedExists ? status.managedPath : null),
-    source: status.source,
+    status: nativeStatus.ready ? 'ready' : 'missing',
+    resolvedPath: nativeStatus.libraryPath || null,
+    source: nativeStatus.source || null,
     lastError: null,
-    version: null,
+    version: nativeStatus.singBoxVersion || null,
+    runtimeVersion: nativeStatus.runtimeVersion || null,
+    abiVersion: nativeStatus.abiVersion || null,
     ...overrides
   };
 };

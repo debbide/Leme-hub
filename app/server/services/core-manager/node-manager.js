@@ -20,8 +20,8 @@ export {
 
 export {
   createValidationProxyService,
+  ensureValidationRuntime,
   filterValidNodes,
-  resolveValidationBinaryPath,
   validateRuntimeConfig,
   validateSingleNodeConfig
 } from './node-validation-manager.js';

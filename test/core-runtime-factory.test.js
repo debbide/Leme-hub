@@ -5,17 +5,6 @@ import { CoreRuntimeFactory } from '../app/proxy/runtime/CoreRuntimeFactory.js';
 
 const context = { proxyProcess: null };
 
-test('creates the process runtime when process mode is selected', async () => {
-  const processRuntime = { initialize: () => ({ status: 'stopped' }) };
-  const factory = new CoreRuntimeFactory({
-    createProcessRuntime: () => processRuntime
-  });
-
-  const result = await factory.resolve(context, { mode: 'process' });
-  assert.equal(result.mode, 'process');
-  assert.equal(result.runtime, processRuntime);
-});
-
 test('creates and initializes the embedded runtime', async () => {
   const embeddedRuntime = {
     initialize: () => ({ abiVersion: 2, singBoxVersion: '1.14.0' })
@@ -35,26 +24,6 @@ test('creates and initializes the embedded runtime', async () => {
   assert.equal(result.mode, 'embedded');
   assert.equal(result.runtime, embeddedRuntime);
   assert.equal(result.singBoxVersion, '1.14.0');
-});
-
-test('falls back to process runtime in auto mode when native loading fails', async () => {
-  const warnings = [];
-  const processRuntime = { initialize: () => ({ status: 'stopped' }) };
-  const factory = new CoreRuntimeFactory({
-    nativeManager: {
-      ensureAvailable: async () => {
-        throw new Error('native library unavailable');
-      }
-    },
-    createProcessRuntime: () => processRuntime,
-    log: { warn: (message) => warnings.push(message) }
-  });
-
-  const result = await factory.resolve(context, { mode: 'auto' });
-  assert.equal(result.mode, 'process');
-  assert.equal(result.fallbackFrom, 'embedded');
-  assert.match(result.fallbackError, /native library unavailable/);
-  assert.equal(warnings.length, 2);
 });
 
 test('does not fall back when embedded mode is explicitly selected', async () => {

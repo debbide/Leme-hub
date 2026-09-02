@@ -42,13 +42,12 @@ export const measureNodeLatencies = async (manager, nodeIds = [], options = {}) 
   let autoStarted = false;
   if (manager.state.status !== 'running') {
     if (options.autoStartCore === false) {
-      const settings = manager.getSettingsSnapshot();
-      const binary = await manager.binaryManager.ensureAvailable(settings.singBoxBinaryPath);
       manager.proxyService.setNodes(manager.store.getNodes());
 
+      // Core is stopped: node tests boot their own dedicated embedded runtime
+      // through the ProxyService speedtest path instead of starting the core.
       if (typeof manager.proxyService.testNodes === 'function') {
         const results = await manager.proxyService.testNodes(requestedIds, {
-          binPath: binary.executablePath,
           onResult: options.onResult
         });
         return {
