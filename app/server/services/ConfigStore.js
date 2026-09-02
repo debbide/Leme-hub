@@ -1,7 +1,6 @@
 import fs from 'fs';
 
 import {
-  CORE_RUNTIME_MODES,
   DEFAULT_CORE_RUNTIME_MODE,
   DEFAULT_DNS_BOOTSTRAP_SERVER,
   DEFAULT_DNS_DIRECT_SERVER,
@@ -75,9 +74,6 @@ const defaultSettings = (paths, options = {}) => {
       updatedAt: null,
       results: {}
     },
-    singBoxBinaryPath: process.platform === 'win32'
-      ? `${paths.binDir}\\sing-box.exe`
-      : `${paths.binDir}/sing-box`,
     routingMode: 'rule'
   };
 };
@@ -93,9 +89,8 @@ const normalizeSettings = (paths, settings = {}, options = {}) => {
 
   normalized.uiHost = normalizeHost(normalized.uiHost, defaults.uiHost);
   normalized.proxyListenHost = normalizeHost(normalized.proxyListenHost, defaults.proxyListenHost);
-  normalized.coreRuntimeMode = CORE_RUNTIME_MODES.includes(String(normalized.coreRuntimeMode || '').trim().toLowerCase())
-    ? String(normalized.coreRuntimeMode).trim().toLowerCase()
-    : defaults.coreRuntimeMode;
+  normalized.coreRuntimeMode = DEFAULT_CORE_RUNTIME_MODE;
+  delete normalized.singBoxBinaryPath;
 
   normalized.tlsFragmentEnabled = !!normalized.tlsFragmentEnabled;
   normalized.systemProxyEnabled = !!normalized.systemProxyEnabled;

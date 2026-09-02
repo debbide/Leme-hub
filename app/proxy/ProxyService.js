@@ -57,7 +57,6 @@ import {
   setNodes as setProxyNodes,
   updatePortMap as updateProxyPortMap
 } from './node-state.js';
-import { ProcessCoreRuntime } from './runtime/ProcessCoreRuntime.js';
 
 const stripAnsi = (value = '') => String(value).replace(/\u001b\[[0-9;]*m/gu, '');
 
@@ -110,7 +109,7 @@ export class ProxyService {
     }
 
     this.configPath = path.join(this.configDir, configFileName);
-    this.coreRuntime = coreRuntime || new ProcessCoreRuntime(this);
+    this.coreRuntime = coreRuntime || null;
   }
 
   setCoreRuntime(coreRuntime) {
@@ -123,8 +122,8 @@ export class ProxyService {
 
   getCoreRuntimeStatus() {
     return this.coreRuntime?.getStatus?.() || {
-      mode: 'process',
-      status: this.proxyProcess ? 'running' : 'stopped'
+      mode: 'embedded',
+      status: 'stopped'
     };
   }
 
@@ -224,10 +223,8 @@ export class ProxyService {
   }
 
   async start(options = {}) {
-    if (!this.coreRuntime || this.coreRuntime instanceof ProcessCoreRuntime) {
-      return this.coreRuntime
-        ? this.coreRuntime.start(options)
-        : startProxyRuntime(this, options);
+    if (!this.coreRuntime) {
+      throw new Error('ProxyService requires an embedded core runtime before start');
     }
 
     const config = this.generateConfig(options);
@@ -257,14 +254,12 @@ export class ProxyService {
     if (this.coreRuntime?.stop) {
       return this.coreRuntime.stop();
     }
-    return stopProxyRuntime(this);
+    return { stopped: true, mode: 'embedded' };
   }
 
   async restart(nodes, options = {}) {
-    if (!this.coreRuntime || this.coreRuntime instanceof ProcessCoreRuntime) {
-      return this.coreRuntime
-        ? this.coreRuntime.restart(nodes, options)
-        : restartProxyRuntime(this, nodes, options);
+    if (!this.coreRuntime) {
+      throw new Error('ProxyService requires an embedded core runtime before restart');
     }
 
     if (Array.isArray(nodes)) {

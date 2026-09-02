@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-import { SingBoxBinaryManager } from '../../proxy/SingBoxBinaryManager.js';
 import { SingBoxNativeManager } from '../../proxy/SingBoxNativeManager.js';
 import { ProxyService } from '../../proxy/ProxyService.js';
 import { CoreRuntimeFactory } from '../../proxy/runtime/CoreRuntimeFactory.js';
@@ -76,14 +75,6 @@ export class CoreManager {
       lastError: null,
       executablePath: null,
       configPath: this.paths.configPath,
-      binary: {
-        status: 'missing',
-        configuredPath: this.store.getSettings().singBoxBinaryPath,
-        managedPath: this.paths.binDir,
-        source: 'missing',
-        lastError: null,
-        version: null
-      },
       systemProxy: {
         enabled: false,
         mode: 'unknown',
@@ -103,10 +94,6 @@ export class CoreManager {
       }
     };
 
-    this.binaryManager = new SingBoxBinaryManager(this.paths, {
-      log: this.createLogger()
-    });
-
     this.nativeManager = options.nativeManager || new SingBoxNativeManager(this.paths, {
       log: this.createLogger()
     });
@@ -115,7 +102,6 @@ export class CoreManager {
       log: this.createLogger()
     });
 
-    this.state.binary = this.buildBinaryState();
     this.systemProxyManager = new SystemProxyManager();
     this.state.systemProxy = this.buildSystemProxyState();
     this.autoStartManager = new AutoStartManager({

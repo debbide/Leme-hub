@@ -3,16 +3,12 @@ import {
   DEFAULT_CORE_RUNTIME_MODE
 } from '../../shared/constants.js';
 import { EmbeddedCoreRuntime } from './EmbeddedCoreRuntime.js';
-import { ProcessCoreRuntime } from './ProcessCoreRuntime.js';
 
 export class CoreRuntimeFactory {
   constructor(options = {}) {
     this.nativeManager = options.nativeManager || null;
-    this.log = options.log || console;
     this.createEmbeddedRuntime = options.createEmbeddedRuntime
       || ((runtimeOptions) => new EmbeddedCoreRuntime(runtimeOptions));
-    this.createProcessRuntime = options.createProcessRuntime
-      || ((context, runtimeOptions) => new ProcessCoreRuntime(context, runtimeOptions));
   }
 
   normalizeMode(mode) {
@@ -21,16 +17,6 @@ export class CoreRuntimeFactory {
       throw new Error(`Unsupported core runtime mode: ${mode}`);
     }
     return normalized;
-  }
-
-  createProcess(context, options = {}) {
-    const runtime = this.createProcessRuntime(context, options.process || {});
-    runtime.initialize();
-    return {
-      mode: 'process',
-      runtime,
-      source: 'managed-process'
-    };
   }
 
   async createEmbedded(options = {}) {
@@ -56,24 +42,7 @@ export class CoreRuntimeFactory {
   }
 
   async resolve(context, options = {}) {
-    const mode = this.normalizeMode(options.mode);
-    if (mode === 'process') {
-      return this.createProcess(context, options);
-    }
-    if (mode === 'embedded') {
-      return this.createEmbedded(options);
-    }
-
-    try {
-      return await this.createEmbedded(options);
-    } catch (error) {
-      this.log.warn?.(`[CoreRuntime] Native runtime unavailable: ${error.message}`);
-      this.log.warn?.('[CoreRuntime] Falling back to sing-box process runtime');
-      return {
-        ...this.createProcess(context, options),
-        fallbackError: error.message,
-        fallbackFrom: 'embedded'
-      };
-    }
+    this.normalizeMode(options.mode);
+    return this.createEmbedded(options);
   }
 }
