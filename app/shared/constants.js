@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG_FILE = 'singbox_config.json';
 export const DEFAULT_LOG_FILE = 'singbox.log';
 export const DEFAULT_NODES_FILE = 'proxy_nodes.json';
 export const DEFAULT_SETTINGS_FILE = 'settings.json';
-export const DEFAULT_MANAGED_SINGBOX_VERSION = '1.13.4';
+export const DEFAULT_MANAGED_SINGBOX_VERSION = '1.14.0';
 export const SINGBOX_REPOSITORY = {
   owner: 'SagerNet',
   repo: 'sing-box'

@@ -165,7 +165,6 @@ export const buildDnsConfig = ({
     ],
     rules: dnsRules,
     final: String(dnsFinal || '').trim() === 'dns-local' ? 'dns-local' : 'dns-remote',
-    strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4',
-    independent_cache: true
+    strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4'
   };
 };
