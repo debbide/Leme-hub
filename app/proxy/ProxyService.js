@@ -40,13 +40,7 @@ import {
 import { generateProxyConfig } from './config-generator.js';
 import {
   reserveEphemeralPort as reserveEphemeralPortForContext,
-  resolveExecutablePath as resolveRuntimeExecutablePath,
-  restartProxyRuntime,
-  startProxyRuntime,
-  stopProcess as stopRuntimeProcess,
-  stopProxyRuntime,
   collectRuntimeReadyPorts as collectRuntimeReadyPortsForContext,
-  validateConfig as validateRuntimeConfig,
   waitForPortReady as waitForRuntimePortReady,
   waitForRuntimeReady as waitForRuntimeReadyForContext,
   writeConfig as writeRuntimeConfig
@@ -78,10 +72,14 @@ export class ProxyService {
       log = console,
       onRoutingHit = null,
       clashApiSecret = '',
-      coreRuntime = null
+      coreRuntime = null,
+      coreRuntimeFactory = null,
+      createCoreRuntime = null
     } = typeof options === 'string' ? { configDir: options } : options;
 
     this.clashApiSecret = clashApiSecret;
+    this.coreRuntimeFactory = coreRuntimeFactory;
+    this.createCoreRuntimeInstance = createCoreRuntime;
 
     this.proxyProcess = null;
     this.nodes = [];
@@ -90,8 +88,6 @@ export class ProxyService {
     this.basePort = basePort;
     this.log = log;
     this.onRoutingHit = typeof onRoutingHit === 'function' ? onRoutingHit : null;
-    this.binName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
-    this.executablePath = null;
     this.runtimeOptions = {};
     this.nodePortMap = new Map();
     this.routingHitMap = new Map();
@@ -131,6 +127,17 @@ export class ProxyService {
     return setProxyNodes(this, nodes);
   }
 
+  async createCoreRuntime() {
+    if (typeof this.createCoreRuntimeInstance === 'function') {
+      return this.createCoreRuntimeInstance();
+    }
+    if (!this.coreRuntimeFactory) {
+      throw new Error('ProxyService requires a core runtime factory to create auxiliary runtimes');
+    }
+    const resolution = await this.coreRuntimeFactory.createEmbedded();
+    return resolution.runtime;
+  }
+
   resolveDefaultNodeId(validNodes, requestedNodeId) {
     return resolveDefaultProxyNodeId(validNodes, requestedNodeId);
   }
@@ -163,31 +170,27 @@ export class ProxyService {
     return resolveRoutingHitFromMap(this.routingHitMap, ruleTag, host, outboundTag, options);
   }
 
-  resolveExecutablePath(explicitPath) {
-    return resolveRuntimeExecutablePath(explicitPath);
-  }
-
   writeConfig(config, targetPath = this.configPath) {
     return writeRuntimeConfig(config, targetPath);
   }
 
   async validateConfig(config, options = {}) {
-    if (this.coreRuntime?.checkConfig) {
-      return this.coreRuntime.checkConfig(config, options);
+    if (!this.coreRuntime?.checkConfig) {
+      throw new Error('Config validation requires an embedded core runtime');
     }
-    return validateRuntimeConfig(this, config, options);
+    return this.coreRuntime.checkConfig(config, options);
   }
 
   waitForPortReady(port, timeoutMs = 15000, host = this.proxyListen, processRef = null) {
-    return waitForRuntimePortReady(this, port, timeoutMs, host, processRef);
+    return waitForRuntimePortReady(this, port, timeoutMs, host);
   }
 
   collectRuntimeReadyPorts(runtime = {}, options = {}) {
     return collectRuntimeReadyPortsForContext(this, runtime, options);
   }
 
-  async waitForRuntimeReady(runtime = {}, host = this.proxyListen, processRef = this.proxyProcess, options = {}) {
-    return waitForRuntimeReadyForContext(this, runtime, host, processRef, options);
+  async waitForRuntimeReady(runtime = {}, host = this.proxyListen, options = {}) {
+    return waitForRuntimeReadyForContext(this, runtime, host, options);
   }
 
   async reserveEphemeralPort(host = resolveLoopbackHost(this.proxyListen)) {
@@ -204,10 +207,6 @@ export class ProxyService {
 
   resolveSpeedtestNodes(nodes = []) {
     return resolveSpeedtestNodesForContext(this, nodes);
-  }
-
-  async stopProcess(processRef) {
-    return stopRuntimeProcess(processRef);
   }
 
   async withSpeedtestRuntime(nodes, options = {}, callback) {
@@ -228,7 +227,10 @@ export class ProxyService {
     }
 
     const config = this.generateConfig(options);
-    await this.coreRuntime.checkConfig(config, options);
+    await this.coreRuntime.checkConfig(config, options).catch((error) => {
+      error.phase = 'validation';
+      throw error;
+    });
     this.writeConfig(config);
 
     const currentStatus = this.coreRuntime.getStatus?.();
@@ -238,7 +240,7 @@ export class ProxyService {
       await this.coreRuntime.start(config, options);
     }
 
-    await this.waitForRuntimeReady(options, this.proxyListen, null, options);
+    await this.waitForRuntimeReady(options, this.proxyListen, options);
     const status = this.coreRuntime.getStatus?.() || {};
     return {
       started: true,
@@ -254,6 +256,22 @@ export class ProxyService {
     if (this.coreRuntime?.stop) {
       return this.coreRuntime.stop();
     }
+
+    const process = this.proxyProcess;
+    if (process) {
+      if (process.exitCode === null) {
+        await new Promise((resolve) => {
+          process.once('exit', resolve);
+          if (!process.killed) {
+            process.kill();
+          }
+        });
+      }
+      if (this.proxyProcess === process) {
+        this.proxyProcess = null;
+      }
+    }
+
     return { stopped: true, mode: 'embedded' };
   }
 
