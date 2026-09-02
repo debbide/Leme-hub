@@ -25,8 +25,10 @@ const createRuntime = (overrides = {}) => {
     freeString: (pointer) => freed.push(pointer),
     ...overrides.functions
   };
+  const decodes = [];
   const ffi = {
-    decode: (pointer) => {
+    decode: (pointer, type, length) => {
+      decodes.push({ pointer, type, length });
       const value = values.get(pointer);
       return typeof value === 'function' ? value() : value;
     }
@@ -38,6 +40,7 @@ const createRuntime = (overrides = {}) => {
     functions
   });
   return {
+    decodes,
     freed,
     runtime,
     setLastError: (value) => { lastError = value; }
@@ -45,12 +48,16 @@ const createRuntime = (overrides = {}) => {
 };
 
 test('initializes an embedded runtime and releases native strings', () => {
-  const { freed, runtime } = createRuntime();
+  const { decodes, freed, runtime } = createRuntime();
   const version = runtime.initialize();
 
   assert.equal(version.abiVersion, 2);
   assert.equal(version.singBoxVersion, '1.14.0');
   assert.equal(version.goVersion, 'go1.25.5 windows/amd64');
+  assert.deepEqual(decodes, [
+    { pointer: 'go-pointer', type: 'char', length: -1 },
+    { pointer: 'singbox-pointer', type: 'char', length: -1 }
+  ]);
   assert.deepEqual(freed, ['go-pointer', 'singbox-pointer']);
 });
 

@@ -66,7 +66,7 @@ export class EmbeddedCoreRuntime {
       return '';
     }
     try {
-      return this.ffi.decode(pointer, 'const char *') || '';
+      return this.ffi.decode(pointer, 'char', -1) || '';
     } finally {
       this.functions.freeString(pointer);
     }
