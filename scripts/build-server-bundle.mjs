@@ -34,11 +34,11 @@ fs.cpSync('public', path.join(serverDistDir, 'public'), { recursive: true });
 fs.cpSync('node_modules/koffi', path.join(serverDistDir, 'node_modules', 'koffi'), { recursive: true });
 fs.rmSync(path.join(serverDistDir, 'node_modules', '@koromix'), { recursive: true, force: true });
 const packageName = nativeTarget === 'linux-arm64' ? 'koffi-linux-arm64' : 'koffi-linux-x64';
-{
+nativePackage: {
   const source = path.join('node_modules', '@koromix', packageName);
   if (fs.existsSync(source)) {
     fs.cpSync(source, path.join(serverDistDir, 'node_modules', '@koromix', packageName), { recursive: true });
-    continue;
+    break nativePackage;
   }
 
   // npm only installs optional dependencies for the build host architecture.
