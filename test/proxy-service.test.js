@@ -1418,7 +1418,7 @@ test('emits advanced transport and tls fields in generated config', () => {
   assert.deepEqual(outbound.tls.reality.next_protocol, ['h2', 'http/1.1']);
 });
 
-test('uses proxyIp as the outbound connection address', () => {
+test('uses proxyIp only as the Cloudflare WS TLS connection address', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{
     id: 'proxy-ip',
@@ -1428,12 +1428,44 @@ test('uses proxyIp as the outbound connection address', () => {
     port: 443,
     uuid: '00000000-0000-0000-0000-000000000000',
     security: 'tls',
-    sni: 'edge.example.com'
+    transport: 'ws',
+    wsPath: '/ws'
   }]);
 
   const outbound = service.generateConfig().outbounds.find((item) => item.tag === 'out-proxy-ip');
   assert.equal(outbound.server, '203.0.113.10');
   assert.equal(outbound.tls.server_name, 'edge.example.com');
+  assert.equal(outbound.transport.headers.Host, 'edge.example.com');
+});
+
+test('ignores proxyIp outside the Cloudflare WS TLS scenario', () => {
+  const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
+  service.setNodes([
+    {
+      id: 'plain-tcp',
+      type: 'vless',
+      server: 'plain.example.com',
+      proxyIp: '203.0.113.11',
+      port: 80,
+      uuid: '00000000-0000-0000-0000-000000000000',
+      security: 'none',
+      transport: 'tcp'
+    },
+    {
+      id: 'tls-grpc',
+      type: 'vless',
+      server: 'grpc.example.com',
+      proxyIp: '203.0.113.12',
+      port: 443,
+      uuid: '00000000-0000-0000-0000-000000000000',
+      security: 'tls',
+      transport: 'grpc'
+    }
+  ]);
+
+  const config = service.generateConfig();
+  assert.equal(config.outbounds.find((item) => item.tag === 'out-plain-tcp').server, 'plain.example.com');
+  assert.equal(config.outbounds.find((item) => item.tag === 'out-tls-grpc').server, 'grpc.example.com');
 });
 
 test('emits certificate pinning and shadowsocks plugin fields', () => {

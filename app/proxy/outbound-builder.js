@@ -13,7 +13,10 @@ import {
 
 export const buildNodeOutbound = (node, options = {}) => {
   const { validNodeMap = new Map(), tlsFragmentEnabled = false } = options;
-  const serverHost = normalizeHost(node.proxyIp || node.server);
+  const originServerHost = normalizeHost(node.server);
+  const proxyIpHost = normalizeHost(node.proxyIp);
+  const useProxyIp = !!proxyIpHost && nodeUsesTls(node) && node.transport === 'ws' && !isIpLiteralHost(originServerHost);
+  const serverHost = useProxyIp ? proxyIpHost : originServerHost;
   const outbound = {
     type: node.type,
     tag: `out-${node.id}`,
@@ -74,7 +77,7 @@ export const buildNodeOutbound = (node, options = {}) => {
   if (isTls || (node.sni && !tlsExplicitlyDisabled)) {
     outbound.tls = {
       enabled: true,
-      server_name: normalizeHost(node.sni) || node.wsHost || serverHost,
+      server_name: normalizeHost(node.sni) || node.wsHost || originServerHost,
       insecure: !!node.insecure,
       utls: {
         enabled: true,
@@ -157,7 +160,7 @@ export const buildNodeOutbound = (node, options = {}) => {
       headers: {}
     };
 
-    const hostHeader = node.wsHost || normalizeHost(node.sni) || serverHost;
+    const hostHeader = node.wsHost || normalizeHost(node.sni) || originServerHost;
     if (hostHeader && !isIpLiteralHost(hostHeader)) {
       outbound.transport.headers.Host = hostHeader;
       if (outbound.tls && !outbound.tls.server_name) {
@@ -236,7 +239,7 @@ export const buildNodeOutbound = (node, options = {}) => {
     if (!outbound.tls) {
       outbound.tls = {
         enabled: true,
-        server_name: normalizeHost(node.sni) || serverHost,
+        server_name: normalizeHost(node.sni) || originServerHost,
         insecure: !!node.insecure
       };
     }
@@ -258,7 +261,7 @@ export const buildNodeOutbound = (node, options = {}) => {
     if (!outbound.tls) {
       outbound.tls = {
         enabled: true,
-        server_name: normalizeHost(node.sni) || serverHost,
+        server_name: normalizeHost(node.sni) || originServerHost,
         insecure: !!node.insecure
       };
     }
