@@ -1424,7 +1424,7 @@ test('uses proxyIp only as the Cloudflare WS TLS connection address', () => {
     id: 'proxy-ip',
     type: 'vless',
     server: 'edge.example.com',
-    proxyIp: '203.0.113.10',
+    proxyIp: '203.0.113.10:51102',
     port: 443,
     uuid: '00000000-0000-0000-0000-000000000000',
     security: 'tls',
@@ -1434,6 +1434,7 @@ test('uses proxyIp only as the Cloudflare WS TLS connection address', () => {
 
   const outbound = service.generateConfig().outbounds.find((item) => item.tag === 'out-proxy-ip');
   assert.equal(outbound.server, '203.0.113.10');
+  assert.equal(outbound.server_port, 51102);
   assert.equal(outbound.tls.server_name, 'edge.example.com');
   assert.equal(outbound.transport.headers.Host, 'edge.example.com');
 });

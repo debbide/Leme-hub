@@ -11,17 +11,47 @@ import {
   toList
 } from './protocol-common.js';
 
+const parseProxyEndpoint = (value, fallbackPort) => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return { host: '', port: fallbackPort };
+  }
+
+  const bracketed = raw.match(/^\?::(\d+)?$/u);
+  if (bracketed) {
+    return {
+      host: normalizeHost(bracketed[1]),
+      port: bracketed[2] ? toInt(bracketed[2]) : fallbackPort
+    };
+  }
+
+  const firstColon = raw.indexOf(':');
+  const lastColon = raw.lastIndexOf(':');
+  if (firstColon > 0 && firstColon === lastColon) {
+    const portText = raw.slice(lastColon + 1);
+    if (/^\d+$/u.test(portText)) {
+      return {
+        host: normalizeHost(raw.slice(0, lastColon)),
+        port: toInt(portText)
+      };
+    }
+  }
+
+  return { host: normalizeHost(raw), port: fallbackPort };
+};
+
 export const buildNodeOutbound = (node, options = {}) => {
   const { validNodeMap = new Map(), tlsFragmentEnabled = false } = options;
   const originServerHost = normalizeHost(node.server);
-  const proxyIpHost = normalizeHost(node.proxyIp);
-  const useProxyIp = !!proxyIpHost && nodeUsesTls(node) && node.transport === 'ws' && !isIpLiteralHost(originServerHost);
-  const serverHost = useProxyIp ? proxyIpHost : originServerHost;
+  const proxyEndpoint = parseProxyEndpoint(node.proxyIp, node.port);
+  const useProxyIp = !!proxyEndpoint.host && nodeUsesTls(node) && node.transport === 'ws' && !isIpLiteralHost(originServerHost);
+  const serverHost = useProxyIp ? proxyEndpoint.host : originServerHost;
+  const serverPort = useProxyIp ? proxyEndpoint.port : node.port;
   const outbound = {
     type: node.type,
     tag: `out-${node.id}`,
     server: serverHost,
-    server_port: node.port
+    server_port: serverPort
   };
 
   if (node.password) {
