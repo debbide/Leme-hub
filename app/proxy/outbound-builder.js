@@ -42,11 +42,10 @@ const parseProxyEndpoint = (value, fallbackPort) => {
 
 export const buildNodeOutbound = (node, options = {}) => {
   const { validNodeMap = new Map(), tlsFragmentEnabled = false } = options;
-  const originServerHost = normalizeHost(node.server);
-  const proxyEndpoint = parseProxyEndpoint(node.proxyIp, node.port);
-  const useProxyIp = !!proxyEndpoint.host && nodeUsesTls(node) && node.transport === 'ws' && !isIpLiteralHost(originServerHost);
-  const serverHost = useProxyIp ? proxyEndpoint.host : originServerHost;
-  const serverPort = useProxyIp ? proxyEndpoint.port : node.port;
+  // Worker proxyIp is a server-side fallback egress, not the client connection endpoint.
+  // Keep sing-box connected to the original Worker hostname and port.
+  const serverHost = normalizeHost(node.server);
+  const serverPort = node.port;
   const outbound = {
     type: node.type,
     tag: `out-${node.id}`,
@@ -107,7 +106,7 @@ export const buildNodeOutbound = (node, options = {}) => {
   if (isTls || (node.sni && !tlsExplicitlyDisabled)) {
     outbound.tls = {
       enabled: true,
-      server_name: normalizeHost(node.sni) || node.wsHost || originServerHost,
+      server_name: normalizeHost(node.sni) || node.wsHost || serverHost,
       insecure: !!node.insecure,
       utls: {
         enabled: true,
@@ -190,7 +189,7 @@ export const buildNodeOutbound = (node, options = {}) => {
       headers: {}
     };
 
-    const hostHeader = node.wsHost || normalizeHost(node.sni) || originServerHost;
+    const hostHeader = node.wsHost || normalizeHost(node.sni) || serverHost;
     if (hostHeader && !isIpLiteralHost(hostHeader)) {
       outbound.transport.headers.Host = hostHeader;
       if (outbound.tls && !outbound.tls.server_name) {
@@ -269,7 +268,7 @@ export const buildNodeOutbound = (node, options = {}) => {
     if (!outbound.tls) {
       outbound.tls = {
         enabled: true,
-        server_name: normalizeHost(node.sni) || originServerHost,
+        server_name: normalizeHost(node.sni) || serverHost,
         insecure: !!node.insecure
       };
     }
@@ -291,7 +290,7 @@ export const buildNodeOutbound = (node, options = {}) => {
     if (!outbound.tls) {
       outbound.tls = {
         enabled: true,
-        server_name: normalizeHost(node.sni) || originServerHost,
+        server_name: normalizeHost(node.sni) || serverHost,
         insecure: !!node.insecure
       };
     }
@@ -303,3 +302,4 @@ export const buildNodeOutbound = (node, options = {}) => {
 
   return outbound;
 };
+

@@ -1418,7 +1418,7 @@ test('emits advanced transport and tls fields in generated config', () => {
   assert.deepEqual(outbound.tls.reality.next_protocol, ['h2', 'http/1.1']);
 });
 
-test('uses proxyIp only as the Cloudflare WS TLS connection address', () => {
+test('keeps the original Worker endpoint when proxyIp is configured', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([{
     id: 'proxy-ip',
@@ -1433,13 +1433,13 @@ test('uses proxyIp only as the Cloudflare WS TLS connection address', () => {
   }]);
 
   const outbound = service.generateConfig().outbounds.find((item) => item.tag === 'out-proxy-ip');
-  assert.equal(outbound.server, '203.0.113.10');
-  assert.equal(outbound.server_port, 51102);
+  assert.equal(outbound.server, 'edge.example.com');
+  assert.equal(outbound.server_port, 443);
   assert.equal(outbound.tls.server_name, 'edge.example.com');
   assert.equal(outbound.transport.headers.Host, 'edge.example.com');
 });
 
-test('ignores proxyIp outside the Cloudflare WS TLS scenario', () => {
+test('never uses Worker proxyIp as a client connection endpoint', () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd() });
   service.setNodes([
     {
@@ -2140,3 +2140,4 @@ test('routes tun and system proxy capture inbounds together when both present in
     && rule.outbound === ACTIVE_NODE_SELECTOR_TAG);
   assert.ok(captureRule);
 });
+
