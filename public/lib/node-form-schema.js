@@ -9,6 +9,7 @@ const FORM_EXCLUDED_KEYS = new Set([
   'type',
   'name',
   'server',
+  'proxyIp',
   'port',
   'group',
   'countryCodeOverride',
@@ -77,6 +78,7 @@ export const DEFAULT_NODE_FORM_STATE = {
   type: 'vless',
   name: '',
   server: '',
+  proxyIp: '',
   port: '443',
   group: '',
   countryCodeOverride: '',
@@ -259,6 +261,7 @@ export const normalizeNodeForForm = (node) => {
     type,
     name: toFormString(node?.name),
     server: toFormString(node?.server),
+    proxyIp: toFormString(node?.proxyIp),
     port: toFormString(node?.port || 443),
     group: toFormString(node?.group),
     countryCodeOverride: normalizeCountryCode(node?.countryCodeOverride),
@@ -579,6 +582,12 @@ export const buildNodePayloadFromForm = (formState, advancedFields = {}) => {
   node.type = type;
   node.name = name || server;
   node.server = server;
+  const proxyIp = cleanOptionalString(formState?.proxyIp);
+  if (proxyIp) {
+    node.proxyIp = proxyIp;
+  } else {
+    delete node.proxyIp;
+  }
   node.port = parsePositiveInteger(formState?.port, '端口');
   node.group = group || null;
   node.countryCodeOverride = countryCodeOverride || null;

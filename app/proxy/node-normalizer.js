@@ -26,6 +26,7 @@ export const normalizeConfigNode = (node, index = 0) => {
   }
 
   const fieldMap = {
+    proxyIp: node.proxyIp,
     uuid: node.uuid,
     password: node.password,
     username: node.username,
@@ -84,6 +85,7 @@ export const normalizeConfigNode = (node, index = 0) => {
 
   Object.entries(fieldMap).forEach(([key, value]) => applyIfPresent(normalized, key, value));
   normalized.server = normalizeHost(normalized.server);
+  normalized.proxyIp = normalizeHost(normalized.proxyIp);
   normalized.sni = normalizeHost(normalized.sni);
   normalized.ip = normalizeHost(normalized.ip);
 

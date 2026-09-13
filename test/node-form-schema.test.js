@@ -78,6 +78,22 @@ test('validateNodeFormState accepts a complete manual vless form', () => {
   assert.deepEqual(validation.errors, {});
 });
 
+test('preserves an optional proxy IP through the node form', () => {
+  const formState = normalizeNodeForForm({
+    type: 'vless',
+    name: 'Proxy IP Node',
+    server: 'edge.example.com',
+    proxyIp: '203.0.113.10',
+    port: 443,
+    uuid: '00000000-0000-0000-0000-000000000000'
+  });
+  const payload = buildNodePayloadFromForm(formState);
+
+  assert.equal(formState.proxyIp, '203.0.113.10');
+  assert.equal(payload.server, 'edge.example.com');
+  assert.equal(payload.proxyIp, '203.0.113.10');
+});
+
 test('persists a front proxy selection only for socks nodes', () => {
   const socksPayload = buildNodePayloadFromForm({
     type: 'socks',

@@ -13,7 +13,7 @@ import {
 
 export const buildNodeOutbound = (node, options = {}) => {
   const { validNodeMap = new Map(), tlsFragmentEnabled = false } = options;
-  const serverHost = normalizeHost(node.server);
+  const serverHost = normalizeHost(node.proxyIp || node.server);
   const outbound = {
     type: node.type,
     tag: `out-${node.id}`,

@@ -631,6 +631,10 @@
                   <label class="modal-field-label" for="edit-node-server">服务器地址</label>
                   <input type="text" id="edit-node-server" name="server" class="modal-field-input" placeholder="例如 1.2.3.4 / example.com" autocomplete="off">
                 </div>
+                <div class="node-form-field-wrap" data-form-field="proxyIp">
+                  <label class="modal-field-label" for="edit-node-proxy-ip">Proxy IP（可选）</label>
+                  <input type="text" id="edit-node-proxy-ip" name="proxyIp" class="modal-field-input" placeholder="直连此 IP，留空则使用服务器地址" autocomplete="off">
+                </div>
                 <div class="node-form-field-wrap" data-form-field="port">
                   <label class="modal-field-label" for="edit-node-port">端口</label>
                   <input type="number" id="edit-node-port" name="port" class="modal-field-input" min="1" max="65535" placeholder="443" autocomplete="off">
