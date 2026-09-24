@@ -114,7 +114,7 @@ export const renderNodeGroups = ({
       : iconMode === 'emoji' && iconEmoji
         ? `<span class="node-group-country-flag"><span class="node-group-country-flag-fallback" style="display:inline-flex;">${escapeHtml(iconEmoji)}</span></span>`
         : countryMeta
-          ? `<span class="node-group-country-flag" title="${escapeHtml(countryMeta.code)}"><img class="node-group-country-flag-img" src="https://flagcdn.com/24x18/${countryMeta.code.toLowerCase()}.png" alt="${escapeHtml(countryMeta.code)}" loading="lazy" decoding="async" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span class="node-group-country-flag-fallback">${countryMeta.flag || escapeHtml(countryMeta.code)}</span></span>`
+          ? `<span class="node-group-country-flag" title="${escapeHtml(countryMeta.code)}"><img class="node-group-country-flag-img" src="/vendor/flags/24x18/${countryMeta.code.toLowerCase()}.png" alt="${escapeHtml(countryMeta.code)}" loading="lazy" decoding="async" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span class="node-group-country-flag-fallback">${countryMeta.flag || escapeHtml(countryMeta.code)}</span></span>`
           : '<span class="node-group-country-flag"><span class="node-group-country-flag-fallback" style="display:inline-flex;">🌐</span></span>';
 
     return `
