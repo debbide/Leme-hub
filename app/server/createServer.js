@@ -35,10 +35,11 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
   // The bundled UI is same-origin only; lock down framing/script sources.
-  // index.html loads three pinned third-party assets, so they are allowlisted
-  // explicitly instead of weakening script-src: phosphor icons (unpkg),
-  // SortableJS (jsdelivr) and Inter/JetBrains Mono webfonts (googleapis).
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+  // index.html loads two pinned third-party assets, so they are allowlisted
+  // explicitly instead of weakening script-src: SortableJS (jsdelivr) and
+  // Inter/JetBrains Mono webfonts (googleapis). Dashboard icons are vendored
+  // locally under /vendor/phosphor and need no CDN allowlist entry.
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
 };
 
 const readJsonBody = async (request) => {
