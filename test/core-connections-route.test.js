@@ -170,3 +170,44 @@ test('getActiveConnections works with legacy connectionsService without getProxi
   assert.deepEqual(result[0].resolvedChains, ['selector-active']);
   assert.equal(result[0].exitNode, 'selector-active');
 });
+
+test('getActiveConnections resolves outbound tags to node names', async () => {
+  const manager = makeManager({
+    getNodeRecords: async () => [
+      { id: '635416e', name: 'HK-01' },
+      { id: 'aabbcc', name: 'JP-02' }
+    ],
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: { host: 'example.com' }, chains: ['selector-active'] },
+        { id: 'c2', metadata: { host: 'example.org' }, chains: ['direct'] }
+      ],
+      getProxies: async () => ({
+        'selector-active': { name: 'selector-active', type: 'Selector', now: 'out-635416e' }
+      })
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.deepEqual(result[0].resolvedChains, ['selector-active', 'HK-01']);
+  assert.equal(result[0].exitNode, 'HK-01');
+  assert.equal(result[0].exitNodeTag, 'out-635416e');
+  // Non-node outbounds keep their raw tag and get no exitNodeTag.
+  assert.equal(result[1].exitNode, 'direct');
+  assert.equal(result[1].exitNodeTag, null);
+});
+
+test('getActiveConnections keeps raw tags when node lookup is unavailable', async () => {
+  const manager = makeManager({
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: {}, chains: ['out-635416e'] }
+      ],
+      getProxies: async () => ({})
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.equal(result[0].exitNode, 'out-635416e');
+  assert.equal(result[0].exitNodeTag, null);
+});

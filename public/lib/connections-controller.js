@@ -52,12 +52,15 @@ export const buildConnectionDetailHtml = (connection) => {
     ? `${connection.host || connection.sourceIP || '--'}:${connection.destinationPort}`
     : (connection.host || '--');
   const chains = (connection.resolvedChains || connection.chains || []).filter(Boolean);
+  const exitNodeLabel = connection.exitNode
+    ? (connection.exitNodeTag ? `${connection.exitNode} (${connection.exitNodeTag})` : connection.exitNode)
+    : (chains[chains.length - 1] || '--');
   const source = [connection.sourceIP, connection.sourcePort].filter((v) => v !== null && v !== undefined && v !== '').join(':');
   const network = [connection.network, connection.type].filter(Boolean).join(' / ');
   const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ');
   return `<div class="connection-detail-rows">
     ${detailRow('目标', target)}
-    ${detailRow('出口节点', connection.exitNode || chains[chains.length - 1] || '--')}
+    ${detailRow('出口节点', exitNodeLabel)}
     ${detailRow('完整链路', chains.length ? chains.join(' → ') : '--')}
     ${detailRow('进程', connection.process || '--')}
     ${detailRow('来源', source || '--')}

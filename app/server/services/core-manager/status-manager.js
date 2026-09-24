@@ -261,6 +261,36 @@ export const getRoutingHits = async (manager) => {
   return [...liveHits, ...history].slice(0, ROUTING_HIT_READ_LIMIT);
 };
 
+// Outbound tags are generated as `out-${node.id}` (see app/proxy/outbound-builder.js).
+// Resolve them back to human-readable node names so the UI never shows a bare
+// tag like "out-635416e". Best-effort: failures keep raw tags.
+const OUTBOUND_TAG_PREFIX = 'out-';
+
+const buildOutboundNameMap = async (manager) => {
+  const map = new Map();
+  try {
+    let nodes = [];
+    if (manager && typeof manager.getNodeRecords === 'function') {
+      nodes = await manager.getNodeRecords({ enrichGeoIp: false });
+    } else if (manager?.store && typeof manager.store.getNodes === 'function') {
+      nodes = manager.store.getNodes();
+    }
+    for (const node of nodes || []) {
+      if (node?.id) {
+        map.set(`${OUTBOUND_TAG_PREFIX}${node.id}`, node.name || String(node.id));
+      }
+    }
+  } catch {
+    // Name resolution is best-effort; raw tags still display.
+  }
+  return map;
+};
+
+const resolveOutboundName = (tag, nameMap) => {
+  if (typeof tag !== 'string' || !tag) return tag;
+  return nameMap.get(tag) || tag;
+};
+
 // Build selector name -> currently selected node from the Clash /proxies API.
 // Tolerant: any failure just means chains stay unresolved (old behavior).
 const getSelectorNowMap = async (manager) => {
@@ -320,11 +350,15 @@ export const getActiveConnections = async (manager) => {
   }
 
   const selectorNow = await getSelectorNowMap(manager);
+  const outboundNames = await buildOutboundNameMap(manager);
 
   return connections.map((connection) => {
     const metadata = connection?.metadata || {};
     const chains = Array.isArray(connection?.chains) ? connection.chains.filter(Boolean) : [];
-    const resolvedChains = expandSelectorChains(chains, selectorNow);
+    const rawResolved = expandSelectorChains(chains, selectorNow);
+    const resolvedChains = rawResolved.map((tag) => resolveOutboundName(tag, outboundNames));
+    const exitTag = rawResolved[rawResolved.length - 1] || null;
+    const exitNode = exitTag ? resolveOutboundName(exitTag, outboundNames) : null;
     return {
       id: connection?.id || null,
       host: metadata.host || metadata.destinationIP || metadata.destination || '',
@@ -336,7 +370,8 @@ export const getActiveConnections = async (manager) => {
       sourcePort: metadata.sourcePort || null,
       chains,
       resolvedChains,
-      exitNode: resolvedChains[resolvedChains.length - 1] || null,
+      exitNode,
+      exitNodeTag: exitTag && exitNode && exitTag !== exitNode ? exitTag : null,
       rule: connection?.rule || null,
       rulePayload: connection?.rulePayload || null,
       uploadBytes: pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']),

@@ -69,3 +69,18 @@ test('buildConnectionDetailHtml tolerates sparse connections', () => {
   const html = buildConnectionDetailHtml({ id: 'x' });
   assert.ok(html.includes('--'), 'missing fields should render as --');
 });
+
+test('buildConnectionDetailHtml shows node name with raw tag', () => {
+  const html = buildConnectionDetailHtml({
+    ...fullConnection(),
+    exitNode: 'HK-01',
+    exitNodeTag: 'out-635416e'
+  });
+  assert.ok(html.includes('HK-01 (out-635416e)'), 'should show name plus raw tag');
+});
+
+test('buildConnectionDetailHtml shows plain exit node without a tag', () => {
+  const html = buildConnectionDetailHtml({ ...fullConnection(), exitNodeTag: null });
+  assert.ok(html.includes('HK-01'), 'should show the exit node');
+  assert.ok(!html.includes('(out-'), 'should not append a tag');
+});
