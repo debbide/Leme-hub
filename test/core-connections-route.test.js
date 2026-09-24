@@ -95,7 +95,7 @@ test('GET /api/core/connections returns ok:false envelope on failure', async () 
 });
 
 test('getActiveConnections resolves selector chains to the real exit node', async () => {
-  const { expandSelectorChains } = await import('../app/server/services/core-manager/status-manager.js');
+  const { resolveConnectionChain } = await import('../app/server/services/core-manager/status-manager.js');
   const manager = makeManager({
     connectionsService: {
       getConnections: async () => [
@@ -115,7 +115,32 @@ test('getActiveConnections resolves selector chains to the real exit node', asyn
   assert.equal(result[0].exitNode, 'HK-01');
   assert.deepEqual(result[1].resolvedChains, ['direct']);
   assert.equal(result[1].exitNode, 'direct');
-  assert.deepEqual(expandSelectorChains([], new Map()), []);
+  assert.deepEqual(resolveConnectionChain([], new Map()), { flowTags: [], exitTag: null });
+});
+
+test('getActiveConnections treats chains[0] as the final exit (sing-box reports reversed chains)', async () => {
+  const manager = makeManager({
+    getNodeRecords: async () => [{ id: 'node1', name: 'SG-Oracle' }],
+    connectionsService: {
+      getConnections: async () => [
+        // sing-box: [finalOutbound, ...groups] — final is already there.
+        { id: 'c1', metadata: { host: 'www.nodeloc.com' }, chains: ['out-node1', 'selector-active'] },
+        // Leaf that is not a node tag stays as-is.
+        { id: 'c2', metadata: { host: 'example.com' }, chains: ['SG-Oracle', 'selector-active'] }
+      ],
+      getProxies: async () => ({
+        'selector-active': { name: 'selector-active', type: 'Selector', now: 'out-node1' }
+      })
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  // Flow order for display: entry -> exit.
+  assert.deepEqual(result[0].resolvedChains, ['selector-active', 'SG-Oracle']);
+  assert.equal(result[0].exitNode, 'SG-Oracle');
+  assert.equal(result[0].exitNodeTag, 'out-node1');
+  assert.deepEqual(result[1].resolvedChains, ['selector-active', 'SG-Oracle']);
+  assert.equal(result[1].exitNode, 'SG-Oracle');
 });
 
 test('getActiveConnections follows nested selectors and stops on cycles', async () => {

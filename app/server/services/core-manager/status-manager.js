@@ -319,21 +319,41 @@ const getSelectorNowMap = async (manager) => {
   return map;
 };
 
-// Follow selector hops (selector-active -> HK-01) so the UI can show the real
-// exit node. Guards against cycles and caps depth; never throws.
-export const expandSelectorChains = (chains = [], selectorNow = new Map()) => {
-  const resolved = [...chains].filter(Boolean);
-  const seen = new Set(resolved);
-  for (let depth = 0; depth < 8; depth++) {
-    const last = resolved[resolved.length - 1];
-    const next = typeof last === 'string' ? selectorNow.get(last) : undefined;
-    if (!next || seen.has(next)) {
-      break;
-    }
-    seen.add(next);
-    resolved.push(next);
+// sing-box reports connection chains REVERSED (see
+// common/trafficcontrol/tracker.go: the dial-order OutboundChain is reversed
+// before marshalling). So chains[0] is the final outbound that actually
+// dialled, and chains[last] is the outbound the routing rule named.
+// Returns the chain in flow order (entry -> ... -> exit) plus the exit tag.
+// The /proxies selector map is only a fallback for when the leaf itself is a
+// selector whose selected node never made it into the chain.
+export const resolveConnectionChain = (chains = [], selectorNow = new Map()) => {
+  const raw = [...chains].filter(Boolean);
+  if (!raw.length) {
+    return { flowTags: [], exitTag: null };
   }
-  return resolved;
+  let exitTag = raw[0];
+  const extraHops = [];
+  if (selectorNow.has(exitTag)) {
+    const seen = new Set(raw);
+    let current = exitTag;
+    for (let depth = 0; depth < 8; depth++) {
+      const next = selectorNow.get(current);
+      if (typeof next !== 'string' || !next || seen.has(next)) {
+        break;
+      }
+      seen.add(next);
+      extraHops.push(next);
+      current = next;
+    }
+    if (extraHops.length) {
+      exitTag = extraHops[extraHops.length - 1];
+    }
+  }
+  const flowTags = [...raw].reverse();
+  for (const hop of extraHops) {
+    flowTags.push(hop);
+  }
+  return { flowTags, exitTag };
 };
 
 export const getActiveConnections = async (manager) => {
@@ -355,9 +375,8 @@ export const getActiveConnections = async (manager) => {
   return connections.map((connection) => {
     const metadata = connection?.metadata || {};
     const chains = Array.isArray(connection?.chains) ? connection.chains.filter(Boolean) : [];
-    const rawResolved = expandSelectorChains(chains, selectorNow);
-    const resolvedChains = rawResolved.map((tag) => resolveOutboundName(tag, outboundNames));
-    const exitTag = rawResolved[rawResolved.length - 1] || null;
+    const { flowTags, exitTag } = resolveConnectionChain(chains, selectorNow);
+    const resolvedChains = flowTags.map((tag) => resolveOutboundName(tag, outboundNames));
     const exitNode = exitTag ? resolveOutboundName(exitTag, outboundNames) : null;
     return {
       id: connection?.id || null,
