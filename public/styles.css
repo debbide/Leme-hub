@@ -1225,6 +1225,11 @@ tr.active-row {
 .latency.error { color: #ef4444; }
 .latency.testing { color: #93c5fd; }
 
+/* Latency column: right-aligned tabular numerals. */
+#sort-latency-th,
+.node-latency-cell { text-align: right; }
+.node-latency-cell .latency { font-variant-numeric: tabular-nums; }
+
 .node-row-float-btn {
   position: absolute;
   right: 0.95rem;
@@ -3033,12 +3038,16 @@ input[type="checkbox"] {
   box-shadow: var(--focus-ring);
 }
 
-/* CYBER NEON TOGGLE */
+/* Clean pill toggle (converged from the old neon-purple cyber switch so all
+   toggles share one visual language; the dashboard power switch stays the
+   single hero element). */
 .cyber-switch {
   position: relative;
   display: inline-block;
   width: 52px;
   height: 28px;
+  cursor: pointer;
+  user-select: none;
 }
 
 .cyber-switch input {
@@ -3047,40 +3056,43 @@ input[type="checkbox"] {
   height: 0;
 }
 
-.cyber-slider {
+.cyber-switch .cyber-slider {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: var(--bg-main);
-  border: 1px solid var(--border-strong);
-  transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
-  border-radius: 4px; /* More hardware look than pill */
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(2, 6, 23, 0.55);
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
-.cyber-slider:before {
+.cyber-switch .cyber-slider:before {
   position: absolute;
   content: "";
   height: 20px;
   width: 20px;
   left: 3px;
   bottom: 3px;
-  background: linear-gradient(135deg, #e0e0e0 0%, #888 100%);
-  transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
-  border-radius: 2px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  background: rgba(203, 213, 225, 0.9);
+  border-radius: 999px;
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
-input:checked + .cyber-slider {
-  background-color: rgba(168, 85, 247, 0.1);
-  border-color: #a855f7;
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4), inset 0 1px 2px rgba(0,0,0,0.5);
+.cyber-switch input:checked + .cyber-slider {
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.2);
 }
 
-input:checked + .cyber-slider:before {
+.cyber-switch input:checked + .cyber-slider:before {
   transform: translateX(24px);
-  background: linear-gradient(135deg, #fff 0%, #a855f7 100%);
-  box-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
+  background: #34d399;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.42);
+}
+
+.cyber-switch input:focus-visible + .cyber-slider {
+  outline: 2px solid var(--accent-base);
+  outline-offset: 2px;
 }
 
 input:focus + .cyber-slider {
@@ -5841,6 +5853,14 @@ input:checked + .cyber-slider:before {
 .connections-table td.cell-exit-proxy::before { background: var(--accent-base); }
 .connections-table td.cell-exit-direct::before { background: var(--text-muted); }
 .connections-table td.cell-exit-block::before { background: #ef4444; }
+/* Numeric columns: right-aligned tabular numerals for fast scanning. */
+.connections-table th:nth-child(6),
+.connections-table th:nth-child(7),
+.connections-table td:nth-child(6),
+.connections-table td:nth-child(7) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .connection-detail-modal { max-width: 520px; }
 .connection-detail-rows { display: flex; flex-direction: column; }
 .connection-detail-row {
