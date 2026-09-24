@@ -93,3 +93,80 @@ test('GET /api/core/connections returns ok:false envelope on failure', async () 
   assert.equal(response.body.error, 'boom');
   assert.deepEqual(response.body.connections, []);
 });
+
+test('getActiveConnections resolves selector chains to the real exit node', async () => {
+  const { expandSelectorChains } = await import('../app/server/services/core-manager/status-manager.js');
+  const manager = makeManager({
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: { host: 'www.youtube.com', destinationPort: 443 }, chains: ['selector-active'] },
+        { id: 'c2', metadata: { host: 'example.com' }, chains: ['direct'] }
+      ],
+      getProxies: async () => ({
+        'selector-active': { name: 'selector-active', type: 'Selector', now: 'HK-01' },
+        direct: { name: 'direct', type: 'Direct' }
+      })
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.deepEqual(result[0].chains, ['selector-active']);
+  assert.deepEqual(result[0].resolvedChains, ['selector-active', 'HK-01']);
+  assert.equal(result[0].exitNode, 'HK-01');
+  assert.deepEqual(result[1].resolvedChains, ['direct']);
+  assert.equal(result[1].exitNode, 'direct');
+  assert.deepEqual(expandSelectorChains([], new Map()), []);
+});
+
+test('getActiveConnections follows nested selectors and stops on cycles', async () => {
+  const manager = makeManager({
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: {}, chains: ['sel-a'] },
+        { id: 'c2', metadata: {}, chains: ['sel-x'] }
+      ],
+      getProxies: async () => ({
+        'sel-a': { name: 'sel-a', type: 'Selector', now: 'sel-b' },
+        'sel-b': { name: 'sel-b', type: 'Selector', now: 'SG-02' },
+        'sel-x': { name: 'sel-x', type: 'Selector', now: 'sel-y' },
+        'sel-y': { name: 'sel-y', type: 'Selector', now: 'sel-x' }
+      })
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.deepEqual(result[0].resolvedChains, ['sel-a', 'sel-b', 'SG-02']);
+  assert.equal(result[0].exitNode, 'SG-02');
+  // Cycle: sel-x -> sel-y -> sel-x stops instead of looping forever.
+  assert.deepEqual(result[1].resolvedChains, ['sel-x', 'sel-y']);
+  assert.equal(result[1].exitNode, 'sel-y');
+});
+
+test('getActiveConnections keeps raw chains when /proxies is unavailable', async () => {
+  const manager = makeManager({
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: {}, chains: ['selector-active'] }
+      ],
+      getProxies: async () => { throw new Error('not found'); }
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.deepEqual(result[0].resolvedChains, ['selector-active']);
+  assert.equal(result[0].exitNode, 'selector-active');
+});
+
+test('getActiveConnections works with legacy connectionsService without getProxies', async () => {
+  const manager = makeManager({
+    connectionsService: {
+      getConnections: async () => [
+        { id: 'c1', metadata: {}, chains: ['selector-active'] }
+      ]
+    }
+  });
+
+  const result = await getActiveConnections(manager);
+  assert.deepEqual(result[0].resolvedChains, ['selector-active']);
+  assert.equal(result[0].exitNode, 'selector-active');
+});

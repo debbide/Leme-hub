@@ -261,6 +261,51 @@ export const getRoutingHits = async (manager) => {
   return [...liveHits, ...history].slice(0, ROUTING_HIT_READ_LIMIT);
 };
 
+// Build selector name -> currently selected node from the Clash /proxies API.
+// Tolerant: any failure just means chains stay unresolved (old behavior).
+const getSelectorNowMap = async (manager) => {
+  const service = manager?.connectionsService;
+  if (!service || typeof service.getProxies !== 'function') {
+    return new Map();
+  }
+
+  let proxies = null;
+  try {
+    proxies = await service.getProxies();
+  } catch {
+    return new Map();
+  }
+
+  const map = new Map();
+  const entries = proxies && typeof proxies === 'object' ? Object.values(proxies) : [];
+  for (const proxy of entries) {
+    if (proxy?.type === 'Selector'
+      && typeof proxy?.name === 'string' && proxy.name
+      && typeof proxy?.now === 'string' && proxy.now
+      && proxy.now !== proxy.name) {
+      map.set(proxy.name, proxy.now);
+    }
+  }
+  return map;
+};
+
+// Follow selector hops (selector-active -> HK-01) so the UI can show the real
+// exit node. Guards against cycles and caps depth; never throws.
+export const expandSelectorChains = (chains = [], selectorNow = new Map()) => {
+  const resolved = [...chains].filter(Boolean);
+  const seen = new Set(resolved);
+  for (let depth = 0; depth < 8; depth++) {
+    const last = resolved[resolved.length - 1];
+    const next = typeof last === 'string' ? selectorNow.get(last) : undefined;
+    if (!next || seen.has(next)) {
+      break;
+    }
+    seen.add(next);
+    resolved.push(next);
+  }
+  return resolved;
+};
+
 export const getActiveConnections = async (manager) => {
   if (manager.state.status !== 'running') {
     return [];
@@ -274,8 +319,12 @@ export const getActiveConnections = async (manager) => {
     return [];
   }
 
+  const selectorNow = await getSelectorNowMap(manager);
+
   return connections.map((connection) => {
     const metadata = connection?.metadata || {};
+    const chains = Array.isArray(connection?.chains) ? connection.chains.filter(Boolean) : [];
+    const resolvedChains = expandSelectorChains(chains, selectorNow);
     return {
       id: connection?.id || null,
       host: metadata.host || metadata.destinationIP || metadata.destination || '',
@@ -285,7 +334,9 @@ export const getActiveConnections = async (manager) => {
       process: metadata.process || metadata.processPath || null,
       sourceIP: metadata.sourceIP || null,
       sourcePort: metadata.sourcePort || null,
-      chains: Array.isArray(connection?.chains) ? connection.chains : [],
+      chains,
+      resolvedChains,
+      exitNode: resolvedChains[resolvedChains.length - 1] || null,
       rule: connection?.rule || null,
       rulePayload: connection?.rulePayload || null,
       uploadBytes: pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']),

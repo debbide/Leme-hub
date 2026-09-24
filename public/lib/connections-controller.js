@@ -54,7 +54,8 @@ export const createConnectionsController = () => {
       connection.sourceIP,
       connection.rule,
       connection.rulePayload,
-      ...(connection.chains || [])
+      connection.exitNode,
+      ...((connection.resolvedChains || connection.chains) || [])
     ].filter(Boolean).join(' ').toLowerCase();
     return haystack.includes(searchKeyword);
   };
@@ -80,8 +81,8 @@ export const createConnectionsController = () => {
       const target = connection.destinationPort
         ? `${connection.host || connection.sourceIP || '--'}:${connection.destinationPort}`
         : (connection.host || '--');
-      const chains = (connection.chains || []).filter(Boolean);
-      const outbound = chains[chains.length - 1] || '--';
+      const chains = (connection.resolvedChains || connection.chains || []).filter(Boolean);
+      const outbound = connection.exitNode || chains[chains.length - 1] || '--';
       const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ') || '--';
       return `<tr>
         <td title="${escapeHtml(connection.host || '')}">${escapeHtml(target)}</td>

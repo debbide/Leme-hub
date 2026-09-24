@@ -27,6 +27,23 @@ export class ConnectionsService {
     return [];
   }
 
+  // Clash API /proxies reports every outbound; selectors carry a `now`
+  // field with the currently selected node. Used to resolve a connection's
+  // chain (e.g. ["selector-active"]) down to the real exit node.
+  async getProxies() {
+    const response = await axios.get(`${this.baseUrl}/proxies`, {
+      timeout: 5000,
+      headers: this.getHeaders()
+    });
+
+    if (response.data && typeof response.data === 'object') {
+      return response.data.proxies && typeof response.data.proxies === 'object'
+        ? response.data.proxies
+        : {};
+    }
+    return {};
+  }
+
   async closeAllConnections() {
     const response = await axios.delete(`${this.baseUrl}/connections`, {
       timeout: 1500,
