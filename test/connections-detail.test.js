@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildConnectionDetailHtml } from '../public/lib/connections-controller.js';
+import { buildConnectionDetailHtml, getExitNodeClass } from '../public/lib/connections-controller.js';
 
 const fullConnection = () => ({
   id: 'conn-1',
@@ -83,4 +83,17 @@ test('buildConnectionDetailHtml shows plain exit node without a tag', () => {
   const html = buildConnectionDetailHtml({ ...fullConnection(), exitNodeTag: null });
   assert.ok(html.includes('HK-01'), 'should show the exit node');
   assert.ok(!html.includes('(out-'), 'should not append a tag');
+});
+
+test('getExitNodeClass colors exit nodes by semantics', () => {
+  assert.equal(getExitNodeClass('HK-01'), 'cell-exit-proxy');
+  assert.equal(getExitNodeClass('SG-Oracle'), 'cell-exit-proxy');
+  assert.equal(getExitNodeClass('selector-active'), 'cell-exit-proxy');
+  assert.equal(getExitNodeClass('direct'), 'cell-exit-direct');
+  assert.equal(getExitNodeClass('DIRECT'), 'cell-exit-direct');
+  assert.equal(getExitNodeClass('block'), 'cell-exit-block');
+  assert.equal(getExitNodeClass('reject-drop'), 'cell-exit-block');
+  assert.equal(getExitNodeClass(''), '');
+  assert.equal(getExitNodeClass(null), '');
+  assert.equal(getExitNodeClass(undefined), '');
 });

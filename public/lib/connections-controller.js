@@ -43,6 +43,16 @@ const detailRow = (label, value) => `
     <span class="connection-detail-value">${escapeHtml(value)}</span>
   </div>`;
 
+// Semantic color class for the exit-node cell: blue for proxied nodes,
+// gray for direct, red for blocked. Exported for tests.
+export const getExitNodeClass = (exitNode) => {
+  const tag = String(exitNode || '').toLowerCase();
+  if (!tag) return '';
+  if (tag === 'direct') return 'cell-exit-direct';
+  if (/block|reject/.test(tag)) return 'cell-exit-block';
+  return 'cell-exit-proxy';
+};
+
 // Pure: builds the connection detail panel HTML. Exported for tests.
 export const buildConnectionDetailHtml = (connection) => {
   if (!connection) {
@@ -163,15 +173,16 @@ export const createConnectionsController = () => {
       const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ') || '--';
       const key = connectionKey(connection, connections.indexOf(connection));
       connectionByKey.set(key, connection);
+      const exitClass = getExitNodeClass(connection.exitNode);
       return `<tr data-connection-key="${escapeHtml(key)}" tabindex="0" title="点击查看连接详情">
         <td title="${escapeHtml(connection.host || '')}">${escapeHtml(target)}</td>
-        <td>${escapeHtml(connection.process || '--')}</td>
-        <td>${escapeHtml([connection.network, connection.type].filter(Boolean).join(' / ') || '--')}</td>
-        <td title="${escapeHtml(chains.join(' → '))}">${escapeHtml(outbound)}</td>
-        <td>${escapeHtml(rule)}</td>
+        <td class="cell-muted">${escapeHtml(connection.process || '--')}</td>
+        <td class="cell-muted">${escapeHtml([connection.network, connection.type].filter(Boolean).join(' / ') || '--')}</td>
+        <td${exitClass ? ` class="${exitClass}"` : ''} title="${escapeHtml(chains.join(' → '))}">${escapeHtml(outbound)}</td>
+        <td class="cell-muted">${escapeHtml(rule)}</td>
         <td>${escapeHtml(formatBytes(connection.uploadBytes))}</td>
         <td>${escapeHtml(formatBytes(connection.downloadBytes))}</td>
-        <td>${escapeHtml(formatTime(connection.startedAt))}</td>
+        <td class="cell-muted">${escapeHtml(formatTime(connection.startedAt))}</td>
       </tr>`;
     }).join('');
     refreshConnectionDetail();
