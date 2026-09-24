@@ -5894,7 +5894,7 @@ input:checked + .cyber-slider:before {
 }
 .connection-detail-row:last-child { border-bottom: none; }
 .connection-detail-label { color: var(--text-muted); flex-shrink: 0; }
-.connection-detail-value { color: var(--text-main); text-align: right; word-break: break-all; }
+.connection-detail-value { color: var(--text-main); text-align: right; overflow-wrap: break-word; }
 /* Headline row (full chain): lead with weight, no extra color. */
 .connection-detail-row.is-headline .connection-detail-value { font-weight: 600; }
 .connection-detail-empty { color: var(--text-muted); text-align: center; padding: 1rem 0; }
