@@ -308,7 +308,15 @@
 
             <div id="nodes-state" class="state-container">
               <p id="nodes-loading" class="state-msg">正在加载节点...</p>
-              <p id="nodes-empty" class="state-msg hidden">暂无节点。请导入链接或同步订阅。</p>
+              <div id="nodes-empty" class="hidden">
+                <p class="state-msg">暂无节点</p>
+                <p class="state-hint">导入链接、手动添加或同步订阅来开始使用。</p>
+                <div class="state-actions">
+                  <button type="button" class="btn-primary" data-empty-action="show-import"><i class="ph ph-link"></i><span>导入链接</span></button>
+                  <button type="button" class="btn-outline" data-empty-action="manual-add"><i class="ph ph-plus"></i><span>添加节点</span></button>
+                  <button type="button" class="btn-outline" data-empty-action="show-sync"><i class="ph ph-cloud-arrow-down"></i><span>同步订阅</span></button>
+                </div>
+              </div>
               <p id="nodes-group-empty" class="state-msg hidden">此分组暂无节点，导入或编辑节点时选择该分组即可归入。</p>
               <p id="nodes-search-empty" class="state-msg hidden">没有匹配的节点。</p>
               <p id="nodes-error" class="state-msg error hidden"></p>
@@ -392,7 +400,8 @@
                 <p class="state-msg error"></p>
               </div>
               <div id="routing-empty" class="state-container hidden">
-                <p class="state-msg">规则列表为空。</p>
+                <p class="state-msg">还没有分流规则</p>
+                <p class="state-hint">在上方添加第一条规则，流量将按规则自动分流。</p>
               </div>
               <div id="routing-rules" class="routing-rules hidden"></div>
             </div>
@@ -531,7 +540,10 @@
                 <tbody id="connections-tbody">
                 </tbody>
               </table>
-              <div id="connections-empty" class="routing-log-empty hidden">暂无活动连接（核心未运行或暂无流量）</div>
+              <div id="connections-empty" class="state-container hidden">
+                <p class="state-msg">暂无活动连接</p>
+                <p class="state-hint">核心未运行，或暂时没有流量经过代理。</p>
+              </div>
               <div id="connections-error" class="routing-log-empty hidden"></div>
             </div>
           </div>

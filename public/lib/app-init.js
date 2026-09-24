@@ -51,6 +51,13 @@ export const bindAppMiscEvents = ({
     await requestJson('/api/node-groups', { method: 'POST', body: JSON.stringify(payload) });
     await loadNodeGroups();
   });
+
+  // Empty-state shortcut buttons forward to the real toolbar buttons.
+  document.addEventListener('click', (event) => {
+    const actionBtn = event.target.closest('[data-empty-action]');
+    if (!actionBtn) return;
+    document.getElementById(actionBtn.dataset.emptyAction)?.click();
+  });
 };
 
 const getDesktopWindowBridge = () => {

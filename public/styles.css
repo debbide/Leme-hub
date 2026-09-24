@@ -25,6 +25,7 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xs: 4px;
   --control-height: 38px;
 
   --pill-bg: #334155;
@@ -121,7 +122,7 @@ textarea:focus-visible,
 }
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
@@ -627,6 +628,7 @@ body.desktop-shell .titlebar-controls {
   font-size: 0.95rem;
   color: #a5b4fc;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .speed-sparkline {
@@ -642,7 +644,7 @@ body.desktop-shell .titlebar-controls {
 
 .speed-sparkline span {
   flex: 1;
-  border-radius: 4px 4px 2px 2px;
+  border-radius: var(--radius-xs) var(--radius-xs) 2px 2px;
   background: linear-gradient(180deg, rgba(167, 139, 250, 0.95) 0%, rgba(59, 130, 246, 0.6) 65%, rgba(59, 130, 246, 0.15) 100%);
   min-height: 14%;
   animation: speed-pulse 1.8s ease-in-out infinite;
@@ -668,6 +670,7 @@ body.desktop-shell .titlebar-controls {
   font-weight: 600;
   font-size: 1.22rem;
   color: var(--accent-green);
+  font-variant-numeric: tabular-nums;
 }
 
 .dash-node-select {
@@ -1201,7 +1204,7 @@ tr.active-row {
 .pill {
   display: inline-block;
   padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -1336,7 +1339,7 @@ tr.active-row {
   gap: 0.5rem;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-secondary);
   font-size: 0.8125rem;
   text-align: left;
@@ -1404,7 +1407,7 @@ button.node-menu-item:disabled:hover {
   padding: 0.45rem 0.875rem;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-muted);
   font-size: 0.8125rem;
   text-align: left;
@@ -1512,7 +1515,7 @@ input[type="checkbox"] {
   min-width: 4.75rem;
   padding: 0.32rem 0.55rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-muted);
   font-size: 0.75rem;
   text-align: center;
@@ -1780,7 +1783,7 @@ input[type="checkbox"] {
   justify-content: center;
   font-size: 0.95rem;
   background: rgba(15, 23, 42, 0.55);
-  color: #f8fafc;
+  color: var(--text-main);
 }
 
 .node-group-health-row {
@@ -2253,7 +2256,7 @@ input[type="checkbox"] {
 }
 
 .routing-runtime-pill-tag {
-  color: #f8fafc;
+  color: var(--text-main);
   font-weight: 600;
 }
 
@@ -2719,7 +2722,7 @@ input[type="checkbox"] {
 .routing-log-highlight {
   background: rgba(245, 158, 11, 0.18);
   color: #fcd34d;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 0.15rem;
 }
 
@@ -3165,6 +3168,20 @@ input:focus + .cyber-slider {
   border-color: rgba(16, 185, 129, 0.26);
   background: rgba(16, 185, 129, 0.08);
 }
+.state-hint {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  max-width: 540px;
+  margin: 0.75rem auto 0;
+}
+.state-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+}
 
 /* TOASTS & MODAL */
 .toast-container {
@@ -3366,7 +3383,7 @@ input:focus + .cyber-slider {
 .group-delete-btn {
   background: transparent;
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-muted);
   font-size: 0.7rem;
   padding: 0.1rem 0.5rem;
@@ -3717,7 +3734,7 @@ input:focus + .cyber-slider {
   font-size: 0.78rem;
   cursor: pointer;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 .group-tab-action-btn:hover { color: var(--text-main); background: var(--bg-card-hover); }
 .group-tab-add {
@@ -3731,7 +3748,7 @@ input:focus + .cyber-slider {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
 }
 .group-tab-add:hover { color: var(--text-main); background: var(--bg-card-hover); }
@@ -3859,7 +3876,7 @@ input:focus + .cyber-slider {
   color: var(--text-muted);
   font-size: 0.75rem;
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   outline: none;
   max-width: 90px;
@@ -3991,7 +4008,7 @@ input:focus + .cyber-slider {
   color: var(--accent-green);
   background: rgba(16, 185, 129, 0.1);
   padding: 0.15rem 0.4rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   font-size: 0.75rem;
 }
 
@@ -4034,7 +4051,7 @@ input:focus + .cyber-slider {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border-strong);
   padding: 0.15rem 0.4rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .routing-hit-host-more {
@@ -4510,7 +4527,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 .dashboard-mini-stat:first-child strong {
-  color: #f8fafc;
+  color: var(--text-main);
 }
 
 .dashboard-control-grid {
@@ -4527,7 +4544,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
 }
 
 .dashboard-panel-head h3 {
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: 1.02rem;
 }
 
@@ -4676,7 +4693,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
 .dashboard-feedback-badge strong {
   grid-area: value;
   min-width: 0;
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: 0.86rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5836,6 +5853,9 @@ input:checked + .cyber-slider:before {
 .connections-table tbody tr { cursor: pointer; }
 .connections-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 .connections-table tbody tr:focus-visible { outline: 2px solid var(--accent-base); outline-offset: -2px; }
+/* Selected row (detail open): tinted background + accent bar on the first cell. */
+.connections-table tbody tr.is-selected td { background: rgba(59, 130, 246, 0.08); }
+.connections-table tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent-base); }
 /* Cell hierarchy: secondary columns dimmed; exit-node semantics as a status dot. */
 .connections-table td.cell-muted { color: var(--text-muted); }
 /* Exit-node semantics shown as a status dot; cell text keeps the normal hierarchy. */
@@ -5875,4 +5895,6 @@ input:checked + .cyber-slider:before {
 .connection-detail-row:last-child { border-bottom: none; }
 .connection-detail-label { color: var(--text-muted); flex-shrink: 0; }
 .connection-detail-value { color: var(--text-main); text-align: right; word-break: break-all; }
+/* Headline row (full chain): lead with weight, no extra color. */
+.connection-detail-row.is-headline .connection-detail-value { font-weight: 600; }
 .connection-detail-empty { color: var(--text-muted); text-align: center; padding: 1rem 0; }

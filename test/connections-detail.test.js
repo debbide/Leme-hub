@@ -97,3 +97,9 @@ test('getExitNodeClass colors exit nodes by semantics', () => {
   assert.equal(getExitNodeClass(null), '');
   assert.equal(getExitNodeClass(undefined), '');
 });
+
+test('buildConnectionDetailHtml leads with the full chain', () => {
+  const html = buildConnectionDetailHtml(fullConnection());
+  assert.ok(html.indexOf('完整链路') < html.indexOf('目标'), 'chain row should come before target');
+  assert.ok(html.includes('connection-detail-row is-headline'), 'chain row should carry the headline class');
+});

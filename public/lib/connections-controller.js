@@ -37,8 +37,8 @@ const formatDuration = (iso) => {
   return `${s}秒`;
 };
 
-const detailRow = (label, value) => `
-  <div class="connection-detail-row">
+const detailRow = (label, value, cls = '') => `
+  <div class="connection-detail-row${cls ? ` ${cls}` : ''}">
     <span class="connection-detail-label">${escapeHtml(label)}</span>
     <span class="connection-detail-value">${escapeHtml(value)}</span>
   </div>`;
@@ -69,13 +69,13 @@ export const buildConnectionDetailHtml = (connection) => {
   const network = [connection.network, connection.type].filter(Boolean).join(' / ');
   const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ');
   return `<div class="connection-detail-rows">
-    ${detailRow('目标', target)}
+    ${detailRow('完整链路', chains.length ? chains.join(' → ') : '--', 'is-headline')}
     ${detailRow('出口节点', exitNodeLabel)}
-    ${detailRow('完整链路', chains.length ? chains.join(' → ') : '--')}
+    ${detailRow('目标', target)}
     ${detailRow('进程', connection.process || '--')}
+    ${detailRow('匹配规则', rule || '--')}
     ${detailRow('来源', source || '--')}
     ${detailRow('网络', network || '--')}
-    ${detailRow('匹配规则', rule || '--')}
     ${detailRow('上传', formatBytes(connection.uploadBytes))}
     ${detailRow('下载', formatBytes(connection.downloadBytes))}
     ${detailRow('开始时间', formatTime(connection.startedAt))}
@@ -109,15 +109,24 @@ export const createConnectionsController = () => {
 
   const isDetailOpen = () => detailConnectionKey !== null;
 
+  const syncSelectedRow = () => {
+    if (!tbody) return;
+    tbody.querySelectorAll('tr[data-connection-key]').forEach((row) => {
+      row.classList.toggle('is-selected', row.dataset.connectionKey === detailConnectionKey);
+    });
+  };
+
   const openConnectionDetail = (key) => {
     detailConnectionKey = key;
     refreshConnectionDetail();
+    syncSelectedRow();
     if (detailOverlay) detailOverlay.classList.add('active');
   };
 
   const closeConnectionDetail = () => {
     detailConnectionKey = null;
     if (detailOverlay) detailOverlay.classList.remove('active');
+    syncSelectedRow();
   };
 
   const refreshConnectionDetail = () => {
@@ -161,6 +170,7 @@ export const createConnectionsController = () => {
       tbody.innerHTML = '';
       if (emptyEl) emptyEl.classList.remove('hidden');
       refreshConnectionDetail();
+      syncSelectedRow();
       return;
     }
     if (emptyEl) emptyEl.classList.add('hidden');
@@ -186,6 +196,7 @@ export const createConnectionsController = () => {
       </tr>`;
     }).join('');
     refreshConnectionDetail();
+    syncSelectedRow();
   };
 
   const loadConnections = async () => {
