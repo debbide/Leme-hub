@@ -10,6 +10,15 @@ import { Reader } from '@maxmind/geoip2-node';
 const GEOIP_DOWNLOAD_URL = 'https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz';
 const GEOIP_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const GEOIP_USER_AGENT = 'Leme-Hub/0.1';
+// Host -> IP / host -> country caches are persisted to disk so a restart
+// does not re-resolve every node hostname (DNS for foreign hosts can take
+// seconds each behind the GFW, and /api/nodes waits for all of them).
+const GEOIP_HOST_CACHE_FILE = 'geoip-host-cache.json';
+const GEOIP_HOST_CACHE_MAX_ENTRIES = 2000;
+const GEOIP_HOST_CACHE_SAVE_DEBOUNCE_MS = 1500;
+// A single poisoned/slow hostname must not hold the whole node list hostage:
+// /api/nodes awaits Promise.all(enrichNodes), so bound every lookup.
+const DNS_LOOKUP_TIMEOUT_MS = 5000;
 const PRIVATE_PATTERNS = [
   /^10\./u,
   /^127\./u,
@@ -40,6 +49,26 @@ const toFlagEmoji = (countryCode) => {
   return String.fromCodePoint(...[...normalized].map((char) => 0x1F1E6 + char.charCodeAt(0) - 65));
 };
 
+// dns.lookup has no built-in timeout: a poisoned or blackholed hostname can
+// hang for tens of seconds on the OS resolver's retries. Bound it so one bad
+// node never stalls the whole node list.
+const lookupWithTimeout = (lookupFn, timeoutMs) => new Promise((resolve) => {
+  const timer = setTimeout(() => resolve(null), timeoutMs);
+  timer.unref?.();
+  Promise.resolve()
+    .then(lookupFn)
+    .then(
+      (result) => {
+        clearTimeout(timer);
+        resolve(result?.address || null);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+});
+
 export class GeoIpService {
   constructor(paths, options = {}) {
     this.paths = paths;
@@ -48,6 +77,12 @@ export class GeoIpService {
     this.downloadPromise = null;
     this.hostCache = new Map();
     this.lookupCache = new Map();
+    this._hostCacheSaveTimer = null;
+    this.dnsLookupTimeoutMs = Number(options.dnsLookupTimeoutMs) > 0
+      ? Number(options.dnsLookupTimeoutMs)
+      : DNS_LOOKUP_TIMEOUT_MS;
+    // Injectable for tests; defaults to the OS resolver.
+    this._dnsLookup = options.dnsLookup || ((hostname) => dns.lookup(hostname, { family: 0 }));
     this.state = {
       ready: false,
       pending: false,
@@ -55,6 +90,86 @@ export class GeoIpService {
       downloadedAt: null,
       source: null
     };
+    this.loadHostCache();
+  }
+
+  getHostCachePath() {
+    const geoDir = this.paths?.geoDir;
+    if (!geoDir) {
+      return null;
+    }
+    return path.join(geoDir, GEOIP_HOST_CACHE_FILE);
+  }
+
+  loadHostCache() {
+    const cachePath = this.getHostCachePath();
+    if (!cachePath) {
+      return;
+    }
+    let raw = null;
+    try {
+      raw = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    } catch {
+      return;
+    }
+    try {
+      const hosts = raw?.hosts;
+      if (hosts && typeof hosts === 'object') {
+        for (const [hostname, ip] of Object.entries(hosts).slice(-GEOIP_HOST_CACHE_MAX_ENTRIES)) {
+          if (typeof hostname === 'string' && typeof ip === 'string') {
+            this.hostCache.set(hostname, ip);
+          }
+        }
+      }
+      const lookups = raw?.lookups;
+      if (lookups && typeof lookups === 'object') {
+        for (const [host, result] of Object.entries(lookups).slice(-GEOIP_HOST_CACHE_MAX_ENTRIES)) {
+          if (typeof host === 'string' && result && typeof result === 'object' && typeof result.countryCode === 'string') {
+            this.lookupCache.set(host, {
+              countryCode: result.countryCode,
+              countryName: typeof result.countryName === 'string' ? result.countryName : null,
+              flagEmoji: typeof result.flagEmoji === 'string' ? result.flagEmoji : null
+            });
+          }
+        }
+      }
+    } catch {
+      // Corrupt cache: fall back to cold in-memory caches.
+      this.hostCache.clear();
+      this.lookupCache.clear();
+    }
+  }
+
+  schedulePersistHostCache() {
+    const cachePath = this.getHostCachePath();
+    if (!cachePath) {
+      return;
+    }
+    if (this._hostCacheSaveTimer) {
+      clearTimeout(this._hostCacheSaveTimer);
+    }
+    this._hostCacheSaveTimer = setTimeout(() => {
+      this._hostCacheSaveTimer = null;
+      this.persistHostCache();
+    }, GEOIP_HOST_CACHE_SAVE_DEBOUNCE_MS);
+    // Never hold the process open for a cache flush (matters on app quit).
+    this._hostCacheSaveTimer.unref?.();
+  }
+
+  persistHostCache() {
+    const cachePath = this.getHostCachePath();
+    if (!cachePath) {
+      return;
+    }
+    try {
+      const hosts = Object.fromEntries([...this.hostCache.entries()].slice(-GEOIP_HOST_CACHE_MAX_ENTRIES));
+      const lookups = Object.fromEntries([...this.lookupCache.entries()].slice(-GEOIP_HOST_CACHE_MAX_ENTRIES));
+      const tmpPath = `${cachePath}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify({ hosts, lookups }));
+      fs.renameSync(tmpPath, cachePath);
+    } catch (error) {
+      this.log.warn?.(`[GeoIpService] Failed to persist host cache: ${error.message}`);
+    }
   }
 
   async initialize() {
@@ -117,6 +232,7 @@ export class GeoIpService {
     const result = this.lookupIp(ipAddress);
     if (result) {
       this.lookupCache.set(cacheKey, result);
+      this.schedulePersistHostCache();
     }
     return result;
   }
@@ -151,10 +267,10 @@ export class GeoIpService {
     }
 
     try {
-      const result = await dns.lookup(hostname, { family: 0 });
-      const address = result?.address || null;
+      const address = await lookupWithTimeout(() => this._dnsLookup(hostname), this.dnsLookupTimeoutMs);
       if (address) {
         this.hostCache.set(hostname, address);
+        this.schedulePersistHostCache();
       }
       return address;
     } catch {
