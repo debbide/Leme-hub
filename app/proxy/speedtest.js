@@ -13,6 +13,7 @@ import {
   DEFAULT_SPEEDTEST_URL
 } from '../shared/constants.js';
 import { formatHostForUrl, normalizeHost, resolveLoopbackHost } from '../shared/network.js';
+import { createTempSuffix } from '../shared/ids.js';
 
 const SPEEDTEST_CONFIG_PREFIX = 'singbox_speedtest_';
 const SPEEDTEST_REQUEST_COUNT = 2;
@@ -178,7 +179,7 @@ export const withSpeedtestRuntime = async (context, nodes, options = {}, callbac
   });
   const configPath = path.join(
     context.configDir,
-    `${SPEEDTEST_CONFIG_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
+    `${SPEEDTEST_CONFIG_PREFIX}${Date.now()}_${createTempSuffix()}.json`
   );
 
   let processRef = null;

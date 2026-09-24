@@ -64,6 +64,21 @@ export class AuthStore {
     const tmpPath = `${this.authPath}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(this.state, null, 2));
     fs.renameSync(tmpPath, this.authPath);
+    // auth.json holds password hashes, TOTP secrets and session tokens:
+    // restrict it (and its backups) to the owner on POSIX systems.
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(this.authPath, 0o600);
+        for (let i = 1; i <= MAX_BACKUPS; i += 1) {
+          const backup = `${this.authPath}.bak.${i}`;
+          if (fs.existsSync(backup)) {
+            fs.chmodSync(backup, 0o600);
+          }
+        }
+      } catch {
+        // best effort: a restrictive umask may already cover this
+      }
+    }
   }
 
   // ---- users ----

@@ -13,6 +13,8 @@ export const bindViewLifecycle = ({
   runNodeGroupAutoBackfillIfNeeded,
   markRoutingHitsAsSeen,
   updateRoutingLogNavBadge,
+  startConnectionsPolling,
+  stopConnectionsPolling,
 }) => {
   navItems.forEach((button) => {
     button.addEventListener('click', () => {
@@ -28,6 +30,7 @@ export const bindViewLifecycle = ({
         startTrafficPolling();
         stopRoutingStatusPolling();
         stopNodeGroupAutoTest();
+        stopConnectionsPolling();
         return;
       }
 
@@ -38,6 +41,7 @@ export const bindViewLifecycle = ({
         stopRoutingStatusPolling();
         stopNodeGroupAutoTest();
         stopTrafficPolling();
+        stopConnectionsPolling();
         return;
       }
 
@@ -48,6 +52,7 @@ export const bindViewLifecycle = ({
         });
         stopRoutingStatusPolling();
         stopTrafficPolling();
+        stopConnectionsPolling();
         return;
       }
 
@@ -56,14 +61,24 @@ export const bindViewLifecycle = ({
         startRoutingStatusPolling();
         stopNodeGroupAutoTest();
         stopTrafficPolling();
+        stopConnectionsPolling();
         markRoutingHitsAsSeen();
         updateRoutingLogNavBadge(false);
+        return;
+      }
+
+      if (targetId === 'connections-view') {
+        startConnectionsPolling();
+        stopRoutingStatusPolling();
+        stopNodeGroupAutoTest();
+        stopTrafficPolling();
         return;
       }
 
       stopRoutingStatusPolling();
       stopNodeGroupAutoTest();
       stopTrafficPolling();
+      stopConnectionsPolling();
     });
   });
 };

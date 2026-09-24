@@ -423,3 +423,33 @@ test('system rules routes expose rules and save result payload', async () => {
 
   assert.equal(lastUpdateOptions.allowEmptyRoutingClear, true);
 });
+
+test('PUT /api/subscriptions only forwards fields the client actually sent', async () => {
+  const patches = [];
+  const routes = createNodeRoutes({
+    coreManager: {
+      updateSubscriptionSettings: async (id, patch) => {
+        patches.push({ id, patch });
+        return { id, ...patch };
+      }
+    }
+  });
+
+  const partial = await routes['PUT /api/subscriptions']({ body: { id: 'sub-1', autoUpdate: true } });
+  assert.equal(partial.body.ok, true);
+  assert.deepEqual(patches[0], { id: 'sub-1', patch: { autoUpdate: true } });
+
+  // Absent keys must not arrive as undefined (that would wipe name / disable
+  // auto-update / 400 on the interval in the settings layer).
+  const full = await routes['PUT /api/subscriptions']({
+    body: { id: 'sub-1', name: 'Feed', autoUpdate: false, updateIntervalHours: 12 }
+  });
+  assert.equal(full.body.ok, true);
+  assert.deepEqual(patches[1], {
+    id: 'sub-1',
+    patch: { name: 'Feed', autoUpdate: false, updateIntervalHours: 12 }
+  });
+
+  const missingId = await routes['PUT /api/subscriptions']({ body: { autoUpdate: true } });
+  assert.equal(missingId.body.ok, false);
+});

@@ -83,7 +83,7 @@ export const filterValidNodes = async (manager, nodes, options = {}) => {
       await manager.validateSingleNodeConfig(node, { settings, binPath });
       validNodes.push(node);
     } catch (error) {
-      const message = String(error?.message || error || '鑺傜偣閰嶇疆鏃犳晥').trim() || '鑺傜偣閰嶇疆鏃犳晥';
+      const message = String(error?.message || error || '节点配置无效').trim() || '节点配置无效';
       invalidNodes.push({ node, error: message });
       manager.store.appendLog(`[CoreManager] Node validation skipped ${getNodeDisplayName(node, node?.id || 'node')}: ${message}`);
     }

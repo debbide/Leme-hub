@@ -45,6 +45,10 @@
             <span class="nav-item-label">分流日志</span>
             <span id="routing-log-nav-badge" class="nav-item-badge hidden">0</span>
           </button>
+          <button class="nav-item" data-target="connections-view">
+            <i class="ph ph-plugs-connected nav-icon"></i>
+            <span class="nav-item-label">活动连接</span>
+          </button>
           <button class="nav-item" data-target="settings-view">
             <i class="ph ph-gear nav-icon"></i> 全局设置
           </button>
@@ -482,6 +486,53 @@
                   <div id="routing-observability-lines" class="routing-observability-lines"></div>
                 </div>
               </div>
+            </div>
+          </div>
+          </div>
+        </section>
+
+        <!-- CONNECTIONS VIEW -->
+        <section id="connections-view" class="view">
+          <div class="page-shell">
+          <div class="proxy-card full-card">
+            <div class="card-header">
+              <div class="header-titles">
+                <h1>活动连接</h1>
+                <p>核心当前正在处理的实时连接（每 3 秒刷新）</p>
+              </div>
+              <div class="observability-meta">
+                <div class="observability-status" id="connections-status">
+                  <span class="status-indicator"></span> <span id="connections-status-text">等待核心运行</span>
+                </div>
+                <button type="button" class="btn-outline" id="connections-refresh">立即刷新</button>
+              </div>
+            </div>
+            <div class="routing-log-toolbar">
+              <div class="routing-log-search-wrap">
+                <input type="text" id="connections-search" class="routing-log-search-input" placeholder="检索域名、进程或 IP，例如 youtube / chrome" autocomplete="off">
+                <button type="button" id="connections-search-clear" class="routing-log-search-clear hidden" aria-label="清除连接搜索">×</button>
+              </div>
+              <div id="connections-count" class="routing-log-result-count"></div>
+            </div>
+            <div class="table-wrapper flex-fill">
+              <table class="connections-table">
+                <thead>
+                  <tr>
+                    <th>目标</th>
+                    <th>进程</th>
+                    <th>网络</th>
+                    <th>出口链路</th>
+                    <th>规则</th>
+                    <th>上传</th>
+                    <th>下载</th>
+                    <th>开始时间</th>
+                  </tr>
+                </thead>
+                <tbody id="connections-tbody">
+                </tbody>
+              </table>
+              <div id="connections-empty" class="routing-log-empty hidden">暂无活动连接（核心未运行或暂无流量）</div>
+              <div id="connections-error" class="routing-log-empty hidden"></div>
             </div>
           </div>
           </div>

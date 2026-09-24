@@ -1,3 +1,5 @@
+import { createSecureId } from '../../../shared/ids.js';
+
 const normalizeSubscriptionRecord = (record, index) => {
   if (!record || typeof record !== 'object') {
     return null;
@@ -9,7 +11,7 @@ const normalizeSubscriptionRecord = (record, index) => {
   }
 
   return {
-    id: record.id || `subscription-${index + 1}`,
+    id: record.id || `subscription-${createSecureId()}`,
     url,
     name: String(record.name || '').trim() || url,
     groupName: String(record.groupName || '').trim() || null,
@@ -17,7 +19,12 @@ const normalizeSubscriptionRecord = (record, index) => {
     lastSyncedAt: record.lastSyncedAt || null,
     lastNodeCount: Number.parseInt(record.lastNodeCount, 10) || 0,
     lastStatus: String(record.lastStatus || '').trim() || 'idle',
-    lastError: String(record.lastError || '').trim() || null
+    lastError: String(record.lastError || '').trim() || null,
+    autoUpdate: record.autoUpdate === true || record.autoUpdate === 'true',
+    updateIntervalHours: Math.min(
+      168,
+      Math.max(1, Number.parseInt(record.updateIntervalHours, 10) || 24)
+    )
   };
 };
 

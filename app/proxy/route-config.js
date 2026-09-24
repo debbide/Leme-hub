@@ -114,9 +114,9 @@ export const buildRouteConfig = ({
   if (storeSigninRules.length) {
     registerRoutingHit(SYSTEM_STORE_SIGNIN_RULESET_TAG, {
       kind: 'builtin',
-      name: storeSigninBuiltin.name || 'Microsoft Store 鐧诲綍',
+      name: storeSigninBuiltin.name || 'Microsoft Store 登录',
       target: systemDefaultOutbound,
-      descriptor: storeSigninBuiltin.name || 'Microsoft Store 鐧诲綍',
+      descriptor: storeSigninBuiltin.name || 'Microsoft Store 登录',
       rulesetPresetId: SYSTEM_STORE_SIGNIN_PRESET_ID
     });
     orderedInlineRuleSets.push({

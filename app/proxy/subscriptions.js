@@ -1,4 +1,8 @@
 import axios from 'axios';
+import dns from 'dns';
+import http from 'http';
+import https from 'https';
+import yaml from 'js-yaml';
 import { getProxyForUrl } from 'proxy-from-env';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
@@ -6,10 +10,239 @@ import { DEFAULT_PROXY_LISTEN_HOST } from '../shared/constants.js';
 import { formatHostForUrl, normalizeHost, resolveLoopbackHost } from '../shared/network.js';
 import { normalizeConfigNode } from './protocols.js';
 
+const createHttpError = (message, status) => Object.assign(new Error(message), { status });
+
 const SUBSCRIPTION_USER_AGENT = 'Leme-Hub/0.1';
 const SUBSCRIPTION_V2RAYN_USER_AGENT = 'v2rayN/7.20.0';
 const SUBSCRIPTION_BROWSER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 const SUBSCRIPTION_TIMEOUT_MS = 15000;
+const SUBSCRIPTION_MAX_REDIRECTS = 5;
+
+// ---------------------------------------------------------------------------
+// SSRF protection for subscription downloads.
+//
+// The naive hostname-prefix check is bypassable via:
+//   - cloud metadata endpoints (169.254.169.254),
+//   - open redirects to intranet targets,
+//   - DNS hostnames that resolve to private addresses,
+//   - IPv6-mapped IPv4 literals such as ::ffff:127.0.0.1,
+// so every redirect hop is re-validated against DNS-resolved addresses.
+// ---------------------------------------------------------------------------
+
+const ipv4ToInt = (ip) => {
+  const parts = String(ip).split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+  let num = 0;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      return null;
+    }
+    const octet = Number(part);
+    if (octet < 0 || octet > 255) {
+      return null;
+    }
+    num = num * 256 + octet;
+  }
+  return num >>> 0;
+};
+
+// Non-public IPv4 ranges (RFC 1122/1918/3927/6598/6890 et al.), including the
+// 169.254.0.0/16 link-local range used by cloud metadata services.
+const BLOCKED_V4_RANGES = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4]
+].map(([base, bits]) => ({ base: ipv4ToInt(base), mask: bits === 0 ? 0 : (0xFFFFFFFF << (32 - bits)) >>> 0 }));
+
+const isBlockedV4Int = (num) => BLOCKED_V4_RANGES.some(({ base, mask }) => (num & mask) === (base & mask));
+
+const parseIpv6Hextets = (ip) => {
+  const addr = String(ip).split('%')[0].toLowerCase();
+  const halves = addr.split('::');
+  if (halves.length > 2) {
+    return null;
+  }
+  const parseGroup = (group) => group.split(':').map((hextet) => {
+    if (!/^[0-9a-f]{1,4}$/.test(hextet)) {
+      return null;
+    }
+    return Number.parseInt(hextet, 16);
+  });
+  const head = halves[0] ? parseGroup(halves[0]) : [];
+  const tail = halves.length === 2 ? (halves[1] ? parseGroup(halves[1]) : []) : [];
+  if (head.includes(null) || tail.includes(null)) {
+    return null;
+  }
+  if (halves.length === 1 && head.length !== 8) {
+    return null;
+  }
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) {
+    return null;
+  }
+  return [...head, ...new Array(missing).fill(0), ...tail];
+};
+
+export const isPublicIpAddress = (ip) => {
+  const raw = String(ip || '').trim();
+  if (!raw) {
+    return false;
+  }
+
+  // IPv4-mapped IPv6 literal, e.g. ::ffff:127.0.0.1 — judge the embedded IPv4.
+  const mapped = raw.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (mapped) {
+    return isPublicIpAddress(mapped[1]);
+  }
+
+  if (raw.includes('.') && !raw.includes(':')) {
+    const num = ipv4ToInt(raw);
+    if (num === null) {
+      return false;
+    }
+    return !isBlockedV4Int(num);
+  }
+
+  if (raw.includes(':')) {
+    const hextets = parseIpv6Hextets(raw);
+    if (!hextets) {
+      return false;
+    }
+    const [first, second, third, fourth, fifth, sixth, seventh, eighth] = hextets;
+    if (first === 0) {
+      return false; // ::/8 including ::1
+    }
+    if ((first & 0xffc0) === 0xfe80) {
+      return false; // fe80::/10 link-local
+    }
+    if ((first & 0xfe00) === 0xfc00) {
+      return false; // fc00::/7 unique local
+    }
+    if ((first & 0xff00) === 0xff00) {
+      return false; // ff00::/8 multicast
+    }
+    if (first === 0x2001 && second === 0x0db8) {
+      return false; // 2001:db8::/32 documentation
+    }
+    if (first === 0x0064 && second === 0xff9b && third === 0 && fourth === 0 && fifth === 0 && sixth === 0) {
+      // 64:ff9b::/96 NAT64 well-known prefix — judge the embedded IPv4.
+      return !isBlockedV4Int((((seventh << 16) | eighth) >>> 0));
+    }
+    return true;
+  }
+
+  return false;
+};
+
+// Resolve the host and require EVERY resolved address to be public. Returns
+// the addresses so callers can pin connections to them (TOCTOU hardening).
+// `options.lookup` may override DNS resolution (used by tests).
+export const assertPublicSubscriptionUrl = async (url, options = {}) => {
+  const lookupFn = options.lookup || ((hostname) => dns.promises.lookup(hostname, { all: true }));
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    throw createHttpError(`Invalid subscription URL: ${url}`, 400);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw createHttpError('Subscription URL must use http or https', 400);
+  }
+  const hostname = normalizeHost(parsed.hostname).toLowerCase();
+  if (!hostname) {
+    throw createHttpError('Subscription URL has an empty host', 400);
+  }
+  if (hostname === 'localhost') {
+    throw createHttpError('Subscription URL must not point to a private/local address', 400);
+  }
+
+  let records;
+  try {
+    // dns.lookup with all:true also resolves plain IP literals without I/O.
+    records = await lookupFn(hostname);
+  } catch (error) {
+    throw createHttpError(`Failed to resolve subscription host ${hostname}: ${error.message}`, 502);
+  }
+  if (!records.length) {
+    throw createHttpError(`Subscription host ${hostname} did not resolve to any address`, 502);
+  }
+  for (const { address } of records) {
+    if (!isPublicIpAddress(address)) {
+      throw createHttpError(`Subscription URL must not point to a private/local address (${hostname} resolves to ${address})`, 400);
+    }
+  }
+  return { parsed, hostname, addresses: records };
+};
+
+// Pin direct connections to the DNS-validated addresses so a rebinding race
+// between validation and connect cannot swap in a private target.
+const buildPinnedLookup = (addresses) => (hostname, options, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  const pick = addresses.find((record) => !options.family || record.family === options.family) || addresses[0];
+  if (!pick) {
+    callback(new Error('No validated address available for subscription host'));
+    return;
+  }
+  if (options.all) {
+    callback(null, addresses.map((record) => ({ address: record.address, family: record.family })));
+  } else {
+    callback(null, pick.address, pick.family);
+  }
+};
+
+// Follow redirects manually so every hop is re-validated; axios's built-in
+// redirect follower would happily chase a 302 into the intranet.
+export const fetchSubscriptionWithSafeRedirects = async (initialUrl, axiosConfig = {}, options = {}) => {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop <= SUBSCRIPTION_MAX_REDIRECTS; hop++) {
+    const { addresses } = await assertPublicSubscriptionUrl(currentUrl, { lookup: options.lookup });
+    const usesOwnAgent = axiosConfig.httpAgent || axiosConfig.httpsAgent;
+    // Only pin DNS for true direct transports: when axios routes through a
+    // system HTTP(S) proxy it connects to the *proxy* host, and a pinned
+    // lookup would resolve the proxy hostname to the subscription server's
+    // address. Proxied hops are still SSRF-checked above on every redirect.
+    const routesViaSystemProxy = options.viaSystemProxy && axiosConfig.proxy !== false && !usesOwnAgent;
+    const response = await axios.get(currentUrl, {
+      ...axiosConfig,
+      maxRedirects: 0,
+      // Accept 3xx here so redirect hops can be validated instead of throwing.
+      validateStatus: (status) => (status >= 200 && status < 300) || (status >= 300 && status < 400),
+      // Proxied transports resolve remotely; only pin direct connections.
+      ...(routesViaSystemProxy || usesOwnAgent ? {} : {
+        httpAgent: new http.Agent({ lookup: buildPinnedLookup(addresses) }),
+        httpsAgent: new https.Agent({ lookup: buildPinnedLookup(addresses) })
+      })
+    });
+    if (response.status >= 300 && response.status < 400 && response.headers?.location) {
+      currentUrl = new URL(response.headers.location, currentUrl).toString();
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) {
+      // Mimic axios error shape so callers can keep inspecting error.response.
+      const statusError = new Error(`Subscription request failed with status ${response.status}`);
+      statusError.response = response;
+      throw statusError;
+    }
+    return response;
+  }
+  throw createHttpError(`Too many redirects while fetching subscription (>${SUBSCRIPTION_MAX_REDIRECTS})`, 502);
+};
 
 const toInt = (value, fallback = undefined) => {
   if (value === undefined || value === null || value === '') {
@@ -109,6 +342,96 @@ export const extractConfigNodes = (payload) => {
   return candidates.filter((item) => item && typeof item === 'object');
 };
 
+// Clash YAML uses different field names than the internal node format.
+// Map the common ones here, then let normalizeConfigNode do the rest.
+const CLASH_IGNORED_PROXY_TYPES = new Set([
+  'direct', 'reject', 'dns', 'selector', 'urltest', 'fallback', 'loadbalance', 'relay'
+]);
+
+export const normalizeClashProxy = (proxy, index = 0) => {
+  if (!proxy || typeof proxy !== 'object' || Array.isArray(proxy)) {
+    return null;
+  }
+
+  const type = String(proxy.type || '').toLowerCase();
+  if (!type || CLASH_IGNORED_PROXY_TYPES.has(type)) {
+    return null;
+  }
+
+  const wsOpts = proxy['ws-opts'] && typeof proxy['ws-opts'] === 'object' ? proxy['ws-opts'] : {};
+  const grpcOpts = proxy['grpc-opts'] && typeof proxy['grpc-opts'] === 'object' ? proxy['grpc-opts'] : {};
+  const realityOpts = proxy['reality-opts'] && typeof proxy['reality-opts'] === 'object' ? proxy['reality-opts'] : {};
+  const wsHeaders = wsOpts.headers && typeof wsOpts.headers === 'object' ? wsOpts.headers : {};
+
+  return normalizeConfigNode({
+    name: proxy.name,
+    type,
+    server: proxy.server,
+    port: proxy.port,
+    uuid: proxy.uuid,
+    password: proxy.password ?? proxy['auth-str'] ?? proxy.token ?? null,
+    username: proxy.username,
+    method: proxy.cipher,
+    alterId: proxy.alterId ?? proxy['alter-id'],
+    tls: proxy.tls,
+    sni: proxy.sni || proxy.servername,
+    insecure: proxy['skip-cert-verify'],
+    transport: proxy.network,
+    path: wsOpts.path,
+    wsHost: wsHeaders.Host || wsHeaders.host,
+    serviceName: grpcOpts['grpc-service-name'],
+    fp: proxy['client-fingerprint'] || proxy.fingerprint,
+    alpn: proxy.alpn,
+    pbk: realityOpts['public-key'],
+    sid: realityOpts['short-id'],
+    plugin: proxy.plugin,
+    plugin_opts: proxy['plugin-opts'],
+    obfs: proxy.obfs,
+    obfs_password: proxy['obfs-password'],
+    congestion_control: proxy['congestion-controller'] || proxy.congestion_control,
+    udp_relay_mode: proxy['udp-relay-mode'] || proxy.udp_relay_mode,
+    up_mbps: proxy.up ?? proxy['up-mbps'],
+    down_mbps: proxy.down ?? proxy['down-mbps'],
+    // tuic v5 style
+    ip: proxy.ip
+  }, index);
+};
+
+const MAX_YAML_SUBSCRIPTION_BYTES = 2 * 1024 * 1024;
+
+export const parseClashYamlSubscription = (content, options = {}) => {
+  const { log, normalizeNode = normalizeClashProxy } = options;
+  const text = String(content || '');
+  if (!text.trim() || Buffer.byteLength(text, 'utf8') > MAX_YAML_SUBSCRIPTION_BYTES) {
+    return [];
+  }
+
+  let payload;
+  try {
+    // js-yaml v4's load() uses the default (safe) schema: no code execution.
+    payload = yaml.load(text);
+  } catch (error) {
+    log?.warn?.(`[ProxyService] Failed to parse Clash YAML subscription: ${error.message}`);
+    return [];
+  }
+
+  const proxies = extractConfigNodes(payload);
+  if (!proxies.length) {
+    return [];
+  }
+
+  return proxies
+    .map((proxy, index) => {
+      try {
+        return normalizeNode(proxy, index);
+      } catch (error) {
+        log?.warn?.(`[ProxyService] Skipping Clash proxy ${proxy?.name || index}: ${error.message}`);
+        return null;
+      }
+    })
+    .filter(Boolean);
+};
+
 export const parseStructuredSubscription = (content, options = {}) => {
   const { log, normalizeNode = normalizeConfigNode } = options;
   const trimmed = String(content || '').trim();
@@ -128,7 +451,9 @@ export const parseStructuredSubscription = (content, options = {}) => {
   }
 
   if (/^\s*(mixed-port|port|proxies):/mu.test(trimmed)) {
-    log?.warn?.('[ProxyService] Clash-style YAML subscriptions are not supported yet');
+    // Clash YAML entries need their own field mapping; the JSON normalizer
+    // passed via options does not apply here.
+    return parseClashYamlSubscription(content, { log });
   }
 
   return [];
@@ -166,18 +491,11 @@ export const syncSubscription = async (context, url, options = {}) => {
   try {
     parsedUrl = new URL(url);
   } catch {
-    throw new Error(`Invalid subscription URL: ${url}`);
+    throw createHttpError(`Invalid subscription URL: ${url}`, 400);
   }
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new Error(`Subscription URL must use http or https`);
-  }
-  const hostname = normalizeHost(parsedUrl.hostname).toLowerCase();
-  if (hostname === 'localhost' || hostname === '::' || hostname === '::1'
-      || hostname.startsWith('127.') || hostname.startsWith('10.') || hostname.startsWith('192.168.')
-      || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-      || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')) {
-    throw new Error(`Subscription URL must not point to a private/local address`);
-  }
+  // Full SSRF validation: protocol, DNS-resolved addresses for every hop, and
+  // redirect targets are all re-checked inside the safe fetcher below.
+  const { hostname } = await assertPublicSubscriptionUrl(url, { lookup: options.dnsLookup });
   const explicitUserAgent = String(options.userAgent || '').trim();
   const authHeader = (parsedUrl.username || parsedUrl.password)
     ? `Basic ${Buffer.from(parsedUrl.username ? `${parsedUrl.username}:${parsedUrl.password}` : `:${parsedUrl.password}`).toString('base64')}`
@@ -209,6 +527,10 @@ export const syncSubscription = async (context, url, options = {}) => {
   const transports = [
     {
       mode: proxyUrl ? 'proxy-aware' : 'direct',
+      // Axios resolves the system proxy from the environment itself; flag it
+      // so the safe fetcher does not pin DNS (it would resolve the *proxy*
+      // host to the subscription address).
+      viaSystemProxy: Boolean(proxyUrl),
       config: {}
     },
     ...(proxyUrl
@@ -234,11 +556,11 @@ export const syncSubscription = async (context, url, options = {}) => {
   let lastError;
   const tryDownload = async (transport, headerProfile) => {
     try {
-      response = await axios.get(url, {
+      response = await fetchSubscriptionWithSafeRedirects(url, {
         ...requestOptions,
         ...transport.config,
         headers: buildHeaders(headerProfile)
-      });
+      }, { lookup: options.dnsLookup, viaSystemProxy: transport.viaSystemProxy });
       context.log.log?.(`[ProxyService] Subscription download success host=${hostname} mode=${transport.mode} ua=${headerProfile.label}`);
       lastError = null;
       return true;
@@ -294,7 +616,7 @@ export const syncSubscription = async (context, url, options = {}) => {
       context.log.warn?.(`[ProxyService] Subscription response preview host=${hostname} preview=${bodyPreview}`);
     }
     context.log.error?.(`[ProxyService] Subscription download failed host=${hostname} detail=${detail}`);
-    throw new Error(`Failed to download subscription: ${detail}`);
+    throw createHttpError(`Failed to download subscription: ${detail}`, 502);
   }
 
   const content = context.normalizeSubscriptionContent(response.data);

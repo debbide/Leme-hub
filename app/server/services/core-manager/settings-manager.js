@@ -1,3 +1,5 @@
+import path from 'path';
+
 import { DEFAULT_SPEEDTEST_URL, ROUTING_MODES } from '../../../shared/constants.js';
 import { normalizeHost } from '../../../shared/network.js';
 import {
@@ -144,6 +146,25 @@ export const updateSettings = async (manager, patch, options = {}) => {
     next.proxyListenHost = normalizeHost(next.proxyListenHost);
     if (!next.proxyListenHost) {
       throw createHttpError('proxyListenHost is required', 400);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'singBoxBinaryPath')) {
+    // A custom binary path is executed verbatim by the core manager. Only
+    // allow it when empty (use the managed binary) or inside the managed bin
+    // directory, so a compromised panel session cannot point it at an
+    // arbitrary executable.
+    const rawBinaryPath = String(next.singBoxBinaryPath || '').trim();
+    if (!rawBinaryPath) {
+      next.singBoxBinaryPath = '';
+    } else {
+      const binDir = manager.paths?.binDir ? path.resolve(manager.paths.binDir) : null;
+      const resolved = path.resolve(rawBinaryPath);
+      const insideBinDir = binDir && (resolved === binDir || resolved.startsWith(binDir + path.sep));
+      if (!insideBinDir) {
+        throw createHttpError('singBoxBinaryPath must be empty or point inside the managed binary directory', 400);
+      }
+      next.singBoxBinaryPath = resolved;
     }
   }
 

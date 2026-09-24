@@ -9,6 +9,15 @@ const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 
 const isValidUuid = (value) => typeof value === 'string' && UUID_RE.test(value);
 
+// UUIDs double as authentication credentials: never log one in full.
+export const maskUuid = (value) => {
+  const text = String(value || '');
+  if (text.length <= 8) {
+    return '****';
+  }
+  return `${text.slice(0, 4)}…${text.slice(-4)}`;
+};
+
 const filterValidNodes = (context) => (context.nodes || []).filter((node) => {
   if (!node) {
     return false;
@@ -18,7 +27,7 @@ const filterValidNodes = (context) => (context.nodes || []).filter((node) => {
     const uuid = node.uuid || '';
     if (!isValidUuid(uuid)) {
       const label = node.name || node.id || node.type;
-      context.log.error(`[ProxyService] Skipping node ${label}: invalid uuid "${uuid}"`);
+      context.log.error(`[ProxyService] Skipping node ${label}: invalid uuid "${maskUuid(uuid)}"`);
       return false;
     }
   }

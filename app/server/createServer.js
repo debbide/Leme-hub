@@ -23,11 +23,23 @@ const contentTypes = {
 };
 
 const sendJson = (response, status, body, headers = {}) => {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS, ...headers });
   response.end(JSON.stringify(body));
 };
 
 const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB
+
+// Baseline hardening headers for every response (API + static + redirects).
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  // The bundled UI is same-origin only; lock down framing/script sources.
+  // index.html loads three pinned third-party assets, so they are allowlisted
+  // explicitly instead of weakening script-src: phosphor icons (unpkg),
+  // SortableJS (jsdelivr) and Inter/JetBrains Mono webfonts (googleapis).
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+};
 
 const readJsonBody = async (request) => {
   if (request.method === 'GET' || request.method === 'HEAD') {
@@ -66,7 +78,8 @@ const sendFile = (response, filePath) => {
   const ext = path.extname(filePath);
   response.writeHead(200, {
     'Content-Type': contentTypes[ext] || 'application/octet-stream',
-    'Cache-Control': 'no-store'
+    'Cache-Control': 'no-store',
+    ...SECURITY_HEADERS
   });
   fs.createReadStream(filePath).pipe(response);
 };
@@ -181,7 +194,7 @@ export function createAppServer(paths, env = process.env) {
           return;
         }
         const next = encodeURIComponent(url.pathname + url.search);
-        response.writeHead(302, { Location: `/login.html?next=${next}` });
+        response.writeHead(302, { ...SECURITY_HEADERS, Location: `/login.html?next=${next}` });
         response.end();
         return;
       }

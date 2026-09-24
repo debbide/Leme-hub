@@ -1,4 +1,5 @@
 import { normalizeHost } from '../shared/network.js';
+import { createSecureId } from '../shared/ids.js';
 import {
   VMESS_TLS_SECURITY_MODES,
   normalizeHysteria2Obfs,
@@ -37,75 +38,50 @@ export const normalizeImportedProxyLink = (value) => {
   }
 };
 
-export const parseProxyLink = (link, options = {}) => {
-  try {
-    const value = normalizeImportedProxyLink(link);
-    if (value.startsWith('{') && value.endsWith('}')) {
-      return null;
+export const parseVmessJsonLink = (value) => {
+  const b64 = value.replace('vmess://', '');
+  const json = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
+  return {
+    id: createSecureId(),
+    name: json.ps || 'VMess',
+    type: 'vmess',
+    server: normalizeHost(json.add),
+    port: parseInt(json.port, 10),
+    uuid: json.id,
+    security: json.scy || 'auto',
+    alterId: parseInt(json.aid || 0, 10),
+    transport: json.net === 'ws' ? 'ws' : (json.net === 'grpc' ? 'grpc' : 'tcp'),
+    wsPath: json.path || '',
+    wsHost: json.host || '',
+    tls: json.tls === 'tls',
+    sni: normalizeHost(json.sni || json.host || ''),
+    serviceName: json.path || '',
+    alpn: json.alpn || '',
+    fp: json.fp || '',
+    packet_encoding: json.packetEncoding || json.packet_encoding || ''
+  };
+};
+
+const applySecurityParams = (config, protocol, params, { securityParam, vmessCipherParam }) => {
+  if (params.get('sni')) config.sni = normalizeHost(params.get('sni'));
+  if (protocol === 'vmess') {
+    if (vmessCipherParam) {
+      config.security = normalizeVmessSecurity(vmessCipherParam, 'auto');
     }
-
-    if (value.startsWith('vmess://')) {
-      const b64 = value.replace('vmess://', '');
-      const json = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
-      return {
-        id: Math.random().toString(36).substring(2, 9),
-        name: json.ps || 'VMess',
-        type: 'vmess',
-        server: normalizeHost(json.add),
-        port: parseInt(json.port, 10),
-        uuid: json.id,
-        security: json.scy || 'auto',
-        alterId: parseInt(json.aid || 0, 10),
-        transport: json.net === 'ws' ? 'ws' : (json.net === 'grpc' ? 'grpc' : 'tcp'),
-        wsPath: json.path || '',
-        wsHost: json.host || '',
-        tls: json.tls === 'tls',
-        sni: normalizeHost(json.sni || json.host || ''),
-        serviceName: json.path || '',
-        alpn: json.alpn || '',
-        fp: json.fp || '',
-        packet_encoding: json.packetEncoding || json.packet_encoding || ''
-      };
-    }
-
-    const url = new URL(value);
-    const protocol = url.protocol.slice(0, -1).toLowerCase();
-    const nodeId = Math.random().toString(36).substring(2, 9);
-    const name = decodeURIComponent(url.hash.slice(1)) || `${protocol}_${nodeId}`;
-    const params = new URLSearchParams(url.search);
-    const securityParam = String(params.get('security') || '').trim().toLowerCase();
-    const vmessCipherParam = String(params.get('scy') || params.get('cipher') || params.get('encryption') || '').trim().toLowerCase();
-    const tlsParam = String(params.get('tls') || '').trim().toLowerCase();
-    const wantsTls = ['tls', '1', 'true'].includes(tlsParam) || VMESS_TLS_SECURITY_MODES.has(securityParam);
-
-    const config = {
-      id: nodeId,
-      name,
-      type: protocol,
-      server: normalizeHost(url.hostname),
-      port: parseInt(url.port, 10)
-    };
-
-    if (Number.isNaN(config.port)) {
-      config.port = wantsTls ? 443 : 80;
-    }
-
-    if (params.get('sni')) config.sni = normalizeHost(params.get('sni'));
-    if (protocol === 'vmess') {
-      if (vmessCipherParam) {
-        config.security = normalizeVmessSecurity(vmessCipherParam, 'auto');
+    if (securityParam) {
+      if (VMESS_TLS_SECURITY_MODES.has(securityParam)) {
+        config.tls = true;
+      } else if (!config.security) {
+        config.security = normalizeVmessSecurity(securityParam, 'auto');
       }
-      if (securityParam) {
-        if (VMESS_TLS_SECURITY_MODES.has(securityParam)) {
-          config.tls = true;
-        } else if (!config.security) {
-          config.security = normalizeVmessSecurity(securityParam, 'auto');
-        }
-      }
-    } else if (securityParam) {
-      config.security = securityParam;
     }
-    if (['tls', '1', 'true'].includes(params.get('tls'))) config.tls = true;
+  } else if (securityParam) {
+    config.security = securityParam;
+  }
+  if (['tls', '1', 'true'].includes(params.get('tls'))) config.tls = true;
+};
+
+const applyCommonUrlParams = (config, params) => {
     if (params.get('alpn')) config.alpn = params.get('alpn');
     if (params.get('type') === 'grpc' && !params.get('serviceName') && params.get('path')) {
       config.serviceName = params.get('path');
@@ -175,9 +151,11 @@ export const parseProxyLink = (link, options = {}) => {
       config.ech = true;
       config.ech_config = params.get('ech_config');
     }
+};
 
-    const rawUser = decodeURIComponent(url.username || '');
-    const rawPass = decodeURIComponent(url.password || '');
+const applyProtocolCredentials = (config, protocol, url, params, { securityParam, tlsParam }) => {
+  const rawUser = decodeURIComponent(url.username || '');
+  const rawPass = decodeURIComponent(url.password || '');
 
     if (protocol === 'tuic') {
       if (rawUser.includes(':')) {
@@ -279,12 +257,54 @@ export const parseProxyLink = (link, options = {}) => {
       config.username = rawUser;
       config.password = rawPass;
     } else {
+      return false;
+    }
+  return true;
+};
+
+export const parseProxyLink = (link, options = {}) => {
+  try {
+    const value = normalizeImportedProxyLink(link);
+    if (value.startsWith('{') && value.endsWith('}')) {
+      return null;
+    }
+
+    if (value.startsWith('vmess://')) {
+      return parseVmessJsonLink(value);
+    }
+
+    const url = new URL(value);
+    const protocol = url.protocol.slice(0, -1).toLowerCase();
+    const nodeId = createSecureId();
+    const name = decodeURIComponent(url.hash.slice(1)) || `${protocol}_${nodeId}`;
+    const params = new URLSearchParams(url.search);
+    const securityParam = String(params.get('security') || '').trim().toLowerCase();
+    const vmessCipherParam = String(params.get('scy') || params.get('cipher') || params.get('encryption') || '').trim().toLowerCase();
+    const tlsParam = String(params.get('tls') || '').trim().toLowerCase();
+    const wantsTls = ['tls', '1', 'true'].includes(tlsParam) || VMESS_TLS_SECURITY_MODES.has(securityParam);
+
+    const config = {
+      id: nodeId,
+      name,
+      type: protocol,
+      server: normalizeHost(url.hostname),
+      port: parseInt(url.port, 10)
+    };
+
+    if (Number.isNaN(config.port)) {
+      config.port = wantsTls ? 443 : 80;
+    }
+
+    applySecurityParams(config, protocol, params, { securityParam, vmessCipherParam });
+    applyCommonUrlParams(config, params);
+
+    if (!applyProtocolCredentials(config, protocol, url, params, { securityParam, tlsParam })) {
       return null;
     }
 
     return config;
   } catch (error) {
-    options.log?.error?.(`[ProxyService] Link parse error: ${error.message}`);
+    options.log?.error?.(`[LinkParser] Link parse error: ${error.message}`);
     return null;
   }
 };

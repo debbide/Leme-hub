@@ -12,6 +12,7 @@ import { applySystemSettingsSnapshot, loadSystemRuntimeStatus, refreshGeoIpData,
 import { bindAppMiscEvents, bindWindowChromeFallbacks, runInitialAppBootstrap } from './lib/app-init.js';
 import { initSecuritySettings } from './lib/security-settings.js';
 import { bindViewLifecycle } from './lib/view-lifecycle.js';
+import { createConnectionsController } from './lib/connections-controller.js';
 import { debounce, escapeHtml, escapeRegExp, flagFromCountryCode, requestJson, requestSseStream } from './lib/utils.js';
 
 const nodesList = document.querySelector('#nodes-list');
@@ -518,6 +519,8 @@ const nodesPanel = createNodesPanelController({
 
 const loadNodes = () => nodesPanel.loadNodes();
 
+const connectionsController = createConnectionsController();
+
 const routingController = createRoutingController({
   routingModeBanner,
   routingRulesContainer,
@@ -702,6 +705,8 @@ bindViewLifecycle({
   runNodeGroupAutoBackfillIfNeeded,
   markRoutingHitsAsSeen: (hits) => routingController.markRoutingHitsAsSeen(hits),
   updateRoutingLogNavBadge: (animate) => routingController.updateRoutingLogNavBadge(animate),
+  startConnectionsPolling: () => connectionsController.startConnectionsPolling(),
+  stopConnectionsPolling: () => connectionsController.stopConnectionsPolling(),
 });
 
 // --- DASHBOARD MASTER SWITCH LOGIC ---

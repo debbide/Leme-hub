@@ -71,7 +71,10 @@ const createFetchStub = ({ release, archivePath }) => async (url) => {
 test('uses configured binary when it already exists', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
-  const configuredPath = path.join(projectRoot, 'custom-sing-box.exe');
+  // Configured binaries must live inside the managed bin directory; anything
+  // else is rejected to prevent arbitrary-binary execution.
+  const configuredPath = path.join(paths.binDir, 'custom-sing-box.exe');
+  fs.mkdirSync(paths.binDir, { recursive: true });
   fs.writeFileSync(configuredPath, 'binary');
 
   const manager = new SingBoxBinaryManager(paths, {
@@ -82,9 +85,27 @@ test('uses configured binary when it already exists', async () => {
 
   const result = await manager.ensureAvailable(configuredPath);
 
-  assert.equal(result.executablePath, configuredPath);
+  assert.equal(result.executablePath, path.resolve(configuredPath));
   assert.equal(result.installed, false);
   assert.equal(result.source, 'configured');
+});
+
+test('rejects configured binary outside the managed bin directory', async () => {
+  const projectRoot = createProjectRoot();
+  const paths = resolveProjectPaths(projectRoot);
+  const configuredPath = path.join(projectRoot, 'custom-sing-box.exe');
+  fs.writeFileSync(configuredPath, 'binary');
+
+  const manager = new SingBoxBinaryManager(paths, {
+    fetch: async () => {
+      throw new Error('fetch should not be called');
+    }
+  });
+
+  await assert.rejects(
+    () => manager.ensureAvailable(configuredPath),
+    /outside the managed binary directory/
+  );
 });
 
 test('downloads managed binary when no binary exists', async () => {
@@ -118,7 +139,62 @@ test('downloads managed binary when no binary exists', async () => {
   assert.equal(fs.existsSync(result.executablePath), true);
 });
 
-test('downloads pinned binaries without relying on release checksum metadata', async () => {
+test('downloads pinned binaries only with a verified release checksum', async () => {
+  const projectRoot = createProjectRoot();
+  const paths = resolveProjectPaths(projectRoot);
+  const version = '1.13.4';
+  const archivePath = createArchivePath(projectRoot, version);
+  const archiveBuffer = await createArchiveFile(archivePath, version);
+  const digest = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
+
+  const manager = new SingBoxBinaryManager(paths, {
+    fetch: createFetchStub({
+      release: {
+        tag_name: `v${version}`,
+        assets: [{
+          name: path.basename(archivePath),
+          browser_download_url: 'https://example.com/sing-box.zip',
+          digest: `sha256:${digest}`
+        }]
+      },
+      archivePath
+    })
+  });
+
+  const result = await manager.ensureAvailable(path.join(paths.binDir, 'missing.exe'));
+  assert.equal(result.installed, true);
+  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), true);
+});
+
+test('refuses pinned binaries when the release publishes no digest', async () => {
+  const projectRoot = createProjectRoot();
+  const paths = resolveProjectPaths(projectRoot);
+  const version = '1.13.4';
+  const archivePath = createArchivePath(projectRoot, version);
+  await createArchiveFile(archivePath, version);
+
+  const manager = new SingBoxBinaryManager(paths, {
+    fetch: createFetchStub({
+      release: {
+        tag_name: `v${version}`,
+        assets: [{
+          name: path.basename(archivePath),
+          browser_download_url: 'https://example.com/sing-box.zip'
+          // no digest
+        }]
+      },
+      archivePath
+    })
+  });
+
+  await assert.rejects(
+    () => manager.ensureAvailable(path.join(paths.binDir, 'missing.exe')),
+    /no digest/
+  );
+  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), false);
+});
+
+test('refuses pinned binaries with a mismatched digest', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
   const version = '1.13.4';
@@ -139,22 +215,38 @@ test('downloads pinned binaries without relying on release checksum metadata', a
     })
   });
 
-  const result = await manager.ensureAvailable(path.join(paths.binDir, 'missing.exe'));
-  assert.equal(result.installed, true);
-  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), true);
+  await assert.rejects(
+    () => manager.ensureAvailable(path.join(paths.binDir, 'missing.exe')),
+    /checksum verification/
+  );
+  assert.equal(fs.existsSync(manager.getManagedBinaryPath()), false);
 });
 
-test('downloads pinned version without fetching release metadata first', async () => {
+test('downloads pinned version via release metadata first', async () => {
   const projectRoot = createProjectRoot();
   const paths = resolveProjectPaths(projectRoot);
   const version = DEFAULT_MANAGED_SINGBOX_VERSION;
   const archivePath = createArchivePath(projectRoot, version);
-  await createArchiveFile(archivePath, version);
+  const archiveBuffer = await createArchiveFile(archivePath, version);
+  const digest = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
   const calls = [];
 
   const manager = new SingBoxBinaryManager(paths, {
     fetch: async (url) => {
       calls.push(url);
+      if (url.includes('/releases/')) {
+        return {
+          ok: true,
+          json: async () => ({
+            tag_name: `v${version}`,
+            assets: [{
+              name: path.basename(archivePath),
+              browser_download_url: 'https://example.com/sing-box.zip',
+              digest: `sha256:${digest}`
+            }]
+          })
+        };
+      }
       return {
         ok: true,
         body: true,
@@ -168,8 +260,9 @@ test('downloads pinned version without fetching release metadata first', async (
   const result = await manager.ensureAvailable(path.join(paths.binDir, 'missing.exe'));
 
   assert.equal(result.installed, true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].includes(`/releases/download/v${version}/`), true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].endsWith(`/tags/v${version}`), true);
+  assert.equal(calls[1], 'https://example.com/sing-box.zip');
 });
 
 test('pins managed downloads to the default sing-box version', async () => {

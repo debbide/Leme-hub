@@ -240,3 +240,17 @@ test('rpInfo falls back to publicOrigin without request headers', () => {
   assert.equal(info.rpId, 'localhost');
   assert.equal(info.origin, 'http://localhost:18997');
 });
+
+// ---- auth.json 文件权限 ----
+
+test('auth.json and backups are owner-only (0600) on POSIX', { skip: process.platform === 'win32' }, () => {
+  const { store } = createService();
+  store.state.users = [{ id: 'u1', username: 'admin' }];
+  store.save();
+  // second save creates a backup
+  store.save();
+
+  const mode = (p) => fs.statSync(p).mode & 0o777;
+  assert.equal(mode(store.authPath), 0o600);
+  assert.equal(mode(`${store.authPath}.bak.1`), 0o600);
+});

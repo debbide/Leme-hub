@@ -129,6 +129,9 @@ export const start = async (manager, options = {}) => {
       }),
       systemProxy: manager.buildSystemProxyState(systemProxy)
     };
+    // A manual start is a fresh beginning: past crashes must not eat into the
+    // auto-restart budget of the new run.
+    manager._restartAttempts = 0;
     manager.bindProcessState();
     try {
       await manager.syncRunningSelectors(settings, nodes);
@@ -141,6 +144,24 @@ export const start = async (manager, options = {}) => {
     const preserveRunningProcess = error?.phase === 'validation'
       && replacedProcess
       && manager.proxyService?.proxyProcess === replacedProcess;
+
+    if (error?.rolledBack) {
+      // Rollback succeeded inside startProxyRuntime: the proxy is serving the
+      // previous working config again. Keep it up, record the warning, and let
+      // the caller know the new config was rejected.
+      manager._restartAttempts = 0;
+      manager.bindProcessState();
+      manager.state = {
+        ...manager.state,
+        status: 'running',
+        startedAt: manager.state.startedAt || new Date().toISOString(),
+        lastError: error.message,
+        executablePath: manager.proxyService?.executablePath || manager.state.executablePath,
+        configPath: manager.proxyService?.configPath || manager.state.configPath
+      };
+      manager.store.appendLog(`[CoreManager] ${error.message}`);
+      throw error;
+    }
 
     if (binary && manager.proxyService?.proxyProcess && !preserveRunningProcess) {
       await manager.proxyService.stop();

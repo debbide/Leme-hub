@@ -196,19 +196,12 @@ export const getStatus = (manager) => {
     rulesetDatabase: manager.getRulesetDatabaseStatus(),
     nodeApply: manager.getNodeApplyStatus(),
     settings: manager.getSettingsSnapshot(),
-    paths: {
-      root: manager.paths.root,
-      runtimeRoot: manager.paths.runtimeRoot,
-      dataDir: manager.paths.dataDir,
-      configPath: manager.paths.configPath,
-      settingsPath: manager.paths.settingsPath,
-      rulesDir: manager.paths.rulesDir,
-      rulesetMetaPath: manager.paths.rulesetMetaPath
-    },
+    // NOTE: absolute paths and raw logs are intentionally NOT exposed here.
+    // They can leak usernames/directory layout (paths) and credentials or
+    // other secrets accidentally written to logs (recentLogs).
     hasConfig: fs.existsSync(manager.paths.configPath),
     nodeCount: manager.store.getNodes().length,
-    nodes: manager.store.getNodes(),
-    recentLogs: manager.store.getRecentLogs(200)
+    nodes: manager.store.getNodes()
   };
 };
 
@@ -266,6 +259,40 @@ export const getRoutingHits = async (manager) => {
     .filter(Boolean);
 
   return [...liveHits, ...history].slice(0, ROUTING_HIT_READ_LIMIT);
+};
+
+export const getActiveConnections = async (manager) => {
+  if (manager.state.status !== 'running') {
+    return [];
+  }
+
+  manager.refreshConnectionsServiceBaseUrl();
+  let connections = [];
+  try {
+    connections = await manager.connectionsService.getConnections();
+  } catch {
+    return [];
+  }
+
+  return connections.map((connection) => {
+    const metadata = connection?.metadata || {};
+    return {
+      id: connection?.id || null,
+      host: metadata.host || metadata.destinationIP || metadata.destination || '',
+      destinationPort: metadata.destinationPort || metadata.dstPort || null,
+      network: metadata.network || null,
+      type: metadata.type || null,
+      process: metadata.process || metadata.processPath || null,
+      sourceIP: metadata.sourceIP || null,
+      sourcePort: metadata.sourcePort || null,
+      chains: Array.isArray(connection?.chains) ? connection.chains : [],
+      rule: connection?.rule || null,
+      rulePayload: connection?.rulePayload || null,
+      uploadBytes: pickConnectionBytes(connection, ['upload', 'uploadBytes', 'up', 'upBytes', 'sent', 'tx']),
+      downloadBytes: pickConnectionBytes(connection, ['download', 'downloadBytes', 'down', 'downBytes', 'received', 'rx']),
+      startedAt: pickConnectionTimestamp(connection)
+    };
+  });
 };
 
 export const getTrafficSnapshot = async (manager) => {

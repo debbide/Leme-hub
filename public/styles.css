@@ -5799,3 +5799,25 @@ input:checked + .cyber-slider:before {
     width: 100%;
   }
 }
+
+/* Active connections view */
+.connections-table {
+  table-layout: fixed;
+  min-width: 900px;
+}
+.connections-table th,
+.connections-table td {
+  padding: 0.6rem 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.connections-table th:nth-child(1),
+.connections-table td:nth-child(1) { width: 24%; }
+.connections-table th:nth-child(4),
+.connections-table td:nth-child(4) { max-width: 180px; }
+.connections-table td {
+  font-size: 0.82rem;
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-soft, var(--border-strong));
+}

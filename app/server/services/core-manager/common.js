@@ -1,6 +1,8 @@
+import { createSecureId } from '../../../shared/ids.js';
+
 const createHttpError = (message, status) => Object.assign(new Error(message), { status });
 
-const createNodeId = () => Math.random().toString(36).slice(2, 10);
+const createNodeId = () => createSecureId();
 
 const getNodeSignature = (node) => [
   node.type || '',

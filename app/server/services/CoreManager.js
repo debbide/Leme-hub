@@ -30,9 +30,13 @@ import {
   ensureStoredGroup as ensureSubscriptionStoredGroup,
   findSubscriptionRecord as findSubscriptionRecordFromSettings,
   getSubscriptions as getSubscriptionsForManager,
+  getSubscriptionsDueForAutoUpdate as getSubscriptionsDueForAutoUpdateForManager,
+  runSubscriptionAutoUpdateTick as runSubscriptionAutoUpdateTickForManager,
+  SUBSCRIPTION_AUTO_UPDATE_TICK_MS,
   syncSubscription as syncSubscriptionForManager,
   updateSubscriptionRecord as updateSubscriptionRecordForManager,
-  updateSubscriptionRecordError as updateSubscriptionRecordErrorForManager
+  updateSubscriptionRecordError as updateSubscriptionRecordErrorForManager,
+  updateSubscriptionSettings as updateSubscriptionSettingsForManager
 } from './core-manager/subscription-manager.js';
 import {
   createGroup as createGroupForManager,
@@ -169,6 +173,13 @@ export class CoreManager {
       void this.runSystemProxyAutoSwitchTick();
     }, SYSTEM_PROXY_AUTO_SWITCH_TICK_MS);
     this._systemProxyAutoSwitchTimer.unref?.();
+
+    this._subscriptionAutoUpdateBusy = false;
+    this._subscriptionAutoUpdateTimer = null;
+    // The auto-update poller only exists while at least one subscription
+    // opted into auto-update: no background wakeups for users who never
+    // enabled the feature.
+    this.rescheduleSubscriptionAutoUpdateTimer();
   }
 
   createLogger() {
@@ -576,6 +587,10 @@ export class CoreManager {
     return statusManager.getTrafficSnapshot(this);
   }
 
+  async getActiveConnections() {
+    return statusManager.getActiveConnections(this);
+  }
+
   async getNodeRecords(options = {}) {
     return statusManager.getNodeRecords(this, options);
   }
@@ -742,6 +757,42 @@ export class CoreManager {
 
   async syncSubscription(input) {
     return syncSubscriptionForManager(this, input);
+  }
+
+  async updateSubscriptionSettings(id, patch) {
+    return updateSubscriptionSettingsForManager(this, id, patch);
+  }
+
+  getSubscriptionsDueForAutoUpdate(now) {
+    return getSubscriptionsDueForAutoUpdateForManager(this, now);
+  }
+
+  // Start the 5-minute auto-update poller only when at least one
+  // subscription has autoUpdate enabled; stop it otherwise so the process
+  // never wakes up for a feature nobody turned on. Called on startup and
+  // after every subscription write.
+  rescheduleSubscriptionAutoUpdateTimer() {
+    if (this._subscriptionAutoUpdateTimer) {
+      clearInterval(this._subscriptionAutoUpdateTimer);
+      this._subscriptionAutoUpdateTimer = null;
+    }
+    let anyEnabled = false;
+    try {
+      const subscriptions = this.getSettingsSnapshot().subscriptions || [];
+      anyEnabled = subscriptions.some((record) => record?.autoUpdate);
+    } catch {
+      anyEnabled = false;
+    }
+    if (anyEnabled) {
+      this._subscriptionAutoUpdateTimer = setInterval(() => {
+        void this.runSubscriptionAutoUpdateTick();
+      }, SUBSCRIPTION_AUTO_UPDATE_TICK_MS);
+      this._subscriptionAutoUpdateTimer.unref?.();
+    }
+  }
+
+  async runSubscriptionAutoUpdateTick(options) {
+    return runSubscriptionAutoUpdateTickForManager(this, options);
   }
 
   bindProcessState() {

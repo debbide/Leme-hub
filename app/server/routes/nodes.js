@@ -10,14 +10,20 @@ const writeSseEvent = (response, event, data) => {
 
 export function createNodeRoutes({ coreManager }) {
   return {
-    'GET /api/nodes': async () => json({
-      ok: true,
-      nodes: await coreManager.getNodeRecords(),
-      groups: coreManager.getGroups(),
-      subscriptions: coreManager.getSubscriptions(),
-      core: coreManager.getStatus(),
-      geoIp: coreManager.getGeoIpStatus()
-    }),
+    'GET /api/nodes': async () => {
+      try {
+        return json({
+          ok: true,
+          nodes: await coreManager.getNodeRecords(),
+          groups: coreManager.getGroups(),
+          subscriptions: coreManager.getSubscriptions(),
+          core: coreManager.getStatus(),
+          geoIp: coreManager.getGeoIpStatus()
+        });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
 
     'POST /api/groups': async ({ body }) => {
       const name = String(body?.name || '').trim();
@@ -234,10 +240,41 @@ export function createNodeRoutes({ coreManager }) {
       }
     },
 
-    'GET /api/groups': async () => json({
-      ok: true,
-      groups: coreManager.getGroups()
-    }),
+    'PUT /api/subscriptions': async ({ body }) => {
+      const id = String(body?.id || '').trim();
+      if (!id) {
+        return json({ ok: false, error: 'Missing subscription id' }, 400);
+      }
+
+      try {
+        // Only forward keys the client actually sent: the settings layer
+        // treats key presence as "update this field", so forwarding
+        // undefined values would wipe names or disable auto-update.
+        const patch = {};
+        if (body !== null && typeof body === 'object') {
+          for (const key of ['name', 'autoUpdate', 'updateIntervalHours']) {
+            if (key in body) {
+              patch[key] = body[key];
+            }
+          }
+        }
+        const subscription = await coreManager.updateSubscriptionSettings(id, patch);
+        return json({ ok: true, subscription });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
+
+    'GET /api/groups': async () => {
+      try {
+        return json({
+          ok: true,
+          groups: coreManager.getGroups()
+        });
+      } catch (error) {
+        return json({ ok: false, error: error.message }, error.status || 500);
+      }
+    },
 
     'PUT /api/groups/rename': async ({ body }) => {
       const from = String(body?.from || '').trim();

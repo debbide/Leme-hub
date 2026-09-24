@@ -4,6 +4,7 @@ import net from 'net';
 import path from 'path';
 
 import { normalizeHost, resolveLoopbackHost } from '../shared/network.js';
+import { createTempSuffix } from '../shared/ids.js';
 import { buildRoutingObservabilityLines } from './routing-observability.js';
 
 const stripAnsi = (value = '') => String(value).replace(/\u001b\[[0-9;]*m/gu, '');
@@ -35,7 +36,10 @@ export const resolveExecutablePath = (explicitPath) => {
 };
 
 export const writeConfig = (config, targetPath) => {
-  fs.writeFileSync(targetPath, JSON.stringify(config, null, 2));
+  // Atomic write: a crash mid-write must never leave a half-written live config.
+  const tmpPath = `${targetPath}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
+  fs.renameSync(tmpPath, targetPath);
 };
 
 export const validateConfig = async (context, config, options = {}) => {
@@ -43,9 +47,11 @@ export const validateConfig = async (context, config, options = {}) => {
   const explicitConfigPath = options.configPath ? path.resolve(options.configPath) : null;
   const configPath = explicitConfigPath || path.join(
     context.configDir,
-    `singbox_validate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`
+    `singbox_validate_${Date.now()}_${createTempSuffix()}.json`
   );
   const shouldCleanup = !explicitConfigPath;
+  // A hung `sing-box check` must not freeze the serial lifecycle queue forever.
+  const timeoutMs = options.timeoutMs || 15000;
 
   writeConfig(config, configPath);
 
@@ -60,6 +66,7 @@ export const validateConfig = async (context, config, options = {}) => {
           return;
         }
         settled = true;
+        clearTimeout(timer);
         if (error) {
           reject(error);
           return;
@@ -68,6 +75,14 @@ export const validateConfig = async (context, config, options = {}) => {
       };
 
       const processRef = spawn(execPath, ['check', '-c', configPath]);
+      const timer = setTimeout(() => {
+        try {
+          processRef.kill('SIGKILL');
+        } catch {
+          // best effort: the process may already be gone
+        }
+        finish(new Error(`sing-box check timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
       processRef.stdout.on('data', (data) => stdoutChunks.push(data.toString()));
       processRef.stderr.on('data', (data) => stderrChunks.push(data.toString()));
       processRef.once('error', (error) => finish(error));
@@ -392,35 +407,77 @@ export const startProxyRuntime = async (context, options = {}) => {
       throw error;
     }
   }
+  // Back up the last known-good config BEFORE overwriting it, so a failed
+  // hot-update can roll back instead of leaving the proxy completely down.
+  const backupPath = `${context.configPath}.bak`;
+  let hasBackup = false;
+  try {
+    if (fs.existsSync(context.configPath)) {
+      fs.copyFileSync(context.configPath, backupPath);
+      hasBackup = true;
+    }
+  } catch (error) {
+    context.log.warn?.(`[ProxyService] Failed to back up previous config: ${error.message}`);
+  }
+
   writeConfig(config, context.configPath);
   buildRoutingObservabilityLines(runtimeOptions, config)
     .forEach((line) => context.log.log(line));
   await stopProxyRuntime(context);
   await cleanupStaleRuntimeProcesses(context, { enabled: options.cleanupStaleProcesses !== false });
 
-  context.proxyProcess = spawn(execPath, ['run', '-c', context.configPath]);
+  const launch = async () => {
+    context.proxyProcess = spawn(execPath, ['run', '-c', context.configPath]);
 
-  context.proxyProcess.stdout.on('data', (data) => {
-    data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => context.handleProxyRuntimeLine(line));
-  });
-
-  context.proxyProcess.stderr.on('data', (data) => {
-    data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
-      const prefixedLine = `[Proxy STDERR] ${line}`;
-      context.log.error(prefixedLine);
-      context.handleProxyRuntimeLine(prefixedLine, { logRaw: false });
+    context.proxyProcess.stdout.on('data', (data) => {
+      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => context.handleProxyRuntimeLine(line));
     });
-  });
 
-  context.proxyProcess.on('error', (error) => {
-    context.log.error(`[ProxyService] Failed to start sing-box process: ${error.message}`);
-  });
+    context.proxyProcess.stderr.on('data', (data) => {
+      data.toString().split(/\r?\n/).filter(Boolean).forEach((line) => {
+        const prefixedLine = `[Proxy STDERR] ${line}`;
+        context.log.error(prefixedLine);
+        context.handleProxyRuntimeLine(prefixedLine, { logRaw: false });
+      });
+    });
 
-  await waitForRuntimeReady(context, runtimeOptions, context.proxyListen, context.proxyProcess, {
-    waitForAllNodePorts: options.waitForAllNodePorts,
-    waitNodeIds: options.waitNodeIds,
-    timeoutMs: options.readyTimeoutMs
-  });
+    context.proxyProcess.on('error', (error) => {
+      context.log.error(`[ProxyService] Failed to start sing-box process: ${error.message}`);
+    });
+
+    await waitForRuntimeReady(context, runtimeOptions, context.proxyListen, context.proxyProcess, {
+      waitForAllNodePorts: options.waitForAllNodePorts,
+      waitNodeIds: options.waitNodeIds,
+      timeoutMs: options.readyTimeoutMs
+    });
+  };
+
+  try {
+    await launch();
+  } catch (launchError) {
+    if (!hasBackup) {
+      throw launchError;
+    }
+    // The new config passed `sing-box check` but the process never became
+    // ready (port conflict, TUN permission, instant crash...). Roll back to
+    // the previous working config instead of leaving the proxy down.
+    context.log.error(`[ProxyService] New config failed to start: ${launchError.message}. Rolling back to previous config.`);
+    try {
+      await stopProxyRuntime(context);
+      fs.copyFileSync(backupPath, context.configPath);
+      await launch();
+    } catch (rollbackError) {
+      const combined = new Error(
+        `Hot-update failed (${launchError.message}); rollback to previous config also failed (${rollbackError.message})`
+      );
+      combined.phase = 'startup';
+      throw combined;
+    }
+    const rolledBack = new Error(`新配置启动失败，已自动回滚到上一个可用配置: ${launchError.message}`);
+    rolledBack.phase = 'rollback';
+    rolledBack.rolledBack = true;
+    throw rolledBack;
+  }
 
   return {
     started: true,

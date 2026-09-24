@@ -297,7 +297,11 @@ const parseSimpleEnv = (raw) => raw
     }
     return result;
   }, {});
-const buildPowerShellStringLiteral = (value) => JSON.stringify(String(value || ''));
+// PowerShell single-quoted strings are fully literal: no variable expansion,
+// no $(...) subexpressions, no backtick escapes. The only character that needs
+// escaping is the single quote itself, doubled as ''. Never use double-quoted
+// (JSON.stringify) literals here: $(...) inside them would be evaluated.
+const buildPowerShellStringLiteral = (value) => `'${String(value || '').replace(/'/g, "''")}'`;
 const buildWindowsProxyApplyScript = ({ proxyServer, exceptions, type }) => [
   `$proxyServer = ${buildPowerShellStringLiteral(proxyServer)};`,
   `$exceptions = ${buildPowerShellStringLiteral(exceptions)};`,

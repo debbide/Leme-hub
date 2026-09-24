@@ -525,22 +525,16 @@ function createTray() {
 
   tray = new Tray(getTrayIconPath());
   tray.setToolTip('Leme Hub');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: '打开主界面',
-      click: () => {
-        restoreOrCreateWindow().catch(() => null);
-      }
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      }
+  // Build the menu on demand when it is opened instead of polling: the
+  // radio state always reflects the latest core status with zero background
+  // wakeups.
+  tray.on('right-click', () => {
+    try {
+      tray.popUpContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate()));
+    } catch {
+      // ignore menu build races during shutdown
     }
-  ]));
+  });
   tray.on('click', () => {
     restoreOrCreateWindow().catch(() => null);
   });
@@ -549,6 +543,100 @@ function createTray() {
   });
 
   return tray;
+}
+
+// Mirror the dashboard's resolveCaptureMode so the tray radio state always
+// reflects the real core status (system proxy / TUN / none).
+function resolveTrayCaptureMode() {
+  try {
+    const core = serverContext?.coreManager?.getStatus?.();
+    if (core?.tun?.enabled || core?.proxy?.tunEnabled || core?.proxy?.tunCaptureEnabled) return 'tun';
+    if (core?.proxy?.systemProxyCaptureEnabled || (core?.proxy?.systemProxyEnabled && core?.systemProxy?.desiredEnabled)) {
+      return 'system_proxy';
+    }
+  } catch {
+    // fall through to 'none' when backend is not ready
+  }
+  return 'none';
+}
+
+// Mirror the dashboard's applyCaptureMode (system-bindings.js) so the tray
+// switches modes through the exact same backend calls as the web UI.
+async function applyTrayCaptureMode(mode) {
+  const coreManager = serverContext?.coreManager;
+  if (!coreManager) {
+    throw new Error('后端尚未就绪');
+  }
+
+  if (mode === 'none') {
+    try { await coreManager.disableTun(); } catch { /* already off */ }
+    try { await coreManager.disableSystemProxy(); } catch { /* already off */ }
+    await coreManager.updateSettings({ systemProxyEnabled: false, tunEnabled: false, tunCaptureEnabled: false });
+    await coreManager.stop();
+    return;
+  }
+
+  if (mode === 'tun') {
+    await coreManager.enableTun();
+    return;
+  }
+
+  // system_proxy
+  try { await coreManager.disableTun(); } catch { /* ignore */ }
+  await coreManager.updateSettings({
+    systemProxyEnabled: true,
+    tunEnabled: false,
+    tunCaptureEnabled: false
+  });
+  await coreManager.start();
+  await coreManager.applySystemProxy();
+}
+
+function buildTrayMenuTemplate() {
+  const currentMode = resolveTrayCaptureMode();
+  const modeLabels = {
+    system_proxy: '系统代理',
+    tun: 'TUN 网卡',
+    none: '关闭接管'
+  };
+  const switchMode = (mode) => {
+    applyTrayCaptureMode(mode)
+      .catch((error) => {
+        dialog.showErrorBox('切换接管方式失败', error?.message || String(error));
+      });
+  };
+
+  return [
+    {
+      label: '打开主界面',
+      click: () => {
+        restoreOrCreateWindow().catch(() => null);
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '接管模式',
+      enabled: false
+    },
+    ...Object.entries(modeLabels).map(([mode, label]) => ({
+      label,
+      type: 'radio',
+      checked: currentMode === mode,
+      click: () => {
+        if (resolveTrayCaptureMode() !== mode) {
+          switchMode(mode);
+        }
+      }
+    })),
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ];
 }
 
 async function shutdownBackend() {

@@ -155,8 +155,8 @@ test('windows apply writes manual proxy, clears pac, and applies wininet per-con
   assert.equal(calls[4][0], 'powershell.exe');
   assert.equal(calls[4][1], '-NoProfile');
   assert.equal(calls[4][5], '-Command');
-  assert.match(calls[4][6], /\$proxyServer = "127\.0\.0\.1:20101";/);
-  assert.match(calls[4][6], /\$exceptions = "localhost;127\.\*;10\.\*;/);
+  assert.match(calls[4][6], /\$proxyServer = '127\.0\.0\.1:20101';/);
+  assert.match(calls[4][6], /\$exceptions = 'localhost;127\.\*;10\.\*;/);
   assert.match(calls[4][6], /\$type = 2;/);
   assert.match(calls[4][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
   assert.equal(calls[4].length, 7);
@@ -195,6 +195,41 @@ test('windows apply normalizes wildcard host to loopback', async () => {
   assert.equal(calls[1][8], '127.0.0.1:20101');
 });
 
+test('windows apply escapes PowerShell subexpressions in proxy server literally', async () => {
+  const calls = [];
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    }
+  });
+
+  // Regression test for CVE-style injection: $(...) and backticks inside a
+  // double-quoted PowerShell string would be evaluated. Single-quoted literals
+  // must keep them as plain text.
+  await manager.setWindowsProxy({ host: 'x$(whoami)`echo hi`', httpPort: 20101, socksPort: 20100 });
+
+  const script = calls[4][6];
+  const proxyServerLine = script.split('\n').find((line) => line.startsWith('$proxyServer ='));
+  assert.equal(proxyServerLine, "$proxyServer = 'x$(whoami)`echo hi`:20101';");
+});
+
+test('windows apply doubles single quotes inside PowerShell string literals', async () => {
+  const calls = [];
+  const manager = new SystemProxyManager({
+    platform: 'win32',
+    execFile: async (command, args) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    }
+  });
+
+  await manager.setWindowsProxy({ host: "a'b", httpPort: 20101, socksPort: 20100 });
+
+  assert.match(calls[4][6], /\$proxyServer = 'a''b:20101';/);
+});
+
 test('windows disable clears proxy values and applies direct wininet settings', async () => {
   const calls = [];
   const manager = new SystemProxyManager({
@@ -213,8 +248,8 @@ test('windows disable clears proxy values and applies direct wininet settings', 
   assert.deepEqual(calls[2], ['reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxyOverride', '/t', 'REG_SZ', '/d', '', '/f']);
   assert.deepEqual(calls[3], ['reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'AutoConfigURL', '/t', 'REG_SZ', '/d', '', '/f']);
   assert.equal(calls[4][0], 'powershell.exe');
-  assert.match(calls[4][6], /\$proxyServer = "";/);
-  assert.match(calls[4][6], /\$exceptions = "";/);
+  assert.match(calls[4][6], /\$proxyServer = '';/);
+  assert.match(calls[4][6], /\$exceptions = '';/);
   assert.match(calls[4][6], /\$type = 1;/);
   assert.match(calls[4][6], /INTERNET_OPTION_PER_CONNECTION_OPTION/);
   assert.equal(calls[4].length, 7);

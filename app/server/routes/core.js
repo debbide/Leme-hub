@@ -10,7 +10,13 @@ export function createCoreRoutes({ coreManager }) {
         return json({ ok: false, error: error.message, core: coreManager.getStatus() }, 500);
       }
     },
-    'POST /api/core/stop': async () => json({ ok: true, core: await coreManager.stop() }),
+    'POST /api/core/stop': async () => {
+      try {
+        return json({ ok: true, core: await coreManager.stop() });
+      } catch (error) {
+        return json({ ok: false, error: error.message, core: coreManager.getStatus() }, error.status || 500);
+      }
+    },
     'POST /api/core/restart': async () => {
       try {
         const core = await coreManager.restart();
@@ -31,6 +37,13 @@ export function createCoreRoutes({ coreManager }) {
         return json({ ok: true, traffic: await coreManager.getTrafficSnapshot(), core: coreManager.getStatus() });
       } catch (error) {
         return json({ ok: false, error: error.message, traffic: { timestamp: new Date().toISOString(), uploadBytes: 0, downloadBytes: 0, connectionCount: 0 }, core: coreManager.getStatus() }, 500);
+      }
+    },
+    'GET /api/core/connections': async () => {
+      try {
+        return json({ ok: true, connections: await coreManager.getActiveConnections(), core: coreManager.getStatus() });
+      } catch (error) {
+        return json({ ok: false, error: error.message, connections: [], core: coreManager.getStatus() }, error.status || 500);
       }
     }
   };

@@ -120,6 +120,8 @@ download_binary() {
   local url="$1"
   local tmp_file
   tmp_file="$(mktemp)"
+  local checksum_file
+  checksum_file="$(mktemp)"
 
   say "开始下载服务端文件：${url}"
 
@@ -128,9 +130,44 @@ download_binary() {
   elif command -v wget >/dev/null 2>&1; then
     wget -O "${tmp_file}" "${url}"
   else
-    rm -f "${tmp_file}"
+    rm -f "${tmp_file}" "${checksum_file}"
     say '系统未找到 curl 或 wget，请先安装其中一个再执行脚本。'
     exit 1
+  fi
+
+  # 发布流程应在 release 资产旁附带 ${url}.sha256（纯 sha256 hex 文本）。
+  # 能拿到就强制校验；拿不到则大声警告后继续（兼容尚未发布校验文件的旧版本）。
+  local expected_checksum=""
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsL "${url}.sha256" -o "${checksum_file}" 2>/dev/null || true
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "${checksum_file}" "${url}.sha256" 2>/dev/null || true
+  fi
+  if [ -s "${checksum_file}" ]; then
+    expected_checksum="$(tr -d ' \t\r\n' < "${checksum_file}" | cut -c1-64)"
+  fi
+  rm -f "${checksum_file}"
+
+  if [ -n "${expected_checksum}" ]; then
+    say "正在校验服务端文件完整性…"
+    local actual_checksum=""
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual_checksum="$(sha256sum "${tmp_file}" | cut -d' ' -f1)"
+    elif command -v shasum >/dev/null 2>&1; then
+      actual_checksum="$(shasum -a 256 "${tmp_file}" | cut -d' ' -f1)"
+    else
+      rm -f "${tmp_file}"
+      say '找不到 sha256sum/shasum，无法校验下载文件完整性，终止安装。'
+      exit 1
+    fi
+    if [ "${actual_checksum}" != "${expected_checksum}" ]; then
+      rm -f "${tmp_file}"
+      say '服务端文件校验失败：SHA256 不匹配，终止安装。'
+      exit 1
+    fi
+    say "文件校验通过。"
+  else
+    say '警告：未找到配套的 .sha256 校验文件，跳过完整性校验。'
   fi
 
   install -Dm755 "${tmp_file}" "${BINARY_PATH}"

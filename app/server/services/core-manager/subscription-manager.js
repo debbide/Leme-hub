@@ -3,9 +3,13 @@ import {
   buildUniqueSubscriptionGroupName,
   createHttpError,
   deriveSubscriptionDisplayName,
+  getNodeSignature,
   mergeUniqueNodes,
   normalizeSubscriptionRecord
 } from './state-utils.js';
+import { createSecureId } from '../../../shared/ids.js';
+
+export const SUBSCRIPTION_AUTO_UPDATE_TICK_MS = 5 * 60 * 1000;
 
 export const getSubscriptions = (manager) => manager.getSettingsSnapshot().subscriptions || [];
 
@@ -47,7 +51,7 @@ export const updateSubscriptionRecord = (manager, recordInput, options = {}) => 
   const nextRecord = normalizeSubscriptionRecord({
     ...existingRecord,
     ...recordInput,
-    id: recordInput.id || existingRecord?.id || `subscription-${Date.now()}`,
+    id: recordInput.id || existingRecord?.id || `subscription-${createSecureId()}`,
     name: deriveSubscriptionDisplayName(recordInput.url || existingRecord?.url || '', recordInput.name || existingRecord?.name || '')
   }, existingRecord ? subscriptions.indexOf(existingRecord) : subscriptions.length);
   const nextSubscriptions = [
@@ -58,6 +62,9 @@ export const updateSubscriptionRecord = (manager, recordInput, options = {}) => 
   // reach here after network syncs), and saveSettings merges over fresh disk
   // state, so a whole-object write would revert unrelated concurrent edits.
   manager.store.saveSettings({ subscriptions: nextSubscriptions });
+  // Keep the auto-update poller in sync with the feature flag: it should
+  // only exist while at least one subscription opted in.
+  manager.rescheduleSubscriptionAutoUpdateTimer?.();
   return nextRecord;
 };
 
@@ -91,6 +98,67 @@ export const findSubscriptionRecord = (input, settings = {}) => {
   return null;
 };
 
+export const updateSubscriptionSettings = (manager, id, patch = {}) => {
+  const settings = manager.getSettingsSnapshot();
+  const record = findSubscriptionRecord({ id }, settings);
+  if (!record) {
+    throw createHttpError('Subscription not found', 404);
+  }
+
+  const next = { ...record };
+  if ('name' in patch) {
+    next.name = String(patch.name || '').trim();
+  }
+  if ('autoUpdate' in patch) {
+    next.autoUpdate = patch.autoUpdate === true || patch.autoUpdate === 'true';
+  }
+  if ('updateIntervalHours' in patch) {
+    const hours = Number.parseInt(patch.updateIntervalHours, 10);
+    if (Number.isInteger(hours) && hours >= 1 && hours <= 168) {
+      next.updateIntervalHours = hours;
+    } else {
+      throw createHttpError('updateIntervalHours must be between 1 and 168', 400);
+    }
+  }
+
+  return updateSubscriptionRecord(manager, next, { settings });
+};
+
+export const getSubscriptionsDueForAutoUpdate = (manager, now = Date.now()) => {
+  const subscriptions = manager.getSettingsSnapshot().subscriptions || [];
+  return subscriptions.filter((record) => {
+    if (!record?.autoUpdate) {
+      return false;
+    }
+    const intervalMs = (record.updateIntervalHours || 24) * 3600 * 1000;
+    const lastSynced = record.lastSyncedAt ? Date.parse(record.lastSyncedAt) : 0;
+    return !Number.isFinite(lastSynced) || now - lastSynced >= intervalMs;
+  });
+};
+
+export const runSubscriptionAutoUpdateTick = async (manager, options = {}) => {
+  const now = options.now ?? Date.now();
+  if (manager._subscriptionAutoUpdateBusy) {
+    return { ran: false, reason: 'busy' };
+  }
+  manager._subscriptionAutoUpdateBusy = true;
+  try {
+    const due = getSubscriptionsDueForAutoUpdate(manager, now);
+    const results = [];
+    for (const record of due) {
+      try {
+        await syncSubscription(manager, { id: record.id, url: record.url });
+        results.push({ id: record.id, ok: true });
+      } catch (error) {
+        results.push({ id: record.id, ok: false, error: error.message });
+      }
+    }
+    return { ran: true, results };
+  } finally {
+    manager._subscriptionAutoUpdateBusy = false;
+  }
+};
+
 export const deleteSubscription = async (manager, id) => {
   const settings = manager.getSettingsSnapshot();
   const subscription = findSubscriptionRecord({ id }, settings);
@@ -118,6 +186,7 @@ export const deleteSubscription = async (manager, id) => {
 
   const savedNodes = manager.saveNodes(remainingNodes);
   const applied = await manager.queueNodeChangesApply(savedNodes);
+  manager.rescheduleSubscriptionAutoUpdateTimer?.();
   return {
     subscription,
     subscriptions: manager.getSubscriptions(),
@@ -184,13 +253,37 @@ export const syncSubscription = async (manager, input) => {
   }
 
   const urlsToReplace = new Set([url, existingRecord?.url].filter(Boolean));
-  const existingNodes = manager.store.getNodes().filter((node) => !urlsToReplace.has(node.subscriptionUrl));
-  const savedNodes = manager.saveNodes(mergeUniqueNodes(existingNodes, validNodes.map((node) => ({
-    ...node,
-    source: 'subscription',
-    subscriptionUrl: url,
-    ...(groupName ? { group: groupName } : {})
-  }))));
+  const allNodes = manager.store.getNodes();
+  const replacedNodes = allNodes.filter((node) => urlsToReplace.has(node.subscriptionUrl));
+  const existingNodes = allNodes.filter((node) => !urlsToReplace.has(node.subscriptionUrl));
+
+  // Stable ids across re-syncs: an unchanged node (same signature) keeps its
+  // previous id, so the active node selection, groups, latency cache entries
+  // and local port mappings survive a subscription refresh.
+  const signatureToPreviousId = new Map();
+  for (const node of replacedNodes) {
+    const signature = getNodeSignature(node);
+    if (signature && !signatureToPreviousId.has(signature)) {
+      signatureToPreviousId.set(signature, node.id);
+    }
+  }
+  const usedIds = new Set(existingNodes.map((node) => node.id));
+  const incomingNodes = validNodes.map((node) => {
+    const withMeta = {
+      ...node,
+      source: 'subscription',
+      subscriptionUrl: url,
+      ...(groupName ? { group: groupName } : {})
+    };
+    const previousId = signatureToPreviousId.get(getNodeSignature(withMeta));
+    if (previousId && !usedIds.has(previousId)) {
+      usedIds.add(previousId);
+      return { ...withMeta, id: previousId };
+    }
+    return withMeta;
+  });
+
+  const savedNodes = manager.saveNodes(mergeUniqueNodes(existingNodes, incomingNodes));
 
   const subscriptionNodeIds = savedNodes
     .filter((node) => node.subscriptionUrl === url)

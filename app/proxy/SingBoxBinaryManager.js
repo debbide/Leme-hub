@@ -12,7 +12,6 @@ import {
 } from '../shared/constants.js';
 
 const RELEASES_BASE_URL = `https://api.github.com/repos/${SINGBOX_REPOSITORY.owner}/${SINGBOX_REPOSITORY.repo}/releases`;
-const RELEASE_DOWNLOAD_BASE_URL = `https://github.com/${SINGBOX_REPOSITORY.owner}/${SINGBOX_REPOSITORY.repo}/releases/download`;
 
 const archMap = {
   arm64: 'arm64',
@@ -42,6 +41,10 @@ const removeIfExists = (targetPath) => {
 
 const toHex = (digest = '') => digest.startsWith('sha256:') ? digest.slice('sha256:'.length) : digest;
 
+const FETCH_RELEASE_TIMEOUT_MS = 30000;
+const DOWNLOAD_ASSET_TIMEOUT_MS = 180000;
+const DOWNLOAD_MAX_ATTEMPTS = 3;
+
 export class SingBoxBinaryManager {
   constructor(paths, options = {}) {
     this.paths = paths;
@@ -52,6 +55,28 @@ export class SingBoxBinaryManager {
     if (!this.fetch) {
       throw new Error('Global fetch is not available in this Node.js runtime');
     }
+  }
+
+  // Network hangs must not freeze the serial lifecycle queue: every fetch gets
+  // a timeout, and transient failures are retried a bounded number of times.
+  async fetchWithTimeout(url, { timeoutMs, attempts = DOWNLOAD_MAX_ATTEMPTS, ...init } = {}) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error(`Fetch timed out after ${timeoutMs}ms: ${url}`)), timeoutMs);
+      try {
+        return await this.fetch(url, { ...init, signal: controller.signal });
+      } catch (error) {
+        lastError = error;
+        this.log?.warn?.(`[SingBoxBinaryManager] Fetch attempt ${attempt}/${attempts} failed: ${error.message}`);
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError;
   }
 
   getManagedBinaryPath() {
@@ -81,6 +106,14 @@ export class SingBoxBinaryManager {
   async ensureAvailable(configuredPath) {
     const status = this.getStatus(configuredPath);
     if (status.configuredExists) {
+      // Defense in depth: even if a stale settings file carries a hostile
+      // path, never execute a binary outside the managed bin directory.
+      const binDir = path.resolve(this.paths.binDir);
+      const resolved = path.resolve(status.configuredPath);
+      const insideBinDir = resolved === binDir || resolved.startsWith(binDir + path.sep);
+      if (!insideBinDir) {
+        throw new Error('Configured sing-box binary path is outside the managed binary directory');
+      }
       return {
         executablePath: status.configuredPath,
         installed: false,
@@ -122,7 +155,8 @@ export class SingBoxBinaryManager {
     const url = this.version === 'latest'
       ? `${RELEASES_BASE_URL}/latest`
       : `${RELEASES_BASE_URL}/tags/${this.version.startsWith('v') ? this.version : `v${this.version}`}`;
-    const response = await this.fetch(url, {
+    const response = await this.fetchWithTimeout(url, {
+      timeoutMs: FETCH_RELEASE_TIMEOUT_MS,
       headers: {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'local-proxy-client'
@@ -136,33 +170,29 @@ export class SingBoxBinaryManager {
     return response.json();
   }
 
-  buildReleaseDownloadUrl(version, assetName) {
-    const tag = version.startsWith('v') ? version : `v${version}`;
-    return `${RELEASE_DOWNLOAD_BASE_URL}/${tag}/${assetName}`;
-  }
-
   async installManagedBinary() {
     ensureDir(this.paths.binDir);
 
     const target = this.getPlatformTarget();
-    const pinnedVersion = this.version === 'latest' ? null : String(this.version).replace(/^v/, '');
-    let version = pinnedVersion;
-    let assetName = pinnedVersion ? this.buildAssetName(pinnedVersion, target) : null;
-    let downloadUrl = pinnedVersion ? this.buildReleaseDownloadUrl(pinnedVersion, assetName) : null;
-    let expectedDigest = null;
+    // Always resolve through the release metadata: it carries the publisher's
+    // digest for each asset. A binary is never installed without a verified
+    // checksum, even for pinned versions.
+    const release = await this.fetchRelease();
+    const version = String(release.tag_name || '').replace(/^v/, '');
+    if (!version) {
+      throw new Error('Could not determine sing-box version from release metadata');
+    }
+    const assetName = this.buildAssetName(version, target);
+    const asset = (release.assets || []).find((item) => item.name === assetName);
 
-    if (!pinnedVersion) {
-      const release = await this.fetchRelease();
-      version = String(release.tag_name || '').replace(/^v/, '');
-      assetName = this.buildAssetName(version, target);
-      const asset = (release.assets || []).find((item) => item.name === assetName);
+    if (!asset) {
+      throw new Error(`Unable to find a matching sing-box release asset for ${target.platform}/${target.arch}`);
+    }
 
-      if (!asset) {
-        throw new Error(`Unable to find a matching sing-box release asset for ${target.platform}/${target.arch}`);
-      }
-
-      downloadUrl = asset.browser_download_url;
-      expectedDigest = asset.digest || null;
+    const downloadUrl = asset.browser_download_url;
+    const expectedDigest = asset.digest || null;
+    if (!expectedDigest) {
+      throw new Error(`Release asset ${assetName} publishes no digest; refusing to install an unverifiable binary`);
     }
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-singbox-'));
@@ -171,10 +201,7 @@ export class SingBoxBinaryManager {
 
     try {
       await this.downloadAsset(downloadUrl, archivePath);
-
-      if (expectedDigest) {
-        await this.verifyDigest(archivePath, expectedDigest);
-      }
+      await this.verifyDigest(archivePath, expectedDigest);
 
       ensureDir(extractDir);
       await this.extractArchive(archivePath, extractDir, target.extension);
@@ -205,7 +232,8 @@ export class SingBoxBinaryManager {
   }
 
   async downloadAsset(url, destinationPath) {
-    const response = await this.fetch(url, {
+    const response = await this.fetchWithTimeout(url, {
+      timeoutMs: DOWNLOAD_ASSET_TIMEOUT_MS,
       headers: {
         'Accept': 'application/octet-stream',
         'User-Agent': 'local-proxy-client'

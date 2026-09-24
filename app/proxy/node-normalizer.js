@@ -1,4 +1,5 @@
 import { normalizeHost } from '../shared/network.js';
+import { createSecureId } from '../shared/ids.js';
 import {
   VMESS_TLS_SECURITY_MODES,
   applyIfPresent,
@@ -14,7 +15,7 @@ export const normalizeConfigNode = (node, index = 0) => {
   }
 
   const normalized = {
-    id: node.id || Math.random().toString(36).substring(2, 9),
+    id: node.id || createSecureId(),
     name: node.name || node.tag || `${type}-${index + 1}`,
     type,
     server: normalizeHost(node.server),

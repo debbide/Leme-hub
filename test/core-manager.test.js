@@ -3040,3 +3040,31 @@ test('system proxy guard re-applies capture when OS proxy was cleared', async ()
   await manager.refreshSystemProxyState();
   assert.equal(applyCount, 1);
 });
+
+test('subscription auto-update timer only runs while a subscription opted in', async () => {
+  const store = createStore();
+  const manager = new CoreManager(createPaths(), store);
+  attachPassiveNodeServices(manager);
+
+  // No subscription opted in: no background poller at all.
+  assert.equal(manager._subscriptionAutoUpdateTimer, null);
+
+  const record = manager.updateSubscriptionRecord({
+    url: 'https://example.com/sub',
+    name: 'Feed',
+    autoUpdate: true,
+    updateIntervalHours: 24
+  });
+  assert.ok(manager._subscriptionAutoUpdateTimer, 'timer should start when autoUpdate is enabled');
+
+  // Opting out again stops the poller.
+  const updated = await manager.updateSubscriptionSettings(record.id, { autoUpdate: false });
+  assert.equal(updated.autoUpdate, false);
+  assert.equal(manager._subscriptionAutoUpdateTimer, null);
+
+  // A partial settings patch must not clobber unrelated fields.
+  const renamed = await manager.updateSubscriptionSettings(record.id, { name: 'Renamed' });
+  assert.equal(renamed.name, 'Renamed');
+  assert.equal(renamed.autoUpdate, false);
+  assert.equal(renamed.updateIntervalHours, 24);
+});

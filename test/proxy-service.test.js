@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import net from 'node:net';
 import os from 'os';
 import path from 'path';
 import { EventEmitter } from 'node:events';
@@ -10,9 +11,43 @@ import axios from 'axios';
 
 const createTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'local-proxy-client-'));
 
+// Subscription tests mock axios.get (no real HTTP), so DNS must be faked too:
+// the sandbox resolver answers every name with a non-public placeholder IP.
+// Mirrors dns.promises.lookup(host, {all:true}): literals resolve to themselves.
+const publicDnsLookup = async (hostname) => {
+  const family = net.isIP(hostname);
+  if (family) {
+    return [{ address: hostname, family }];
+  }
+  return [{ address: '93.184.216.34', family: 4 }];
+};
+
 test.afterEach(() => {
   delete axios.get;
 });
+
+// These subscription retry tests assert exact axios proxy/agent options.
+// proxy-from-env reads the process proxy env vars, so isolate them here
+// to keep the tests deterministic in proxied CI/sandbox environments.
+const PROXY_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'NO_PROXY', 'no_proxy'];
+const withIsolatedProxyEnv = async (fn) => {
+  const saved = {};
+  for (const key of PROXY_ENV_KEYS) {
+    if (key in process.env) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const key of PROXY_ENV_KEYS) {
+      if (key in saved) {
+        process.env[key] = saved[key];
+      }
+    }
+  }
+};
 
 test('uses isolated config directory', () => {
   const tempDir = createTempDir();
@@ -1589,7 +1624,7 @@ test('syncSubscription parses plain text uri lists without base64 decoding', asy
     data: 'vless://0478303c-d7d2-4156-afba-1ab7e14c47fd@example.com:443?type=ws&host=cdn.example&path=%2Fws#edge\n\ninvalid-line\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss'
   });
 
-  const nodes = await service.syncSubscription('https://example.com/sub');
+  const nodes = await service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(nodes.length, 2);
   assert.equal(nodes[0].type, 'vless');
@@ -1601,7 +1636,7 @@ test('syncSubscription decodes base64 payloads containing uri lines', async () =
   const payload = Buffer.from('trojan://secret@example.com#trojan\nss://YWVzLTI1Ni1nY206c2VjcmV0@example.com:8388#ss').toString('base64');
   axios.get = async () => ({ data: payload });
 
-  const nodes = await service.syncSubscription('https://example.com/sub');
+  const nodes = await service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(nodes.length, 2);
   assert.equal(nodes[0].type, 'trojan');
@@ -1659,7 +1694,7 @@ test('syncSubscription imports sing-box style json outbounds', async () => {
     })
   });
 
-  const nodes = await service.syncSubscription('https://example.com/sub');
+  const nodes = await service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(nodes.length, 1);
   assert.equal(nodes[0].type, 'vless');
@@ -1698,7 +1733,7 @@ test('syncSubscription imports sing-box anytls outbounds', async () => {
     })
   });
 
-  const nodes = await service.syncSubscription('https://example.com/sub');
+  const nodes = await service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(nodes.length, 1);
   assert.equal(nodes[0].type, 'anytls');
@@ -1724,7 +1759,7 @@ test('syncSubscription sends user agent and basic auth headers', async () => {
     return { data: '' };
   };
 
-  await service.syncSubscription('https://demo:secret@example.com/sub');
+  await service.syncSubscription('https://demo:secret@example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(capturedOptions.headers['User-Agent'], 'Leme-Hub/0.1');
   assert.equal(capturedOptions.headers.Authorization, `Basic ${Buffer.from('demo:secret').toString('base64')}`);
@@ -1738,25 +1773,20 @@ test('syncSubscription reports http status failures clearly', async () => {
     throw error;
   };
 
-  await assert.rejects(() => service.syncSubscription('https://example.com/sub'), /Failed to download subscription: HTTP 403/);
+  await assert.rejects(() => service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup }), /Failed to download subscription: HTTP 403/);
 });
 
-test('syncSubscription retries direct when proxy-backed download fails', async () => {
+test('syncSubscription retries direct when proxy-backed download fails', async () => withIsolatedProxyEnv(async () => {
   const service = new ProxyService({
     configDir: createTempDir(),
     projectRoot: process.cwd(),
     log: { warn: () => {} }
   });
-  const originalHttpsProxy = process.env.HTTPS_PROXY;
-  const originalHttpProxy = process.env.HTTP_PROXY;
-  const originalAllProxy = process.env.ALL_PROXY;
-  const originalNoProxy = process.env.NO_PROXY;
   const capturedOptions = [];
 
+  // Full isolation first, then a single deterministic proxy entry: the
+  // lowercase sandbox proxy vars would otherwise shadow this one.
   process.env.HTTPS_PROXY = 'http://127.0.0.1:18999';
-  delete process.env.HTTP_PROXY;
-  delete process.env.ALL_PROXY;
-  delete process.env.NO_PROXY;
 
   axios.get = async (_url, options) => {
     capturedOptions.push(options);
@@ -1768,38 +1798,15 @@ test('syncSubscription retries direct when proxy-backed download fails', async (
     return { data: '' };
   };
 
-  try {
-    await service.syncSubscription('https://example.com/sub');
-  } finally {
-    if (originalHttpsProxy === undefined) {
-      delete process.env.HTTPS_PROXY;
-    } else {
-      process.env.HTTPS_PROXY = originalHttpsProxy;
-    }
-    if (originalHttpProxy === undefined) {
-      delete process.env.HTTP_PROXY;
-    } else {
-      process.env.HTTP_PROXY = originalHttpProxy;
-    }
-    if (originalAllProxy === undefined) {
-      delete process.env.ALL_PROXY;
-    } else {
-      process.env.ALL_PROXY = originalAllProxy;
-    }
-    if (originalNoProxy === undefined) {
-      delete process.env.NO_PROXY;
-    } else {
-      process.env.NO_PROXY = originalNoProxy;
-    }
-  }
+  await service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup });
 
   assert.equal(capturedOptions.length, 2);
   assert.equal(capturedOptions[0].proxy, undefined);
   assert.equal(capturedOptions[1].proxy, false);
   assert.equal(capturedOptions[1].headers['User-Agent'], 'Leme-Hub/0.1');
-});
+}));
 
-test('syncSubscription retries through internal socks proxy after direct failure', async () => {
+test('syncSubscription retries through internal socks proxy after direct failure', async () => withIsolatedProxyEnv(async () => {
   const service = new ProxyService({
     configDir: createTempDir(),
     projectRoot: process.cwd(),
@@ -1823,7 +1830,8 @@ test('syncSubscription retries through internal socks proxy after direct failure
 
   const nodes = await service.syncSubscription('https://example.com/sub', {
     allowInternalProxy: true,
-    activeNodeId: 'n1'
+    activeNodeId: 'n1',
+    dnsLookup: publicDnsLookup
   });
 
   assert.equal(nodes.length, 1);
@@ -1834,9 +1842,9 @@ test('syncSubscription retries through internal socks proxy after direct failure
   assert.equal(capturedOptions[1].httpAgent, capturedOptions[1].httpsAgent);
   assert.equal(capturedOptions[1].httpAgent?.proxy?.host, '127.0.0.1');
   assert.equal(capturedOptions[1].httpAgent?.proxy?.port, 20000);
-});
+  }));
 
-test('syncSubscription retries compatible user agents after repeated 403 responses', async () => {
+test('syncSubscription retries compatible user agents after repeated 403 responses', async () => withIsolatedProxyEnv(async () => {
   const service = new ProxyService({
     configDir: createTempDir(),
     projectRoot: process.cwd(),
@@ -1863,7 +1871,8 @@ test('syncSubscription retries compatible user agents after repeated 403 respons
 
   const nodes = await service.syncSubscription('https://example.com/sub', {
     allowInternalProxy: true,
-    activeNodeId: 'n1'
+    activeNodeId: 'n1',
+    dnsLookup: publicDnsLookup
   });
 
   assert.equal(nodes.length, 1);
@@ -1873,7 +1882,7 @@ test('syncSubscription retries compatible user agents after repeated 403 respons
   assert.equal(capturedOptions[2].headers['User-Agent'], 'v2rayN/7.20.0');
   assert.equal(capturedOptions[2].proxy, false);
   assert.equal(capturedOptions[2].httpAgent?.constructor?.name, 'SocksProxyAgent');
-});
+  }));
 
 test('syncSubscription surfaces cloudflare-style 403 hints in the error detail', async () => {
   const service = new ProxyService({ configDir: createTempDir(), projectRoot: process.cwd(), log: { warn: () => {} } });
@@ -1887,7 +1896,7 @@ test('syncSubscription surfaces cloudflare-style 403 hints in the error detail',
   };
 
   await assert.rejects(
-    () => service.syncSubscription('https://example.com/sub'),
+    () => service.syncSubscription('https://example.com/sub', { dnsLookup: publicDnsLookup }),
     /Failed to download subscription: HTTP 403 \(Cloudflare challenge\)/
   );
 });
