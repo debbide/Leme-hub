@@ -350,6 +350,8 @@ export const buildRouteConfig = ({
       rules: routeRules,
       auto_detect_interface: tunEnabled,
       default_domain_resolver: 'dns-local',
+      // Populate process info for the connections API (Linux/Windows/macOS).
+      find_process: true,
       final: finalOutbound
     },
     dnsRouting: {

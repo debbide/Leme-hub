@@ -63,3 +63,8 @@ test('exposes capture inbound tags', () => {
   assert.ok(CAPTURE_INBOUND_TAGS.includes('tun-in'));
   assert.ok(CAPTURE_INBOUND_TAGS.includes('system-socks'));
 });
+
+test('route config enables find_process so connection process info is populated', () => {
+  const { route } = buildRouteConfig(baseContext);
+  assert.equal(route.find_process, true);
+});
