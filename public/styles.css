@@ -5824,11 +5824,23 @@ input:checked + .cyber-slider:before {
 .connections-table tbody tr { cursor: pointer; }
 .connections-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 .connections-table tbody tr:focus-visible { outline: 2px solid var(--accent-base); outline-offset: -2px; }
-/* Cell hierarchy: secondary columns dimmed, exit node colored by semantics. */
+/* Cell hierarchy: secondary columns dimmed; exit-node semantics as a status dot. */
 .connections-table td.cell-muted { color: var(--text-muted); }
-.connections-table td.cell-exit-proxy { color: var(--accent-base); font-weight: 500; }
-.connections-table td.cell-exit-direct { color: var(--text-muted); }
-.connections-table td.cell-exit-block { color: #ef4444; font-weight: 500; }
+/* Exit-node semantics shown as a status dot; cell text keeps the normal hierarchy. */
+.connections-table td.cell-exit-proxy::before,
+.connections-table td.cell-exit-direct::before,
+.connections-table td.cell-exit-block::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 0.55rem;
+  vertical-align: 1px;
+}
+.connections-table td.cell-exit-proxy::before { background: var(--accent-base); }
+.connections-table td.cell-exit-direct::before { background: var(--text-muted); }
+.connections-table td.cell-exit-block::before { background: #ef4444; }
 .connection-detail-modal { max-width: 520px; }
 .connection-detail-rows { display: flex; flex-direction: column; }
 .connection-detail-row {
