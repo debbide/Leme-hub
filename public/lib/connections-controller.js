@@ -24,6 +24,53 @@ const formatTime = (iso) => {
   return date.toLocaleTimeString('zh-CN', { hour12: false });
 };
 
+const formatDuration = (iso) => {
+  if (!iso) return '--';
+  const start = new Date(iso).getTime();
+  if (Number.isNaN(start)) return '--';
+  const seconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}小时 ${m}分`;
+  if (m > 0) return `${m}分 ${s}秒`;
+  return `${s}秒`;
+};
+
+const detailRow = (label, value) => `
+  <div class="connection-detail-row">
+    <span class="connection-detail-label">${escapeHtml(label)}</span>
+    <span class="connection-detail-value">${escapeHtml(value)}</span>
+  </div>`;
+
+// Pure: builds the connection detail panel HTML. Exported for tests.
+export const buildConnectionDetailHtml = (connection) => {
+  if (!connection) {
+    return '<div class="connection-detail-empty">该连接已结束</div>';
+  }
+  const target = connection.destinationPort
+    ? `${connection.host || connection.sourceIP || '--'}:${connection.destinationPort}`
+    : (connection.host || '--');
+  const chains = (connection.resolvedChains || connection.chains || []).filter(Boolean);
+  const source = [connection.sourceIP, connection.sourcePort].filter((v) => v !== null && v !== undefined && v !== '').join(':');
+  const network = [connection.network, connection.type].filter(Boolean).join(' / ');
+  const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ');
+  return `<div class="connection-detail-rows">
+    ${detailRow('目标', target)}
+    ${detailRow('出口节点', connection.exitNode || chains[chains.length - 1] || '--')}
+    ${detailRow('完整链路', chains.length ? chains.join(' → ') : '--')}
+    ${detailRow('进程', connection.process || '--')}
+    ${detailRow('来源', source || '--')}
+    ${detailRow('网络', network || '--')}
+    ${detailRow('匹配规则', rule || '--')}
+    ${detailRow('上传', formatBytes(connection.uploadBytes))}
+    ${detailRow('下载', formatBytes(connection.downloadBytes))}
+    ${detailRow('开始时间', formatTime(connection.startedAt))}
+    ${detailRow('已持续', formatDuration(connection.startedAt))}
+    ${detailRow('连接 ID', connection.id || '--')}
+  </div>`;
+};
+
 export const createConnectionsController = () => {
   const tbody = document.querySelector('#connections-tbody');
   const emptyEl = document.querySelector('#connections-empty');
@@ -34,10 +81,36 @@ export const createConnectionsController = () => {
   const searchInput = document.querySelector('#connections-search');
   const searchClear = document.querySelector('#connections-search-clear');
   const refreshBtn = document.querySelector('#connections-refresh');
+  const detailOverlay = document.querySelector('#connection-detail-overlay');
+  const detailBody = document.querySelector('#connection-detail-body');
+  const detailCloseBtn = document.querySelector('#connection-detail-close');
+  const detailOkBtn = document.querySelector('#connection-detail-ok');
 
   let poller = null;
   let connections = [];
   let searchKeyword = '';
+  let detailConnectionKey = null;
+  const connectionByKey = new Map();
+
+  const connectionKey = (connection, index) => connection?.id || `row-${index}`;
+
+  const isDetailOpen = () => detailConnectionKey !== null;
+
+  const openConnectionDetail = (key) => {
+    detailConnectionKey = key;
+    refreshConnectionDetail();
+    if (detailOverlay) detailOverlay.classList.add('active');
+  };
+
+  const closeConnectionDetail = () => {
+    detailConnectionKey = null;
+    if (detailOverlay) detailOverlay.classList.remove('active');
+  };
+
+  const refreshConnectionDetail = () => {
+    if (!isDetailOpen() || !detailBody) return;
+    detailBody.innerHTML = buildConnectionDetailHtml(connectionByKey.get(detailConnectionKey));
+  };
 
   const isViewActive = () => document.getElementById('connections-view')?.classList.contains('active');
 
@@ -63,6 +136,7 @@ export const createConnectionsController = () => {
   const renderConnections = () => {
     if (!tbody) return;
     const filtered = connections.filter(matchesSearch);
+    connectionByKey.clear();
 
     if (countEl) {
       countEl.textContent = connections.length
@@ -73,18 +147,20 @@ export const createConnectionsController = () => {
     if (!filtered.length) {
       tbody.innerHTML = '';
       if (emptyEl) emptyEl.classList.remove('hidden');
+      refreshConnectionDetail();
       return;
     }
     if (emptyEl) emptyEl.classList.add('hidden');
 
-    tbody.innerHTML = filtered.map((connection) => {
-      const target = connection.destinationPort
+    tbody.innerHTML = filtered.map((connection) => {      const target = connection.destinationPort
         ? `${connection.host || connection.sourceIP || '--'}:${connection.destinationPort}`
         : (connection.host || '--');
       const chains = (connection.resolvedChains || connection.chains || []).filter(Boolean);
       const outbound = connection.exitNode || chains[chains.length - 1] || '--';
       const rule = [connection.rule, connection.rulePayload].filter(Boolean).join(' ') || '--';
-      return `<tr>
+      const key = connectionKey(connection, connections.indexOf(connection));
+      connectionByKey.set(key, connection);
+      return `<tr data-connection-key="${escapeHtml(key)}" tabindex="0" title="点击查看连接详情">
         <td title="${escapeHtml(connection.host || '')}">${escapeHtml(target)}</td>
         <td>${escapeHtml(connection.process || '--')}</td>
         <td>${escapeHtml([connection.network, connection.type].filter(Boolean).join(' / ') || '--')}</td>
@@ -95,6 +171,7 @@ export const createConnectionsController = () => {
         <td>${escapeHtml(formatTime(connection.startedAt))}</td>
       </tr>`;
     }).join('');
+    refreshConnectionDetail();
   };
 
   const loadConnections = async () => {
@@ -150,6 +227,30 @@ export const createConnectionsController = () => {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => loadConnections());
   }
+  if (tbody) {
+    tbody.addEventListener('click', (event) => {
+      const row = event.target.closest('tr[data-connection-key]');
+      if (row) openConnectionDetail(row.dataset.connectionKey);
+    });
+    tbody.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest('tr[data-connection-key]');
+      if (row) {
+        event.preventDefault();
+        openConnectionDetail(row.dataset.connectionKey);
+      }
+    });
+  }
+  if (detailOverlay) {
+    detailOverlay.addEventListener('click', (event) => {
+      if (event.target === detailOverlay) closeConnectionDetail();
+    });
+  }
+  if (detailCloseBtn) detailCloseBtn.addEventListener('click', closeConnectionDetail);
+  if (detailOkBtn) detailOkBtn.addEventListener('click', closeConnectionDetail);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isDetailOpen()) closeConnectionDetail();
+  });
 
   return {
     loadConnections,

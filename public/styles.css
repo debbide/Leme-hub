@@ -5821,3 +5821,21 @@ input:checked + .cyber-slider:before {
   color: var(--text-main);
   border-bottom: 1px solid var(--border-soft, var(--border-strong));
 }
+.connections-table tbody tr { cursor: pointer; }
+.connections-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+.connections-table tbody tr:focus-visible { outline: 2px solid var(--accent-base); outline-offset: -2px; }
+.connection-detail-modal { max-width: 520px; }
+.connection-detail-rows { display: flex; flex-direction: column; }
+.connection-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border-soft, var(--border-strong));
+  font-size: 0.85rem;
+}
+.connection-detail-row:last-child { border-bottom: none; }
+.connection-detail-label { color: var(--text-muted); flex-shrink: 0; }
+.connection-detail-value { color: var(--text-main); text-align: right; word-break: break-all; }
+.connection-detail-empty { color: var(--text-muted); text-align: center; padding: 1rem 0; }
