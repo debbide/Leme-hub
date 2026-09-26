@@ -262,14 +262,31 @@
 
       // ---- 启动：探测认证状态 ----
       (async () => {
+        let state = null;
         try {
-          const state = await (await fetch('/api/auth/state')).json();
-          if (state.needsSetup) {
-            $('login-title').textContent = '初始化设置';
-            $('login-form').style.display = 'none';
-            $('setup-form').style.display = 'block';
-          }
-        } catch { /* desktop 模式或网络错误：默认显示登录表单 */ }
+          const response = await fetch('/api/auth/state');
+          state = await response.json();
+        } catch {
+          state = null;
+        }
+        if (!state || typeof state.needsSetup === 'undefined') {
+          // 接口不可达：不静默降级到登录页（否则首次安装会看到永远登不进的登录表单）。
+          // 显示明确错误，提示刷新重试。
+          $('login-title').textContent = '连接失败';
+          $('login-form').style.display = 'none';
+          showError('无法获取认证状态，请确认服务已启动后刷新页面重试。');
+          return;
+        }
+        if (!state.enabled) {
+          // desktop 模式：无需登录，直接进主页
+          location.replace(nextPath);
+          return;
+        }
+        if (state.needsSetup) {
+          $('login-title').textContent = '初始化设置';
+          $('login-form').style.display = 'none';
+          $('setup-form').style.display = 'block';
+        }
       })();
 
       // ---- 首次设置 ----
