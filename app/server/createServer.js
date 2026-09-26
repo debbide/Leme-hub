@@ -126,7 +126,7 @@ export const isForbiddenCrossOrigin = (request, runtime) => {
 // The login page and its static assets must stay public, otherwise an
 // unauthenticated visit to /login.html would 302 back to
 // /login.html?next=... creating an infinite redirect loop.
-const PUBLIC_STATIC_PATHS = new Set(['/login.html', '/styles.css', '/favicon.png']);
+const PUBLIC_STATIC_PATHS = new Set(['/login.html', '/login.js', '/styles.css', '/favicon.png']);
 
 export const requiresAuth = (pathname, { enabled }) => {
   if (!enabled) {
