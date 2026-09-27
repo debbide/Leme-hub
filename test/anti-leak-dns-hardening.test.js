@@ -75,5 +75,6 @@ test('generated config enables DNS cache_file', () => {
   }, {});
   assert.ok(config.experimental, 'expected experimental section');
   assert.equal(config.experimental.cache_file?.enabled, true);
-  assert.equal(config.experimental.cache_file?.store_dns, true);
+  // store_dns 需要 sing-box >= 1.14.0，旧内核会拒绝启动，故意不生成。
+  assert.equal(config.experimental.cache_file?.store_dns, undefined);
 });

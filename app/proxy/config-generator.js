@@ -274,10 +274,12 @@ export const generateProxyConfig = (context, options = {}) => {
     dns,
     route,
     experimental: {
-      // DNS 缓存落盘：重启 sing-box 不丢缓存，刚启动时不用全量重解析。
+      // cache_file 落盘：1.8.0 起合法。
+      // 注意：store_dns 需要 sing-box >= 1.14.0，旧内核会报 unknown field
+      // 直接拒绝启动。为兼容用户机器上可能存在的旧版二进制，这里只开
+      // enabled，不加 store_dns。等版本探测机制落地后再按版本条件开启。
       cache_file: {
-        enabled: true,
-        store_dns: true
+        enabled: true
       },
       clash_api: {
         external_controller: formatHostPort(resolveLoopbackHost(context.proxyListen), 9095),
