@@ -3089,7 +3089,7 @@ input[type="checkbox"] {
 }
 
 .cyber-switch input:checked + .cyber-slider:before {
-  transform: translateX(24px);
+  transform: translateX(26px);
   background: #34d399;
   box-shadow: 0 0 10px rgba(52, 211, 153, 0.42);
 }
