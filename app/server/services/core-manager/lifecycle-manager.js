@@ -60,6 +60,11 @@ export const bindProcessState = (manager) => {
 };
 
 export const start = async (manager, options = {}) => {
+  // Publish the transitional state synchronously: the boot auto-start is
+  // fire-and-forget and the dashboard fetches status exactly once at load.
+  // Without a 'starting' state, a fetch landing mid-startup would report
+  // 'stopped' and the UI would stay off forever even after the core is up.
+  manager.state = { ...manager.state, status: 'starting', lastError: null };
   let binary = null;
   let replacedProcess = null;
 

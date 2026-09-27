@@ -127,6 +127,51 @@ test('start bootstraps binary before starting proxy', async () => {
   assert.equal(status.binary.version, '1.13.4');
 });
 
+test('start publishes a transitional starting state before the core is up', async () => {
+  const manager = new CoreManager(createPaths(), createStore());
+  let releaseBinary;
+  const binaryGate = new Promise((resolve) => { releaseBinary = resolve; });
+
+  manager.binaryManager = {
+    ensureAvailable: async () => {
+      await binaryGate;
+      return { executablePath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe', source: 'managed', version: '1.13.4' };
+    },
+    getStatus: () => ({
+      configuredPath: 'E:\\missing\\sing-box.exe',
+      configuredExists: false,
+      managedPath: 'E:\\repo\\local-proxy-client\\bin\\sing-box.exe',
+      managedExists: true,
+      ready: true,
+      source: 'managed'
+    })
+  };
+  manager.proxyService = {
+    proxyProcess: { once() {} },
+    setNodes() {},
+    start: async ({ binPath }) => {
+      return { configPath: createPaths().configPath, executablePath: binPath };
+    },
+    stop() {},
+    getLocalPort: () => 20000,
+    proxyListen: '127.0.0.1',
+    basePort: 20000
+  };
+
+  const started = manager.start();
+  // Let the queued lifecycle task run up to its first await (the binary gate).
+  // The boot auto-start is fire-and-forget: the dashboard's first status fetch
+  // can land here, and it must see 'starting' instead of a stale 'stopped'.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(manager.state.status, 'starting');
+  assert.equal(manager.getStatus().status, 'starting');
+
+  releaseBinary();
+  const status = await started;
+  assert.equal(status.status, 'running');
+  assert.equal(manager.getStatus().status, 'running');
+});
+
 test('start syncs running node group selectors after core startup', async () => {
   const manager = new CoreManager(createPaths(), createStore([
     { id: 'n1', type: 'socks', server: 'one.example', port: 1080 },

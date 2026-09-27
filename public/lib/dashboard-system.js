@@ -460,6 +460,14 @@ export const updateCoreStatus = ({
     setUptimeTimer(setInterval(renderUptime, 1000));
   }
 
+  // A previous render may have left the switch in the transitional 'starting'
+  // state (disabled, no on/off). Every settled state below re-asserts on/off
+  // explicitly, so clear the transitional flags first.
+  if (dashSwitch) {
+    dashSwitch.classList.remove('starting');
+    dashSwitch.disabled = false;
+  }
+
   if (core.status === 'running' && tunEnabled) {
     coreStatusIndicator.classList.add('running');
     coreStatusIndicator.title = '运行中';
@@ -513,6 +521,20 @@ export const updateCoreStatus = ({
       dashSwitch.classList.add('off');
       dashText.textContent = '引擎运行异常';
       dashText.className = 'status-pill is-error';
+    }
+  } else if (core.status === 'starting') {
+    // Transitional: the core is booting (e.g. boot auto-start). Never render
+    // this as 'off' — the boot fetch may land mid-startup and nothing would
+    // refresh the stale off-state afterwards (see the settle watcher in app.js).
+    coreStatusIndicator.classList.add('starting');
+    coreStatusIndicator.title = '正在启动';
+    if (dashSwitch) {
+      dashSwitch.classList.remove('on');
+      dashSwitch.classList.remove('off');
+      dashSwitch.classList.add('starting');
+      dashSwitch.disabled = true;
+      dashText.textContent = '核心启动中...';
+      dashText.className = 'status-pill is-starting';
     }
   } else {
     coreStatusIndicator.classList.add('stopped');

@@ -392,28 +392,59 @@ const startNodeApplyWatch = () => {
   }, 1500);
 };
 
-const updateCoreStatus = (core) => updateCoreStatusView({
-  core,
-  setCurrentCoreState: (value) => { currentCoreState = value; },
-  coreStatusIndicator,
-  systemProxyModeSelect,
-  renderRoutingModeBanner: () => routingController.renderRoutingModeBanner(),
-  dashActiveNodeSelect,
-  autoStartToggle,
-  getCurrentCoreState: () => currentCoreState,
-  getUptimeTimer: () => uptimeTimer,
-  setUptimeTimer: (value) => { uptimeTimer = value; },
-  dashUptime,
-  dashCurrentOutlet,
-  dashProxyMode,
-  dashLinkSummary,
-  dashLinkDetail,
-  dashConfigSummary,
-  dashConfigDetail,
-  renderProxyEndpoints,
-  renderSystemProxyAutoSwitchControls,
-  renderNodeApplyStatus,
-});
+const updateCoreStatus = (core) => {
+  updateCoreStatusView({
+    core,
+    setCurrentCoreState: (value) => { currentCoreState = value; },
+    coreStatusIndicator,
+    systemProxyModeSelect,
+    renderRoutingModeBanner: () => routingController.renderRoutingModeBanner(),
+    dashActiveNodeSelect,
+    autoStartToggle,
+    getCurrentCoreState: () => currentCoreState,
+    getUptimeTimer: () => uptimeTimer,
+    setUptimeTimer: (value) => { uptimeTimer = value; },
+    dashUptime,
+    dashCurrentOutlet,
+    dashProxyMode,
+    dashLinkSummary,
+    dashLinkDetail,
+    dashConfigSummary,
+    dashConfigDetail,
+    renderProxyEndpoints,
+    renderSystemProxyAutoSwitchControls,
+    renderNodeApplyStatus,
+  });
+  // The boot auto-start is fire-and-forget: this render may have caught the
+  // core mid-startup ('starting'). Keep polling quietly until it settles so
+  // the switch flips on by itself instead of staying stale-off.
+  if (core && core.status === 'starting') watchCoreStarting();
+  else stopCoreStartingWatcher();
+};
+
+let coreStartingWatcher = null;
+const stopCoreStartingWatcher = () => {
+  if (coreStartingWatcher) {
+    clearInterval(coreStartingWatcher);
+    coreStartingWatcher = null;
+  }
+};
+const watchCoreStarting = () => {
+  if (coreStartingWatcher) return;
+  let attempts = 0;
+  coreStartingWatcher = setInterval(async () => {
+    attempts += 1;
+    try {
+      const payload = await requestJson('/api/system/status');
+      if (payload && payload.core) updateCoreStatus(payload.core);
+    } catch {
+      // Backend may be momentarily unreachable during startup; stay quiet and retry.
+    }
+    if (currentCoreState?.status !== 'starting' || attempts >= 40) {
+      stopCoreStartingWatcher();
+    }
+  }, 1500);
+};
 
 
 // Modal Elements

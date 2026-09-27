@@ -159,6 +159,153 @@ test('updateCoreStatus fills dashboard summary cards from proxy profile', () => 
   }
 });
 
+test('updateCoreStatus renders a transitional starting state instead of stale-off', () => {
+  const added = [];
+  const removed = [];
+  const dashSwitch = {
+    disabled: false,
+    classList: {
+      add(name) { added.push(name); },
+      remove(name) { removed.push(name); }
+    }
+  };
+  const dashText = { textContent: '', className: '' };
+  const indicatorAdded = [];
+  const coreStatusIndicator = {
+    className: '',
+    classList: { add(name) { indicatorAdded.push(name); } },
+    title: ''
+  };
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      getElementById(id) {
+        return {
+          'master-switch': dashSwitch,
+          'master-status-text': dashText
+        }[id] || null;
+      }
+    }
+  });
+
+  try {
+    updateCoreStatus({
+      core: { status: 'starting' },
+      setCurrentCoreState: () => {},
+      coreStatusIndicator,
+      systemProxyModeSelect: null,
+      renderRoutingModeBanner: () => {},
+      dashActiveNodeSelect: null,
+      autoStartToggle: null,
+      getCurrentCoreState: () => ({}),
+      getUptimeTimer: () => null,
+      setUptimeTimer: () => {},
+      dashUptime: null,
+      dashCurrentOutlet: { textContent: '' },
+      dashProxyMode: { textContent: '' },
+      dashLinkSummary: { textContent: '' },
+      dashLinkDetail: { textContent: '' },
+      dashConfigSummary: { textContent: '' },
+      dashConfigDetail: { textContent: '' },
+      renderProxyEndpoints: () => {},
+      renderSystemProxyAutoSwitchControls: () => {},
+      renderNodeApplyStatus: () => {}
+    });
+
+    // Must never render 'starting' as off: the boot status fetch can land
+    // mid-startup and nothing refreshes a stale off-state afterwards.
+    assert.ok(added.includes('starting'));
+    assert.ok(removed.includes('on'));
+    assert.ok(removed.includes('off'));
+    assert.ok(!added.includes('on') || removed.includes('on'));
+    assert.ok(!added.includes('off'));
+    assert.equal(dashSwitch.disabled, true);
+    assert.equal(dashText.textContent, '核心启动中...');
+    assert.equal(dashText.className, 'status-pill is-starting');
+    assert.equal(coreStatusIndicator.title, '正在启动');
+    assert.ok(indicatorAdded.includes('starting'));
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, 'document', documentDescriptor);
+    } else {
+      delete globalThis.document;
+    }
+  }
+});
+
+test('updateCoreStatus clears the transitional starting state once settled', () => {
+  const added = [];
+  const removed = [];
+  const dashSwitch = {
+    disabled: true,
+    classList: {
+      add(name) { added.push(name); },
+      remove(name) { removed.push(name); }
+    }
+  };
+  const dashText = { textContent: '核心启动中...', className: 'status-pill is-starting' };
+  const coreStatusIndicator = {
+    className: '',
+    classList: { add() {} },
+    title: ''
+  };
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    writable: true,
+    value: {
+      getElementById(id) {
+        return {
+          'master-switch': dashSwitch,
+          'master-status-text': dashText
+        }[id] || null;
+      }
+    }
+  });
+
+  try {
+    updateCoreStatus({
+      core: {
+        status: 'running',
+        systemProxy: { enabled: true, desiredEnabled: true },
+        proxy: { mode: 'rule', systemProxyEnabled: true, systemProxyCaptureEnabled: true }
+      },
+      setCurrentCoreState: () => {},
+      coreStatusIndicator,
+      systemProxyModeSelect: null,
+      renderRoutingModeBanner: () => {},
+      dashActiveNodeSelect: null,
+      autoStartToggle: null,
+      getCurrentCoreState: () => ({}),
+      getUptimeTimer: () => null,
+      setUptimeTimer: () => {},
+      dashUptime: null,
+      dashCurrentOutlet: { textContent: '' },
+      dashProxyMode: { textContent: '' },
+      dashLinkSummary: { textContent: '' },
+      dashLinkDetail: { textContent: '' },
+      dashConfigSummary: { textContent: '' },
+      dashConfigDetail: { textContent: '' },
+      renderProxyEndpoints: () => {},
+      renderSystemProxyAutoSwitchControls: () => {},
+      renderNodeApplyStatus: () => {}
+    });
+
+    assert.ok(removed.includes('starting'));
+    assert.equal(dashSwitch.disabled, false);
+    assert.ok(added.includes('on'));
+    assert.equal(dashText.textContent, '系统代理接管中');
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, 'document', documentDescriptor);
+    } else {
+      delete globalThis.document;
+    }
+  }
+});
+
 test('renderNodeApplyStatus exposes background apply progress and failures', () => {
   const el = {
     className: '',

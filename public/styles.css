@@ -596,6 +596,30 @@ body.desktop-shell .titlebar-controls {
   color: #cbd5e1;
 }
 
+.status-pill.is-starting {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+}
+
+.status-pill.is-starting::before {
+  background: #f59e0b;
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+.master-switch.starting {
+  cursor: wait;
+}
+
+.master-switch.starting .switch-icon {
+  animation: switch-starting-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes switch-starting-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 @keyframes status-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
   50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
@@ -3927,6 +3951,11 @@ input:focus + .cyber-slider {
 .status-dot.running {
   background-color: var(--pill-green-text);
   box-shadow: 0 0 8px var(--pill-green-text);
+}
+.status-dot.starting {
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: dot-pulse 1.2s infinite;
 }
 .status-dot.error {
   background-color: var(--btn-red-text);
