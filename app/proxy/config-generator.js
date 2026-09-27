@@ -261,7 +261,8 @@ export const generateProxyConfig = (context, options = {}) => {
     systemStoreSigninRuleSetTag: dnsRouting.systemStoreSigninRuleSetTag,
     orderedDnsRules: dnsRouting.orderedDnsRules,
     builtInCnDirectRuleSetTags: dnsRouting.builtInCnDirectRuleSetTags,
-    resolveDnsServerForOutbound: dnsRouting.resolveDnsServerForOutbound
+    resolveDnsServerForOutbound: dnsRouting.resolveDnsServerForOutbound,
+    singBoxVersion
   });
 
   return {

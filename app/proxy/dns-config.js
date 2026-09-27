@@ -1,4 +1,5 @@
 import { isIpLiteralHost, normalizeHost } from '../shared/network.js';
+import { isSingBoxVersionGte } from './runtime.js';
 
 export const LOCALHOST_DNS_SERVER_TAG = 'dns-hosts';
 export const PLATFORM_LOCAL_DNS_SERVER_TAG = 'dns-platform';
@@ -69,7 +70,8 @@ export const buildDnsConfig = ({
   systemStoreSigninRuleSetTag = '',
   orderedDnsRules = [],
   builtInCnDirectRuleSetTags = [],
-  resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote'
+  resolveDnsServerForOutbound = (outbound) => outbound === 'direct' ? 'dns-local' : 'dns-remote',
+  singBoxVersion = null
 } = {}) => {
   const effectiveCaptureInbounds = (Array.isArray(captureInbounds) && captureInbounds.length
     ? captureInbounds
@@ -177,6 +179,10 @@ export const buildDnsConfig = ({
     ],
     rules: dnsRules,
     final: String(dnsFinal || '').trim() === 'dns-local' ? 'dns-local' : 'dns-remote',
-    strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4'
+    strategy: ['prefer_ipv4', 'ipv4_only', 'prefer_ipv6', 'ipv6_only'].includes(String(dnsStrategy || '').trim()) ? String(dnsStrategy || '').trim() : 'prefer_ipv4',
+    // optimistic 需要 sing-box >= 1.14.0，旧内核会报 unknown field 直接拒绝启动。
+    // 过期记录先返回旧答案（0ms），后台刷新——消灭 TTL 过期时的周期性 DNS 卡顿。
+    // 与 cache_file.store_dns 是 1.14 设计在一起的：落盘 + 乐观返回，重启后也秒回。
+    ...(isSingBoxVersionGte(singBoxVersion, '1.14.0') ? { optimistic: true } : {})
   };
 };

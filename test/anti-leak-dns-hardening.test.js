@@ -87,8 +87,7 @@ test('generated config enables DNS cache_file', () => {
   assert.equal(oldVer.experimental.cache_file?.store_dns, undefined);
 });
 
-test('DNS rules never reference geoip-* rule-sets (1.14.0+ rejects them)', () => {
-  const dns = buildDnsConfig({
+test('DNS rules never reference geoip-* rule-sets (1.14.0+ rejects them)', () => {  const dns = buildDnsConfig({
     captureInbounds: ['tun-in'],
     systemProxyEnabled: true,
     tunEnabled: true,
@@ -126,4 +125,27 @@ test('isSingBoxVersionGte compares versions correctly', async () => {
   assert.equal(isSingBoxVersionGte(undefined, '1.14.0'), false);
   assert.equal(isSingBoxVersionGte('', '1.14.0'), false);
   assert.equal(isSingBoxVersionGte('not-a-version', '1.14.0'), false);
+});
+
+test('DNS optimistic cache gated on sing-box >= 1.14.0', () => {
+  const base = {
+    nodes: [],
+    log: { error() {}, warn() {}, info() {}, debug() {} },
+    resolveDefaultNodeId: () => null,
+    proxyListen: '127.0.0.1',
+    basePort: 20000,
+    nodePortMap: new Map(),
+    rulesDir: '/tmp/leme-hub-test-rules'
+  };
+  // 未知版本：保守策略，不生成 optimistic（旧内核会报 unknown field 拒绝启动）
+  const unknownVer = generateProxyConfig(base, {});
+  assert.equal(unknownVer.dns?.optimistic, undefined);
+
+  // 1.14.0+：生成 optimistic，过期记录先返回旧答案、后台刷新
+  const newVer = generateProxyConfig(base, { singBoxVersion: '1.14.2' });
+  assert.equal(newVer.dns?.optimistic, true);
+
+  // 1.14.0 之前：不生成，避免 unknown field 导致启动失败
+  const oldVer = generateProxyConfig(base, { singBoxVersion: '1.13.0' });
+  assert.equal(oldVer.dns?.optimistic, undefined);
 });
