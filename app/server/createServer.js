@@ -270,7 +270,12 @@ export function createAppServer(paths, env = process.env) {
       const bootSettings = store.getSettings();
       if (bootSettings.systemProxyEnabled || bootSettings.tunEnabled) {
         coreManager.start().catch((error) => {
-          console.error(`[server] failed to auto-start proxy core: ${error.message}`);
+          const msg = `[server] failed to auto-start proxy core: ${error.message}`;
+          console.error(msg);
+          // 写进应用日志，Windows GUI 下 console 看不到，UI 日志里能看到真因。
+          try {
+            store.appendLog(msg);
+          } catch {}
         });
       }
       console.log(`[${runtime.mode}] local-proxy-client listening on ${runtime.publicOrigin}`);
