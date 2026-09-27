@@ -107,6 +107,18 @@ export const REMOTE_RULESET_CATALOG = [
     url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/steam@cn.srs'
   },
   {
+    id: 'geosite-microsoftcn',
+    tag: 'geosite-microsoftcn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/microsoft@cn.srs'
+  },
+  {
+    id: 'geosite-applecn',
+    tag: 'geosite-applecn',
+    format: 'binary',
+    url: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/apple@cn.srs'
+  },
+  {
     id: 'geosite-steam',
     tag: 'geosite-steam',
     format: 'binary',
@@ -247,6 +259,24 @@ export const BUILTIN_RULESETS = [
       { type: 'domain_suffix', value: 'steampowered.com' },
       { type: 'domain_suffix', value: 'steamcommunity.com' }
     ]
+  },
+  {
+    id: 'microsoft-cn',
+    name: 'Microsoft 国内',
+    remoteRuleSetIds: ['geosite-microsoftcn'],
+    entries: []
+  },
+  {
+    id: 'apple-cn',
+    name: 'Apple 国内',
+    remoteRuleSetIds: ['geosite-applecn'],
+    entries: []
+  },
+  {
+    id: 'steam-cn',
+    name: 'Steam 国内',
+    remoteRuleSetIds: ['geosite-steamcn'],
+    entries: []
   },
   {
     id: 'microsoft-store-signin',
