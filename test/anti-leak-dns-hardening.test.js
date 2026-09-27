@@ -78,3 +78,29 @@ test('generated config enables DNS cache_file', () => {
   // store_dns 需要 sing-box >= 1.14.0，旧内核会拒绝启动，故意不生成。
   assert.equal(config.experimental.cache_file?.store_dns, undefined);
 });
+
+test('DNS rules never reference geoip-* rule-sets (1.14.0+ rejects them)', () => {
+  const dns = buildDnsConfig({
+    captureInbounds: ['tun-in'],
+    systemProxyEnabled: true,
+    tunEnabled: true,
+    proxyMode: 'rule',
+    builtInCnDirectRuleSetTags: ['geosite-cn', 'geoip-cn']
+  });
+  for (const rule of dns.rules) {
+    const tags = Array.isArray(rule?.rule_set) ? rule.rule_set : (rule?.rule_set ? [rule.rule_set] : []);
+    for (const tag of tags) {
+      assert.ok(
+        !String(tag).startsWith('geoip-'),
+        `DNS rule must not reference IP-based rule-set "${tag}" (sing-box 1.14.0+ fatal)`
+      );
+    }
+  }
+  // geosite-cn（域名）必须还在，保证国内域名走本地 DNS
+  const cnRule = dns.rules.find((r) => {
+    const tags = Array.isArray(r?.rule_set) ? r.rule_set : [];
+    return tags.includes('geosite-cn');
+  });
+  assert.ok(cnRule, 'expected DNS rule referencing geosite-cn');
+  assert.equal(cnRule.server, 'dns-local');
+});

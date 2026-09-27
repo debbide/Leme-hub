@@ -137,10 +137,16 @@ export const buildDnsConfig = ({
 
       orderedDnsRules.forEach((rule) => dnsRules.push(rule));
 
-      if (builtInCnDirectRuleSetTags.length) {
+      // 1.14.0+ 禁止在 DNS 规则里直接引用纯 IP 段规则集（如 geoip-cn），
+      // 必须走 evaluate + match_response。这里 DNS 选路只需要按域名判断
+      // （geosite-cn），geoip-cn 留在路由规则里按目标 IP 分流。
+      const dnsCnDomainRuleSetTags = builtInCnDirectRuleSetTags.filter(
+        (tag) => !String(tag).startsWith('geoip-')
+      );
+      if (dnsCnDomainRuleSetTags.length) {
         dnsRules.push({
           inbound: effectiveCaptureInbounds,
-          rule_set: builtInCnDirectRuleSetTags,
+          rule_set: dnsCnDomainRuleSetTags,
           server: 'dns-local'
         });
       }
