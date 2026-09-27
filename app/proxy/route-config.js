@@ -145,7 +145,12 @@ export const buildRouteConfig = ({
         rules: [{ [item.type]: [item.value] }]
       });
       orderedRouteRules.push({ inbound: captureInbounds, rule_set: tag, outbound });
-      orderedDnsRules.push({ inbound: captureInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      // IP 段类规则（ip_cidr/ip_is_private）不能进 DNS 规则（1.14.0+ 禁止），
+      // 只在路由规则里按目标 IP 分流。
+      const isIpBasedRule = item.type === 'ip_cidr' || item.type === 'ip_is_private';
+      if (!isIpBasedRule) {
+        orderedDnsRules.push({ inbound: captureInbounds, rule_set: tag, server: resolveDnsServerForOutbound(outbound) });
+      }
       return;
     }
 
@@ -177,7 +182,14 @@ export const buildRouteConfig = ({
       });
       if (remoteRuleSetTags.length) {
         orderedRouteRules.push({ inbound: captureInbounds, rule_set: remoteRuleSetTags, outbound });
-        orderedDnsRules.push({ inbound: captureInbounds, rule_set: remoteRuleSetTags, server: resolveDnsServerForOutbound(outbound) });
+        // DNS 规则不能引用纯 IP 段规则集（1.14.0+ 禁止），只保留域名类的。
+        // geoip-* 留在路由规则里按目标 IP 分流。
+        const dnsRemoteRuleSetTags = remoteRuleSetTags.filter(
+          (tag) => !String(tag).startsWith('geoip-')
+        );
+        if (dnsRemoteRuleSetTags.length) {
+          orderedDnsRules.push({ inbound: captureInbounds, rule_set: dnsRemoteRuleSetTags, server: resolveDnsServerForOutbound(outbound) });
+        }
       }
       orderedRouteRules.push({ inbound: captureInbounds, rule_set: inlineTagName, outbound });
       orderedDnsRules.push({ inbound: captureInbounds, rule_set: inlineTagName, server: resolveDnsServerForOutbound(outbound) });
