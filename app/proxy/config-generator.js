@@ -3,6 +3,7 @@ import { buildDnsConfig } from './dns-config.js';
 import { buildNodeOutbound } from './protocols.js';
 import { buildRouteConfig } from './route-config.js';
 import { ACTIVE_NODE_SELECTOR_TAG, createNodeGroupOutboundTag as getNodeGroupOutboundTag } from './routing-observability.js';
+import { isSingBoxVersionGte } from './runtime.js';
 
 const UUID_REQUIRED_NODE_TYPES = new Set(['vmess', 'vless', 'tuic']);
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -145,6 +146,9 @@ export const generateProxyConfig = (context, options = {}) => {
     systemProxyAutoSwitchEnabled = false,
     systemProxyAutoSwitchGroupId = null,
     proxyMode = 'rule',
+    // sing-box 内核版本号（如 "1.14.2"），用于版本相关的配置字段守卫。
+    // 为 null/未知时按保守策略处理（不生成高版本才有的字段）。
+    singBoxVersion = null,
     customRules = [],
     rulesets = [],
     routingItems = [],
@@ -275,11 +279,11 @@ export const generateProxyConfig = (context, options = {}) => {
     route,
     experimental: {
       // cache_file 落盘：1.8.0 起合法。
-      // 注意：store_dns 需要 sing-box >= 1.14.0，旧内核会报 unknown field
-      // 直接拒绝启动。为兼容用户机器上可能存在的旧版二进制，这里只开
-      // enabled，不加 store_dns。等版本探测机制落地后再按版本条件开启。
+      // store_dns 需要 sing-box >= 1.14.0，旧内核会报 unknown field
+      // 直接拒绝启动。用探测到的实际版本号做守卫，未知版本保守处理。
       cache_file: {
-        enabled: true
+        enabled: true,
+        ...(isSingBoxVersionGte(singBoxVersion, '1.14.0') ? { store_dns: true } : {})
       },
       clash_api: {
         external_controller: formatHostPort(resolveLoopbackHost(context.proxyListen), 9095),

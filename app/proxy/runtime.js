@@ -20,6 +20,58 @@ const STOP_FORCE_TIMEOUT_MS = 800;
 const STOP_RESOLVE_TIMEOUT_MS = 5000;
 const STALE_PROCESS_CLEANUP_TIMEOUT_MS = 2500;
 
+// sing-box 二进制版本探测缓存：key 为可执行文件绝对路径。
+// 启动时探测一次，避免每次生成配置都 spawn 子进程。
+const singBoxVersionCache = new Map();
+
+const VERSION_RE = /(\d+)\.(\d+)\.(\d+)/;
+
+// 比较版本号：version >= minVersion 时返回 true。
+// 解析失败时返回 false（保守策略：未知版本按旧版处理）。
+export const isSingBoxVersionGte = (version, minVersion) => {
+  const parse = (v) => {
+    const m = String(v || '').match(VERSION_RE);
+    if (!m) return null;
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+  };
+  const ver = parse(version);
+  const min = parse(minVersion);
+  if (!ver || !min) return false;
+  for (let i = 0; i < 3; i++) {
+    if (ver[i] > min[i]) return true;
+    if (ver[i] < min[i]) return false;
+  }
+  return true;
+};
+
+// 运行 `sing-box version` 探测实际版本号，失败返回 null。
+// 结果按路径缓存，同一二进制只探测一次。
+export const probeSingBoxVersion = (execPath) => {
+  const key = String(execPath || '');
+  if (!key) return Promise.resolve(null);
+  if (singBoxVersionCache.has(key)) {
+    return Promise.resolve(singBoxVersionCache.get(key));
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 5000);
+    execFile(key, ['version'], { timeout: 5000 }, (error, stdout) => {
+      clearTimeout(timer);
+      if (error) {
+        singBoxVersionCache.set(key, null);
+        resolve(null);
+        return;
+      }
+      const m = stripAnsi(stdout || '').match(/sing-box version\s+(\d+\.\d+\.\d+)/i)
+        || String(stdout || '').match(VERSION_RE);
+      const version = m ? (m[1].includes('.') ? m[1] : `${m[1]}.${m[2]}.${m[3]}`) : null;
+      singBoxVersionCache.set(key, version);
+      resolve(version);
+    });
+  });
+};
+
+export const clearSingBoxVersionCache = () => singBoxVersionCache.clear();
+
 const escapePowerShellSingleQuotedString = (value) => String(value).replace(/'/g, "''");
 
 export const resolveExecutablePath = (explicitPath) => {
@@ -394,9 +446,15 @@ export const startProxyRuntime = async (context, options = {}) => {
 
   const runtimeOptions = { ...(options.runtime || {}) };
   context.runtimeOptions = runtimeOptions;
-  const config = context.generateConfig(runtimeOptions);
   const execPath = resolveExecutablePath(options.binPath);
   context.executablePath = execPath;
+  // 探测内核版本，用于版本相关的配置字段守卫（如 store_dns 需要 >= 1.14.0）。
+  // 探测失败时返回 null，配置生成器按保守策略处理。
+  const singBoxVersion = await probeSingBoxVersion(execPath);
+  if (singBoxVersion) {
+    runtimeOptions.singBoxVersion = singBoxVersion;
+  }
+  const config = context.generateConfig(runtimeOptions);
   if (!options.skipValidation) {
     try {
       await validateConfig(context, config, { binPath: execPath });

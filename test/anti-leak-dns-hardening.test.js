@@ -64,7 +64,7 @@ test('DNS rejects HTTPS/SVCB queries first', () => {
 });
 
 test('generated config enables DNS cache_file', () => {
-  const config = generateProxyConfig({
+  const base = {
     nodes: [],
     log: { error() {}, warn() {}, info() {}, debug() {} },
     resolveDefaultNodeId: () => null,
@@ -72,11 +72,19 @@ test('generated config enables DNS cache_file', () => {
     basePort: 20000,
     nodePortMap: new Map(),
     rulesDir: '/tmp/leme-hub-test-rules'
-  }, {});
-  assert.ok(config.experimental, 'expected experimental section');
-  assert.equal(config.experimental.cache_file?.enabled, true);
-  // store_dns 需要 sing-box >= 1.14.0，旧内核会拒绝启动，故意不生成。
-  assert.equal(config.experimental.cache_file?.store_dns, undefined);
+  };
+  // 未知版本：保守策略，不生成 store_dns（旧内核会拒绝启动）
+  const unknownVer = generateProxyConfig(base, {});
+  assert.equal(unknownVer.experimental.cache_file?.enabled, true);
+  assert.equal(unknownVer.experimental.cache_file?.store_dns, undefined);
+
+  // 1.14.0+：生成 store_dns，DNS 缓存落盘
+  const newVer = generateProxyConfig(base, { singBoxVersion: '1.14.2' });
+  assert.equal(newVer.experimental.cache_file?.store_dns, true);
+
+  // 1.14.0 之前：不生成，避免 unknown field 导致启动失败
+  const oldVer = generateProxyConfig(base, { singBoxVersion: '1.13.0' });
+  assert.equal(oldVer.experimental.cache_file?.store_dns, undefined);
 });
 
 test('DNS rules never reference geoip-* rule-sets (1.14.0+ rejects them)', () => {
@@ -103,4 +111,19 @@ test('DNS rules never reference geoip-* rule-sets (1.14.0+ rejects them)', () =>
   });
   assert.ok(cnRule, 'expected DNS rule referencing geosite-cn');
   assert.equal(cnRule.server, 'dns-local');
+});
+
+test('isSingBoxVersionGte compares versions correctly', async () => {
+  const { isSingBoxVersionGte } = await import('../app/proxy/runtime.js');
+  assert.equal(isSingBoxVersionGte('1.14.2', '1.14.0'), true);
+  assert.equal(isSingBoxVersionGte('1.14.0', '1.14.0'), true);
+  assert.equal(isSingBoxVersionGte('1.15.0', '1.14.0'), true);
+  assert.equal(isSingBoxVersionGte('2.0.0', '1.14.0'), true);
+  assert.equal(isSingBoxVersionGte('1.13.9', '1.14.0'), false);
+  assert.equal(isSingBoxVersionGte('1.13.0', '1.14.0'), false);
+  // 未知/非法版本保守返回 false
+  assert.equal(isSingBoxVersionGte(null, '1.14.0'), false);
+  assert.equal(isSingBoxVersionGte(undefined, '1.14.0'), false);
+  assert.equal(isSingBoxVersionGte('', '1.14.0'), false);
+  assert.equal(isSingBoxVersionGte('not-a-version', '1.14.0'), false);
 });
