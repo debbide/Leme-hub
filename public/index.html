@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/phosphor/phosphor.css">
-    <link rel="stylesheet" href="/styles.css?v=20260927fix3">
+    <link rel="stylesheet" href="/styles.css?v=20260927fix2">
   </head>
   <body>
     <!-- Custom Titlebar -->
@@ -549,18 +549,6 @@
           </div>
           </div>
 
-          <div id="connection-detail-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="connection-detail-title">
-            <div class="modal connection-detail-modal">
-              <div class="modal-header">
-                <h2 class="modal-title" id="connection-detail-title">连接详情</h2>
-                <button type="button" class="modal-close-btn" id="connection-detail-close" aria-label="关闭连接详情">×</button>
-              </div>
-              <div class="modal-body" id="connection-detail-body"></div>
-              <div class="modal-footer">
-                <button type="button" class="btn-outline" id="connection-detail-ok">关闭</button>
-              </div>
-            </div>
-          </div>
         </section>
 
         <!-- SETTINGS VIEW -->
@@ -1293,6 +1281,20 @@
       </div>
     </div>
     </template>
+
+    <!-- 连接详情弹窗：移到 body 直属，避免被祖先滚动容器/transform 吃掉 position:fixed -->
+    <div id="connection-detail-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="connection-detail-title">
+      <div class="modal connection-detail-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="connection-detail-title">连接详情</h2>
+          <button type="button" class="modal-close-btn" id="connection-detail-close" aria-label="关闭连接详情">×</button>
+        </div>
+        <div class="modal-body" id="connection-detail-body"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" id="connection-detail-ok">关闭</button>
+        </div>
+      </div>
+    </div>
 
 </body>
 </html>
