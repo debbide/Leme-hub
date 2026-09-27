@@ -274,6 +274,11 @@ export const generateProxyConfig = (context, options = {}) => {
     dns,
     route,
     experimental: {
+      // DNS 缓存落盘：重启 sing-box 不丢缓存，刚启动时不用全量重解析。
+      cache_file: {
+        enabled: true,
+        store_dns: true
+      },
       clash_api: {
         external_controller: formatHostPort(resolveLoopbackHost(context.proxyListen), 9095),
         // Even on loopback, a secret stops other local processes from driving

@@ -87,6 +87,12 @@ export const buildDnsConfig = ({
     .filter((host) => host && !isIpLiteralHost(host) && !upstreamServerDomains.includes(host)))];
 
   const dnsRules = [
+    // 拒绝 HTTPS/SVCB 查询：这类记录只用于 ECH 服务发现，对分流无用，
+    // 放行反而可能泄漏真实访问意图。放在最前面，全局生效。
+    {
+      query_type: ['HTTPS', 'SVCB'],
+      action: 'reject'
+    },
     ...(upstreamServerDomains.length
       ? [{
           domain: upstreamServerDomains,

@@ -294,6 +294,18 @@ export const buildRouteConfig = ({
     );
   }
 
+  // Anti-leak: STUN/QUIC routed direct would expose the real IP (WebRTC leak);
+  // DoT (853) bypasses our DNS routing. Reject (not drop) so apps fail fast
+  // instead of hanging. Placed right after sniff/hijack so protocol detection
+  // has run, and before any user or catch-all rules.
+  routeRules.splice(tunEnabled ? 3 : 1, 0, {
+    type: 'logical',
+    mode: 'or',
+    rules: [{ port: 853 }, { protocol: ['stun', 'quic'] }],
+    action: 'reject',
+    no_drop: true
+  });
+
   if (captureRoutingEnabled) {
     if (captureInbounds.length && (proxyMode === 'global' || proxyMode === 'direct')) {
       const systemOutbound = proxyMode === 'direct' ? 'direct' : systemDefaultOutbound;
