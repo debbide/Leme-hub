@@ -3123,7 +3123,7 @@ input[type="checkbox"] {
   outline-offset: 2px;
 }
 
-input:focus + .cyber-slider {
+.cyber-switch input:focus + .cyber-slider {
   border-color: var(--accent-base);
 }
 
@@ -4927,7 +4927,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
   pointer-events: none;
 }
 
-.cyber-slider {
+.cyber-toggle .cyber-slider {
   position: relative;
   flex: 0 0 auto;
   width: 36px;
@@ -4938,7 +4938,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
   box-shadow: inset 0 1px 2px rgba(2, 6, 23, 0.55);
 }
 
-.cyber-slider::before {
+.cyber-toggle .cyber-slider::before {
   content: '';
   position: absolute;
   top: 3px;
@@ -4961,7 +4961,7 @@ button:active:not(:disabled):not(.node-row-float-btn),
   box-shadow: 0 0 10px rgba(52, 211, 153, 0.42);
 }
 
-.cyber-slider + span {
+.cyber-toggle .cyber-slider + span {
   white-space: nowrap;
 }
 
@@ -5644,23 +5644,6 @@ th {
 
 .node-form-advanced-section {
   background: rgba(15, 23, 42, 0.4);
-}
-
-.cyber-slider {
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.62));
-  border-color: var(--surface-border-strong);
-}
-
-input:checked + .cyber-slider {
-  background: rgba(16, 185, 129, 0.14);
-  border-color: rgba(16, 185, 129, 0.52);
-  box-shadow: 0 0 14px rgba(16, 185, 129, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.45);
-}
-
-input:checked + .cyber-slider:before {
-  background: linear-gradient(135deg, #ecfeff 0%, #34d399 100%);
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.58);
 }
 
 .toast {
