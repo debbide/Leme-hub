@@ -55,12 +55,25 @@ test('anti-leak rule sits after hijack-dns when TUN is on', () => {
   assert.ok(hijackIdx >= 0 && leakIdx > hijackIdx, `anti-leak should follow hijack-dns (hijack@${hijackIdx}, leak@${leakIdx})`);
 });
 
-test('DNS rejects HTTPS/SVCB queries first', () => {
-  const dns = buildDnsConfig({ captureInbounds: ['system-socks'], systemProxyEnabled: true });
-  assert.ok(dns.rules.length > 0);
-  const first = dns.rules[0];
-  assert.deepEqual(first.query_type, ['HTTPS', 'SVCB']);
-  assert.equal(first.action, 'reject');
+test('DNS rejects HTTPS/SVCB only after node-domain rules (ECH needs HTTPS records)', () => {
+  const dns = buildDnsConfig({
+    ...baseContext,
+    validNodes: [
+      { id: 'node-1', name: 'ECH节点', type: 'vless', server: 'edge-6bd13345.pages.dev', sni: 'cloudflare-ech.com', ech: true }
+    ],
+  });
+  const rules = dns.rules;
+  const rejectIdx = rules.findIndex((r) =>
+    Array.isArray(r?.query_type) && r.query_type.includes('HTTPS') && r?.action === 'reject');
+  assert.ok(rejectIdx >= 0, 'expected HTTPS/SVCB reject rule');
+  const serverRuleIdx = rules.findIndex((r) =>
+    Array.isArray(r?.domain) && r.domain.includes('edge-6bd13345.pages.dev'));
+  const echRuleIdx = rules.findIndex((r) =>
+    Array.isArray(r?.domain) && r.domain.includes('cloudflare-ech.com'));
+  assert.ok(serverRuleIdx >= 0 && serverRuleIdx < rejectIdx,
+    `server-domain rule should precede reject (server@${serverRuleIdx}, reject@${rejectIdx})`);
+  assert.ok(echRuleIdx >= 0 && echRuleIdx < rejectIdx,
+    `ech-domain rule should precede reject (ech@${echRuleIdx}, reject@${rejectIdx})`);
 });
 
 test('generated config enables DNS cache_file', () => {

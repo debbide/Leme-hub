@@ -89,12 +89,6 @@ export const buildDnsConfig = ({
     .filter((host) => host && !isIpLiteralHost(host) && !upstreamServerDomains.includes(host)))];
 
   const dnsRules = [
-    // 拒绝 HTTPS/SVCB 查询：这类记录只用于 ECH 服务发现，对分流无用，
-    // 放行反而可能泄漏真实访问意图。放在最前面，全局生效。
-    {
-      query_type: ['HTTPS', 'SVCB'],
-      action: 'reject'
-    },
     ...(upstreamServerDomains.length
       ? [{
           domain: upstreamServerDomains,
@@ -107,6 +101,13 @@ export const buildDnsConfig = ({
           server: 'dns-local'
         }]
       : []),
+    // 拒绝 HTTPS/SVCB 查询（防 ECH 信息泄漏），但必须放在节点域名规则之后：
+    // ECH 配置靠 HTTPS 记录从 DNS 下发，节点 server/sni/host 域名的 HTTPS 查询
+    // 必须放行，否则 ECH 节点拿不到配置直接不通。
+    {
+      query_type: ['HTTPS', 'SVCB'],
+      action: 'reject'
+    },
     {
       domain: localDirectDomains,
       server: LOCALHOST_DNS_SERVER_TAG
